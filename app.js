@@ -64,6 +64,7 @@ const batchList = document.getElementById("batchList");
 const stockSummary = document.getElementById("stockSummary");
 const stockSummaryTotals = document.getElementById("stockSummaryTotals");
 const stockRecipeSelect = document.getElementById("stockRecipeSelect");
+const stockBalanceList = document.getElementById("stockBalanceList");
 const productList = document.getElementById("productList");
 const clientList = document.getElementById("clientList");
 const saleList = document.getElementById("saleList");
@@ -193,6 +194,11 @@ const refreshStockSummary = () => {
     };
   });
 
+  const availabilityMap = rows.reduce((acc, row) => {
+    acc[row.materialId] = row.available;
+    return acc;
+  }, {});
+
   const totalValue = rows.reduce((sum, row) => sum + row.available * row.price, 0);
   const selectedRecipeId = stockRecipeSelect?.value;
   const selectedRecipe = state.recipes.find((recipe) => recipe.id === selectedRecipeId);
@@ -231,6 +237,58 @@ const refreshStockSummary = () => {
       <div>Displays posibles (360 g): ${totalDisplays !== null ? totalDisplays.toLocaleString("es-PY") : "Selecciona formula (kg o g)"}</div>
     </div>
   `);
+
+  const balanceRows = [];
+  if (selectedRecipe && selectedRecipe.ingredients?.length) {
+    const ingredientData = selectedRecipe.ingredients.map((ing) => {
+      const material = state.rawMaterials.find((m) => m.id === ing.materialId);
+      const baseUnit = material?.unit || ing.unitBase || ing.unit;
+      const requiredBase = Number(ing.quantityBase || 0) ||
+        normalizeQuantity(Number(ing.quantity || 0), ing.unit, baseUnit) ||
+        Number(ing.quantity || 0);
+      return {
+        materialId: ing.materialId,
+        materialName: ing.materialName,
+        baseUnit,
+        requiredBase
+      };
+    });
+
+    ingredientData.forEach((current) => {
+      const others = ingredientData.filter((ing) => ing.materialId !== current.materialId);
+      if (!others.length || current.requiredBase <= 0) return;
+      let minOther = Infinity;
+      others.forEach((other) => {
+        const available = availabilityMap[other.materialId] ?? 0;
+        if (other.requiredBase > 0) {
+          minOther = Math.min(minOther, available / other.requiredBase);
+        }
+      });
+      if (!Number.isFinite(minOther)) return;
+      const targetQuantity = minOther * current.requiredBase;
+      const availableCurrent = availabilityMap[current.materialId] ?? 0;
+      const delta = targetQuantity - availableCurrent;
+      balanceRows.push({
+        name: current.materialName,
+        unit: current.baseUnit,
+        targetQuantity,
+        available: availableCurrent,
+        delta
+      });
+    });
+  }
+
+  if (!selectedRecipe) {
+    stockBalanceList.innerHTML = '<div class="list-item muted">Selecciona una formula para ver el balance.</div>';
+  } else {
+    renderList(stockBalanceList, balanceRows, (row) => `
+      <div class="list-item">
+        <strong>Balance de materia prima: ${row.name}</strong>
+        Necesario para igualar al resto: ${formatNumber(row.targetQuantity)} ${row.unit}
+        <div>Disponible: ${formatNumber(row.available)} ${row.unit} | ${row.delta > 0 ? `Faltan ${formatNumber(row.delta)} ${row.unit}` : `Sobran ${formatNumber(Math.abs(row.delta))} ${row.unit}`}</div>
+      </div>
+    `);
+  }
 
   renderList(stockSummary, rows, (row) => `
     <div class="list-item">
