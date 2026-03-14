@@ -1135,13 +1135,43 @@ unitGroups.forEach((group) => {
   }
 });
 
+const updateCollapseHeight = (body) => {
+  if (!body) return;
+  if (body.classList.contains("collapsed")) {
+    body.style.maxHeight = "0px";
+  } else {
+    body.style.maxHeight = `${body.scrollHeight}px`;
+  }
+};
+
+const toggleCollapse = (header) => {
+  const body = document.getElementById(header.dataset.collapse);
+  if (!body) return;
+  const willCollapse = !body.classList.contains("collapsed");
+  body.classList.toggle("collapsed", willCollapse);
+  header.classList.toggle("open", !willCollapse);
+  updateCollapseHeight(body);
+};
+
+document.querySelectorAll(".collapse-body").forEach((body) => {
+  body.classList.remove("collapsed");
+  updateCollapseHeight(body);
+});
+
+document.querySelectorAll(".section-title[data-collapse]").forEach((header) => {
+  header.classList.add("open");
+});
+
 document.addEventListener("click", (event) => {
   const header = event.target.closest(".section-title[data-collapse]");
   if (!header) return;
-  const body = document.getElementById(header.dataset.collapse);
-  if (!body) return;
-  const isCollapsed = body.classList.toggle("collapsed");
-  header.classList.toggle("open", !isCollapsed);
+  toggleCollapse(header);
+});
+
+window.addEventListener("resize", () => {
+  document.querySelectorAll(".collapse-body").forEach((body) => {
+    updateCollapseHeight(body);
+  });
 });
 
 onAuthStateChanged(auth, (user) => {
