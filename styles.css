@@ -130,6 +130,35 @@ body {
   background: #fff;
 }
 
+.unit-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.btn.chip {
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.btn.chip.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.list-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.btn.danger {
+  border-color: #d65b4a;
+  color: #b43b2c;
+}
+
 .form-grid label {
   display: grid;
   gap: 6px;

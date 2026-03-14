@@ -10,6 +10,9 @@ import {
   getFirestore,
   collection,
   addDoc,
+  doc,
+  updateDoc,
+  deleteDoc,
   onSnapshot,
   query,
   where,
@@ -68,6 +71,7 @@ const clientList = document.getElementById("clientList");
 const saleList = document.getElementById("saleList");
 
 const dueDateField = document.getElementById("dueDateField");
+const rawUnitGroup = document.getElementById("rawUnitGroup");
 
 const state = {
   rawMaterials: [],
@@ -112,10 +116,34 @@ const formatDate = (value) => {
 
 const resetForm = (form) => {
   form.reset();
+  form.dataset.editId = "";
+  const submitBtn = form.querySelector('button[type="submit"]');
+  if (submitBtn && submitBtn.dataset.defaultText) {
+    submitBtn.textContent = submitBtn.dataset.defaultText;
+  }
   const dateInputs = form.querySelectorAll('input[type="date"]');
   dateInputs.forEach((input) => {
     input.valueAsDate = new Date();
   });
+};
+
+const setSubmitLabel = (form, label) => {
+  const submitBtn = form.querySelector('button[type="submit"]');
+  if (!submitBtn) return;
+  if (!submitBtn.dataset.defaultText) {
+    submitBtn.dataset.defaultText = submitBtn.textContent;
+  }
+  submitBtn.textContent = label || submitBtn.dataset.defaultText;
+};
+
+const saveDoc = async (collectionName, form, payload) => {
+  const editId = form.dataset.editId;
+  if (editId) {
+    const { createdAt, ...rest } = payload;
+    await updateDoc(doc(db, collectionName, editId), { ...rest, updatedAt: serverTimestamp() });
+  } else {
+    await addDoc(collection(db, collectionName), payload);
+  }
 };
 
 const renderList = (container, items, renderer) => {
@@ -224,6 +252,13 @@ const updateBatchCostPreview = () => {
   batchForm.totalCost.value = totalCost ? totalCost.toFixed(2) : "";
 };
 
+const setUnitButtons = (unit) => {
+  if (!rawUnitGroup) return;
+  rawUnitGroup.querySelectorAll("button[data-unit]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.unit === unit);
+  });
+};
+
 const syncState = (key, items) => {
   state[key] = items;
   if (key === "rawMaterials") {
@@ -269,6 +304,10 @@ const renderAll = () => {
     <div class="list-item">
       <strong>${item.name}</strong>
       Unidad: ${item.unit} | Precio: Gs ${formatNumber(item.price)}${item.supplier ? ` | Proveedor: ${item.supplier}` : ""}
+      <div class="list-actions">
+        <button class="btn ghost" type="button" data-edit-raw-material="${item.id}">Editar</button>
+        <button class="btn ghost danger" type="button" data-delete-raw-material="${item.id}">Eliminar</button>
+      </div>
     </div>
   `);
 
@@ -277,6 +316,10 @@ const renderAll = () => {
       <strong>${item.materialName}</strong>
       Fecha: ${formatDate(item.date)} | Cantidad: ${formatNumber(item.quantity)} ${item.unit}
       <div>Precio unitario: Gs ${formatNumber(item.unitPrice)} | Total: Gs ${formatNumber(item.total)}</div>
+      <div class="list-actions">
+        <button class="btn ghost" type="button" data-edit-purchase="${item.id}">Editar</button>
+        <button class="btn ghost danger" type="button" data-delete-purchase="${item.id}">Eliminar</button>
+      </div>
     </div>
   `);
 
@@ -284,6 +327,10 @@ const renderAll = () => {
     <div class="list-item">
       <strong>${item.materialName}</strong>
       Fecha: ${formatDate(item.date)} | Usado: ${formatNumber(item.quantity)} ${item.unit}
+      <div class="list-actions">
+        <button class="btn ghost" type="button" data-edit-usage="${item.id}">Editar</button>
+        <button class="btn ghost danger" type="button" data-delete-usage="${item.id}">Eliminar</button>
+      </div>
     </div>
   `);
 
@@ -292,6 +339,10 @@ const renderAll = () => {
       <strong>${item.product}</strong>
       Fecha: ${formatDate(item.date)} | Cantidad: ${formatNumber(item.quantity)}
       ${item.notes ? `<div>Notas: ${item.notes}</div>` : ""}
+      <div class="list-actions">
+        <button class="btn ghost" type="button" data-edit-production="${item.id}">Editar</button>
+        <button class="btn ghost danger" type="button" data-delete-production="${item.id}">Eliminar</button>
+      </div>
     </div>
   `);
 
@@ -300,6 +351,10 @@ const renderAll = () => {
       <strong>${item.name}</strong>
       Rinde: ${formatNumber(item.yieldQuantity)} ${item.yieldUnit}
       <div>Costo total: Gs ${formatNumber(item.totalCost)} | Costo por unidad: Gs ${formatNumber(item.costPerUnit)}</div>
+      <div class="list-actions">
+        <button class="btn ghost" type="button" data-edit-recipe="${item.id}">Editar</button>
+        <button class="btn ghost danger" type="button" data-delete-recipe="${item.id}">Eliminar</button>
+      </div>
     </div>
   `);
 
@@ -311,6 +366,10 @@ const renderAll = () => {
       <div>Materias primas: ${(item.materialsUsed || [])
         .map((m) => `${m.materialName} ${formatNumber(m.quantity)} ${m.unit}`)
         .join(", ") || "Sin detalle"}</div>
+      <div class="list-actions">
+        <button class="btn ghost" type="button" data-edit-batch="${item.id}">Editar</button>
+        <button class="btn ghost danger" type="button" data-delete-batch="${item.id}">Eliminar</button>
+      </div>
     </div>
   `);
 
@@ -318,6 +377,10 @@ const renderAll = () => {
     <div class="list-item">
       <strong>${item.name}</strong>
       Unidad: ${item.unit} | Precio: Gs ${formatNumber(item.price)}
+      <div class="list-actions">
+        <button class="btn ghost" type="button" data-edit-product="${item.id}">Editar</button>
+        <button class="btn ghost danger" type="button" data-delete-product="${item.id}">Eliminar</button>
+      </div>
     </div>
   `);
 
@@ -326,6 +389,10 @@ const renderAll = () => {
       <strong>${item.name}</strong>
       ${item.phone ? `Tel: ${item.phone}` : ""}
       ${item.address ? ` | Dir: ${item.address}` : ""}
+      <div class="list-actions">
+        <button class="btn ghost" type="button" data-edit-client="${item.id}">Editar</button>
+        <button class="btn ghost danger" type="button" data-delete-client="${item.id}">Eliminar</button>
+      </div>
     </div>
   `);
 
@@ -335,6 +402,10 @@ const renderAll = () => {
       Fecha: ${formatDate(item.date)} | Cantidad: ${formatNumber(item.quantity)}
       <div>Cliente: ${item.clientName || "Sin cliente"} | Total: Gs ${formatNumber(item.total)}</div>
       <div>Pago: ${item.payment} | ${item.paid === "si" ? "Pagado" : `Credito hasta ${formatDate(item.dueDate)}`}</div>
+      <div class="list-actions">
+        <button class="btn ghost" type="button" data-edit-sale="${item.id}">Editar</button>
+        <button class="btn ghost danger" type="button" data-delete-sale="${item.id}">Eliminar</button>
+      </div>
     </div>
   `);
 };
@@ -399,6 +470,17 @@ logoutBtn.addEventListener("click", async () => {
   await signOut(auth);
 });
 
+rawUnitGroup?.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!target.dataset.unit) return;
+  rawMaterialForm.unit.value = target.dataset.unit;
+  setUnitButtons(target.dataset.unit);
+});
+
+rawMaterialForm.unit.addEventListener("input", () => {
+  setUnitButtons(rawMaterialForm.unit.value.trim());
+});
+
 rawMaterialForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const user = auth.currentUser;
@@ -411,8 +493,9 @@ rawMaterialForm.addEventListener("submit", async (event) => {
     userId: user.uid,
     createdAt: serverTimestamp()
   };
-  await addDoc(collection(db, "raw_materials"), payload);
+  await saveDoc("raw_materials", rawMaterialForm, payload);
   resetForm(rawMaterialForm);
+  setUnitButtons(rawMaterialForm.unit.value);
 });
 
 purchaseForm.addEventListener("submit", async (event) => {
@@ -435,7 +518,7 @@ purchaseForm.addEventListener("submit", async (event) => {
     userId: user.uid,
     createdAt: serverTimestamp()
   };
-  await addDoc(collection(db, "raw_purchases"), payload);
+  await saveDoc("raw_purchases", purchaseForm, payload);
   resetForm(purchaseForm);
 });
 
@@ -455,7 +538,7 @@ usageForm.addEventListener("submit", async (event) => {
     userId: user.uid,
     createdAt: serverTimestamp()
   };
-  await addDoc(collection(db, "raw_usage"), payload);
+  await saveDoc("raw_usage", usageForm, payload);
   resetForm(usageForm);
 });
 
@@ -471,7 +554,7 @@ productionForm.addEventListener("submit", async (event) => {
     userId: user.uid,
     createdAt: serverTimestamp()
   };
-  await addDoc(collection(db, "production"), payload);
+  await saveDoc("production", productionForm, payload);
   resetForm(productionForm);
 });
 
@@ -520,7 +603,7 @@ recipeForm.addEventListener("submit", async (event) => {
     userId: user.uid,
     createdAt: serverTimestamp()
   };
-  await addDoc(collection(db, "recipes"), payload);
+  await saveDoc("recipes", recipeForm, payload);
   recipeDraft.ingredients = [];
   resetForm(recipeForm);
   updateRecipeIngredientFields();
@@ -558,7 +641,7 @@ batchForm.addEventListener("submit", async (event) => {
     userId: user.uid,
     createdAt: serverTimestamp()
   };
-  await addDoc(collection(db, "batches"), payload);
+  await saveDoc("batches", batchForm, payload);
   resetForm(batchForm);
   updateBatchCostPreview();
 });
@@ -574,7 +657,7 @@ productForm.addEventListener("submit", async (event) => {
     userId: user.uid,
     createdAt: serverTimestamp()
   };
-  await addDoc(collection(db, "products"), payload);
+  await saveDoc("products", productForm, payload);
   resetForm(productForm);
 });
 
@@ -589,7 +672,7 @@ clientForm.addEventListener("submit", async (event) => {
     userId: user.uid,
     createdAt: serverTimestamp()
   };
-  await addDoc(collection(db, "clients"), payload);
+  await saveDoc("clients", clientForm, payload);
   resetForm(clientForm);
 });
 
@@ -619,9 +702,219 @@ saleForm.addEventListener("submit", async (event) => {
     userId: user.uid,
     createdAt: serverTimestamp()
   };
-  await addDoc(collection(db, "sales"), payload);
+  await saveDoc("sales", saleForm, payload);
   resetForm(saleForm);
   updateDueDateVisibility();
+});
+
+const startEditRawMaterial = (item) => {
+  rawMaterialForm.name.value = item.name || "";
+  rawMaterialForm.unit.value = item.unit || "";
+  rawMaterialForm.price.value = item.price ?? "";
+  rawMaterialForm.supplier.value = item.supplier || "";
+  rawMaterialForm.dataset.editId = item.id;
+  setSubmitLabel(rawMaterialForm, "Actualizar materia prima");
+  setUnitButtons(rawMaterialForm.unit.value);
+};
+
+const startEditPurchase = (item) => {
+  purchaseForm.material.value = item.materialId || "";
+  purchaseForm.date.value = item.date || "";
+  purchaseForm.quantity.value = item.quantity ?? "";
+  purchaseForm.unitPrice.value = item.unitPrice ?? "";
+  purchaseForm.total.value = item.total ?? "";
+  purchaseForm.dataset.editId = item.id;
+  setSubmitLabel(purchaseForm, "Actualizar compra");
+};
+
+const startEditUsage = (item) => {
+  usageForm.material.value = item.materialId || "";
+  usageForm.date.value = item.date || "";
+  usageForm.quantity.value = item.quantity ?? "";
+  usageForm.dataset.editId = item.id;
+  setSubmitLabel(usageForm, "Actualizar uso");
+};
+
+const startEditProduction = (item) => {
+  productionForm.date.value = item.date || "";
+  productionForm.product.value = item.product || "";
+  productionForm.quantity.value = item.quantity ?? "";
+  productionForm.notes.value = item.notes || "";
+  productionForm.dataset.editId = item.id;
+  setSubmitLabel(productionForm, "Actualizar produccion");
+};
+
+const startEditRecipe = (item) => {
+  recipeForm.name.value = item.name || "";
+  recipeForm.yieldQuantity.value = item.yieldQuantity ?? "";
+  recipeForm.yieldUnit.value = item.yieldUnit || "";
+  recipeForm.dataset.editId = item.id;
+  recipeDraft.ingredients = (item.ingredients || []).map((ing) => {
+    const material = state.rawMaterials.find((m) => m.id === ing.materialId);
+    const unitCost = material ? Number(material.price || 0) : Number(ing.unitCost || 0);
+    const quantity = Number(ing.quantity || 0);
+    return {
+      materialId: ing.materialId,
+      materialName: ing.materialName,
+      quantity,
+      unit: ing.unit || material?.unit || "",
+      unitCost,
+      totalCost: quantity * unitCost
+    };
+  });
+  setSubmitLabel(recipeForm, "Actualizar receta");
+  renderRecipeDraft();
+  updateRecipeIngredientFields();
+};
+
+const startEditBatch = (item) => {
+  batchForm.recipe.value = item.recipeId || "";
+  batchForm.date.value = item.date || "";
+  batchForm.quantity.value = item.quantityProduced ?? "";
+  batchForm.unit.value = item.unitProduced || "";
+  batchForm.dataset.editId = item.id;
+  setSubmitLabel(batchForm, "Actualizar lote");
+  updateBatchCostPreview();
+};
+
+const startEditProduct = (item) => {
+  productForm.name.value = item.name || "";
+  productForm.unit.value = item.unit || "";
+  productForm.price.value = item.price ?? "";
+  productForm.dataset.editId = item.id;
+  setSubmitLabel(productForm, "Actualizar producto");
+};
+
+const startEditClient = (item) => {
+  clientForm.name.value = item.name || "";
+  clientForm.phone.value = item.phone || "";
+  clientForm.address.value = item.address || "";
+  clientForm.dataset.editId = item.id;
+  setSubmitLabel(clientForm, "Actualizar cliente");
+};
+
+const startEditSale = (item) => {
+  saleForm.date.value = item.date || "";
+  saleForm.client.value = item.clientId || "";
+  saleForm.product.value = item.productId || "";
+  saleForm.quantity.value = item.quantity ?? "";
+  saleForm.unitPrice.value = item.unitPrice ?? "";
+  saleForm.payment.value = item.payment || "Efectivo";
+  saleForm.paid.value = item.paid || "si";
+  saleForm.dueDate.value = item.dueDate || "";
+  saleForm.dataset.editId = item.id;
+  setSubmitLabel(saleForm, "Actualizar venta");
+  updateDueDateVisibility();
+};
+
+const confirmDelete = (label) => window.confirm(`Eliminar ${label}?`);
+
+rawMaterialList.addEventListener("click", async (event) => {
+  const editId = event.target.dataset.editRawMaterial;
+  const deleteId = event.target.dataset.deleteRawMaterial;
+  if (editId) {
+    const item = state.rawMaterials.find((m) => m.id === editId);
+    if (item) startEditRawMaterial(item);
+  }
+  if (deleteId && confirmDelete("materia prima")) {
+    await deleteDoc(doc(db, "raw_materials", deleteId));
+  }
+});
+
+purchaseList.addEventListener("click", async (event) => {
+  const editId = event.target.dataset.editPurchase;
+  const deleteId = event.target.dataset.deletePurchase;
+  if (editId) {
+    const item = state.purchases.find((m) => m.id === editId);
+    if (item) startEditPurchase(item);
+  }
+  if (deleteId && confirmDelete("compra")) {
+    await deleteDoc(doc(db, "raw_purchases", deleteId));
+  }
+});
+
+usageList.addEventListener("click", async (event) => {
+  const editId = event.target.dataset.editUsage;
+  const deleteId = event.target.dataset.deleteUsage;
+  if (editId) {
+    const item = state.usage.find((m) => m.id === editId);
+    if (item) startEditUsage(item);
+  }
+  if (deleteId && confirmDelete("uso de materia prima")) {
+    await deleteDoc(doc(db, "raw_usage", deleteId));
+  }
+});
+
+productionList.addEventListener("click", async (event) => {
+  const editId = event.target.dataset.editProduction;
+  const deleteId = event.target.dataset.deleteProduction;
+  if (editId) {
+    const item = state.production.find((m) => m.id === editId);
+    if (item) startEditProduction(item);
+  }
+  if (deleteId && confirmDelete("produccion")) {
+    await deleteDoc(doc(db, "production", deleteId));
+  }
+});
+
+recipeList.addEventListener("click", async (event) => {
+  const editId = event.target.dataset.editRecipe;
+  const deleteId = event.target.dataset.deleteRecipe;
+  if (editId) {
+    const item = state.recipes.find((m) => m.id === editId);
+    if (item) startEditRecipe(item);
+  }
+  if (deleteId && confirmDelete("receta")) {
+    await deleteDoc(doc(db, "recipes", deleteId));
+  }
+});
+
+batchList.addEventListener("click", async (event) => {
+  const editId = event.target.dataset.editBatch;
+  const deleteId = event.target.dataset.deleteBatch;
+  if (editId) {
+    const item = state.batches.find((m) => m.id === editId);
+    if (item) startEditBatch(item);
+  }
+  if (deleteId && confirmDelete("lote")) {
+    await deleteDoc(doc(db, "batches", deleteId));
+  }
+});
+
+productList.addEventListener("click", async (event) => {
+  const editId = event.target.dataset.editProduct;
+  const deleteId = event.target.dataset.deleteProduct;
+  if (editId) {
+    const item = state.products.find((m) => m.id === editId);
+    if (item) startEditProduct(item);
+  }
+  if (deleteId && confirmDelete("producto")) {
+    await deleteDoc(doc(db, "products", deleteId));
+  }
+});
+
+clientList.addEventListener("click", async (event) => {
+  const editId = event.target.dataset.editClient;
+  const deleteId = event.target.dataset.deleteClient;
+  if (editId) {
+    const item = state.clients.find((m) => m.id === editId);
+    if (item) startEditClient(item);
+  }
+  if (deleteId && confirmDelete("cliente")) {
+    await deleteDoc(doc(db, "clients", deleteId));
+  }
+});
+
+saleList.addEventListener("click", async (event) => {
+  const editId = event.target.dataset.editSale;
+  const deleteId = event.target.dataset.deleteSale;
+  if (editId) {
+    const item = state.sales.find((m) => m.id === editId);
+    if (item) startEditSale(item);
+  }
+  if (deleteId && confirmDelete("venta")) {
+    await deleteDoc(doc(db, "sales", deleteId));
+  }
 });
 
 purchaseForm.quantity.addEventListener("input", () => {
@@ -670,6 +963,7 @@ updateDueDateVisibility();
 renderRecipeDraft();
 updateRecipeIngredientFields();
 updateBatchCostPreview();
+setUnitButtons(rawMaterialForm.unit.value);
 
 onAuthStateChanged(auth, (user) => {
   unsubscribers.forEach((unsubscribe) => unsubscribe());
