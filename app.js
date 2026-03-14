@@ -216,7 +216,9 @@ const renderRecipeDraft = () => {
       .map((item, index) => `
         <div class="list-item">
           <strong>${item.materialName}</strong>
-          Cantidad: ${formatNumber(item.quantity)} ${item.unit} | Costo: Gs ${formatGs(item.totalCost)}
+          Cantidad: ${formatNumber(item.quantity)} ${item.unit}
+          ${item.unitBase && item.unitBase !== item.unit ? ` | Equivalente: ${formatNumber(item.quantityBase)} ${item.unitBase}` : ""}
+          | Costo: Gs ${formatGs(item.totalCost)}
           <div><button class="btn ghost" type="button" data-remove-ingredient="${index}">Quitar</button></div>
         </div>
       `)
@@ -607,12 +609,16 @@ addIngredientBtn.addEventListener("click", () => {
   if (!material || !quantity) return;
   const unit = recipeForm.unit.value.trim() || material.unit;
   const unitCost = Number(material.price || 0);
-  const totalCost = quantity * unitCost;
+  const normalized = normalizeQuantity(quantity, unit, material.unit);
+  const quantityBase = normalized ?? quantity;
+  const totalCost = quantityBase * unitCost;
   recipeDraft.ingredients.push({
     materialId,
     materialName: material.name,
     quantity,
     unit,
+    quantityBase,
+    unitBase: material.unit,
     unitCost,
     totalCost
   });
@@ -639,7 +645,11 @@ recipeForm.addEventListener("submit", async (event) => {
     name: recipeForm.name.value.trim(),
     yieldQuantity: Number(recipeForm.yieldQuantity.value),
     yieldUnit: recipeForm.yieldUnit.value.trim(),
-    ingredients: recipeDraft.ingredients,
+    ingredients: recipeDraft.ingredients.map((ing) => ({
+      ...ing,
+      quantityBase: ing.quantityBase ?? ing.quantity,
+      unitBase: ing.unitBase ?? ing.unit
+    })),
     totalCost: totals.totalCost,
     costPerUnit: totals.costPerUnit,
     userId: user.uid,
@@ -796,13 +806,20 @@ const startEditRecipe = (item) => {
     const material = state.rawMaterials.find((m) => m.id === ing.materialId);
     const unitCost = material ? Number(material.price || 0) : Number(ing.unitCost || 0);
     const quantity = Number(ing.quantity || 0);
+    const unit = ing.unit || material?.unit || "";
+    const unitBase = material?.unit || ing.unitBase || unit;
+    const quantityBaseStored = Number(ing.quantityBase || 0);
+    const normalized = normalizeQuantity(quantity, unit, unitBase);
+    const quantityBase = quantityBaseStored || normalized || quantity;
     return {
       materialId: ing.materialId,
       materialName: ing.materialName,
       quantity,
-      unit: ing.unit || material?.unit || "",
+      unit,
+      quantityBase,
+      unitBase,
       unitCost,
-      totalCost: quantity * unitCost
+      totalCost: quantityBase * unitCost
     };
   });
   setSubmitLabel(recipeForm, "Actualizar receta");
