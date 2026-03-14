@@ -1135,18 +1135,14 @@ unitGroups.forEach((group) => {
   }
 });
 
-const setupCollapsibles = () => {
-  document.querySelectorAll(".section-title[data-collapse]").forEach((header) => {
-    const body = document.getElementById(header.dataset.collapse);
-    if (!body) return;
-    header.addEventListener("click", () => {
-      const isCollapsed = body.classList.toggle("collapsed");
-      header.classList.toggle("open", !isCollapsed);
-    });
-  });
-};
-
-setupCollapsibles();
+document.addEventListener("click", (event) => {
+  const header = event.target.closest(".section-title[data-collapse]");
+  if (!header) return;
+  const body = document.getElementById(header.dataset.collapse);
+  if (!body) return;
+  const isCollapsed = body.classList.toggle("collapsed");
+  header.classList.toggle("open", !isCollapsed);
+});
 
 onAuthStateChanged(auth, (user) => {
   unsubscribers.forEach((unsubscribe) => unsubscribe());
