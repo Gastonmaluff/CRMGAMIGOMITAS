@@ -248,13 +248,16 @@ const renderRecipeDraft = () => {
       .join("");
   }
   const totals = calculateRecipeTotals();
+  const recipeName = recipeForm.name.value.trim() || "Formula";
+  const yieldLabel = totals.yieldQuantity && totals.yieldUnit
+    ? `${formatNumber(totals.yieldQuantity)} ${totals.yieldUnit}`
+    : "Definir rendimiento";
   recipeCostPreview.innerHTML = `
     <div class="list-item">
-      <strong>Resumen de costo</strong>
-      Total receta: Gs ${formatGs(totals.totalCost)}
-      <div>Costo por kg: ${totals.costPerKg !== null ? `Gs ${formatGs(totals.costPerKg)}` : "Definir rendimiento en kg o g"}</div>
-      <div>Empaque por display: Gs ${formatGs(totals.packagingCost)}</div>
-      <div>Costo por display (360 g): ${totals.totalDisplayCost !== null ? `Gs ${formatGs(totals.totalDisplayCost)}` : "Definir rendimiento en kg o g"}</div>
+      <strong>${recipeName} rinde ${yieldLabel}</strong>
+      <div>Costo formula total: Gs ${formatGs(totals.totalCost)}</div>
+      <div>Costo de formula por kg: ${totals.costPerKg !== null ? `Gs ${formatGs(totals.costPerKg)}` : "Definir rendimiento en kg o g"}</div>
+      <div>Costo por display de 360 g: ${totals.totalDisplayCost !== null ? `Gs ${formatGs(totals.totalDisplayCost)}` : "Definir rendimiento en kg o g"}</div>
     </div>
   `;
 };
