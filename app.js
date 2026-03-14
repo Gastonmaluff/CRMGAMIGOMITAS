@@ -259,6 +259,36 @@ const setUnitButtons = (unit) => {
   });
 };
 
+const normalizeQuantity = (quantity, fromUnit, toUnit) => {
+  if (!fromUnit || !toUnit) return quantity;
+  if (fromUnit === toUnit) return quantity;
+  const map = {
+    kg: { g: 1000 },
+    g: { kg: 1 / 1000 },
+    L: { ml: 1000 },
+    ml: { L: 1 / 1000 }
+  };
+  const factor = map[fromUnit]?.[toUnit];
+  if (!factor) return null;
+  return quantity * factor;
+};
+
+const updatePurchaseTotal = () => {
+  const quantity = Number(purchaseForm.quantity.value);
+  const unitPrice = Number(purchaseForm.unitPrice.value);
+  if (Number.isNaN(quantity) || Number.isNaN(unitPrice)) {
+    purchaseForm.total.value = "";
+    return;
+  }
+  const material = state.rawMaterials.find((item) => item.id === purchaseForm.material.value);
+  const rawUnit = purchaseForm.purchaseUnit.value;
+  const baseUnit = material?.unit || rawUnit;
+  const normalized = material ? normalizeQuantity(quantity, rawUnit, baseUnit) : quantity;
+  const baseQuantity = normalized ?? quantity;
+  const total = baseQuantity * unitPrice;
+  purchaseForm.total.value = Number.isNaN(total) ? "" : total.toFixed(2);
+};
+
 const syncState = (key, items) => {
   state[key] = items;
   if (key === "rawMaterials") {
@@ -314,7 +344,8 @@ const renderAll = () => {
   renderList(purchaseList, state.purchases, (item) => `
     <div class="list-item">
       <strong>${item.materialName}</strong>
-      Fecha: ${formatDate(item.date)} | Cantidad: ${formatNumber(item.quantity)} ${item.unit}
+      Fecha: ${formatDate(item.date)} | Cantidad: ${formatNumber(item.quantityPurchased ?? item.quantity)} ${item.unitPurchased ?? item.unit}
+      ${item.unitPurchased && item.unitPurchased !== item.unit ? `<div>Equivalente: ${formatNumber(item.quantity)} ${item.unit}</div>` : ""}
       <div>Precio unitario: Gs ${formatNumber(item.unitPrice)} | Total: Gs ${formatNumber(item.total)}</div>
       <div class="list-actions">
         <button class="btn ghost" type="button" data-edit-purchase="${item.id}">Editar</button>
@@ -505,16 +536,21 @@ purchaseForm.addEventListener("submit", async (event) => {
   const materialId = purchaseForm.material.value;
   const material = state.rawMaterials.find((item) => item.id === materialId);
   if (!material) return;
-  const quantity = Number(purchaseForm.quantity.value);
+  const quantityRaw = Number(purchaseForm.quantity.value);
   const unitPrice = Number(purchaseForm.unitPrice.value);
+  const unitRaw = purchaseForm.purchaseUnit.value;
+  const normalized = normalizeQuantity(quantityRaw, unitRaw, material.unit);
+  const quantityBase = normalized ?? quantityRaw;
   const payload = {
     materialId,
     materialName: material.name,
     unit: material.unit,
+    quantityPurchased: quantityRaw,
+    unitPurchased: unitRaw,
     date: purchaseForm.date.value,
-    quantity,
+    quantity: quantityBase,
     unitPrice,
-    total: quantity * unitPrice,
+    total: quantityBase * unitPrice,
     userId: user.uid,
     createdAt: serverTimestamp()
   };
@@ -720,7 +756,8 @@ const startEditRawMaterial = (item) => {
 const startEditPurchase = (item) => {
   purchaseForm.material.value = item.materialId || "";
   purchaseForm.date.value = item.date || "";
-  purchaseForm.quantity.value = item.quantity ?? "";
+  purchaseForm.quantity.value = item.quantityPurchased ?? item.quantity ?? "";
+  purchaseForm.purchaseUnit.value = item.unitPurchased ?? item.unit ?? "";
   purchaseForm.unitPrice.value = item.unitPrice ?? "";
   purchaseForm.total.value = item.total ?? "";
   purchaseForm.dataset.editId = item.id;
@@ -918,23 +955,23 @@ saleList.addEventListener("click", async (event) => {
 });
 
 purchaseForm.quantity.addEventListener("input", () => {
-  const total = Number(purchaseForm.quantity.value) * Number(purchaseForm.unitPrice.value);
-  purchaseForm.total.value = Number.isNaN(total) ? "" : total.toFixed(2);
+  updatePurchaseTotal();
 });
 
 purchaseForm.unitPrice.addEventListener("input", () => {
-  const total = Number(purchaseForm.quantity.value) * Number(purchaseForm.unitPrice.value);
-  purchaseForm.total.value = Number.isNaN(total) ? "" : total.toFixed(2);
+  updatePurchaseTotal();
 });
 
 purchaseForm.material.addEventListener("change", () => {
   const material = state.rawMaterials.find((item) => item.id === purchaseForm.material.value);
   if (material) {
     purchaseForm.unitPrice.value = material.price;
-    const total = Number(purchaseForm.quantity.value) * Number(purchaseForm.unitPrice.value);
-    purchaseForm.total.value = Number.isNaN(total) ? "" : total.toFixed(2);
+    purchaseForm.purchaseUnit.value = material.unit || purchaseForm.purchaseUnit.value;
+    updatePurchaseTotal();
   }
 });
+
+purchaseForm.purchaseUnit.addEventListener("change", updatePurchaseTotal);
 
 recipeForm.material.addEventListener("change", updateRecipeIngredientFields);
 recipeForm.yieldQuantity.addEventListener("input", renderRecipeDraft);
