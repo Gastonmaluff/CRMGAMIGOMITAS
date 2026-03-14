@@ -116,7 +116,6 @@ body {
   align-items: center;
   justify-content: space-between;
   margin: 0 0 12px;
-  cursor: pointer;
 }
 
 .chevron {
@@ -125,7 +124,17 @@ body {
   transition: transform 0.2s ease;
 }
 
-.section-title.open .chevron {
+.collapse-toggle {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.collapse-toggle.open .chevron {
   transform: rotate(90deg);
 }
 

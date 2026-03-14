@@ -296,6 +296,8 @@ const refreshStockSummary = () => {
       Comprado: ${formatNumber(row.purchased)} ${row.unit} | Usado: ${formatNumber(row.used)} ${row.unit} | Disponible: ${formatNumber(row.available)} ${row.unit}
     </div>
   `);
+
+  requestAnimationFrame(updateAllCollapseHeights);
 };
 
 const calculateRecipeTotals = () => {
@@ -586,6 +588,8 @@ const renderAll = () => {
       </div>
     </div>
   `);
+
+  requestAnimationFrame(updateAllCollapseHeights);
 };
 
 const setupTabs = () => {
@@ -1144,12 +1148,13 @@ const updateCollapseHeight = (body) => {
   }
 };
 
-const toggleCollapse = (header) => {
-  const body = document.getElementById(header.dataset.collapse);
+const toggleCollapse = (toggle) => {
+  const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
   const willCollapse = !body.classList.contains("collapsed");
   body.classList.toggle("collapsed", willCollapse);
-  header.classList.toggle("open", !willCollapse);
+  toggle.classList.toggle("open", !willCollapse);
+  toggle.setAttribute("aria-expanded", (!willCollapse).toString());
   updateCollapseHeight(body);
 };
 
@@ -1158,14 +1163,14 @@ document.querySelectorAll(".collapse-body").forEach((body) => {
   updateCollapseHeight(body);
 });
 
-document.querySelectorAll(".section-title[data-collapse]").forEach((header) => {
-  header.classList.add("open");
+document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
+  toggle.classList.add("open");
 });
 
 document.addEventListener("click", (event) => {
-  const header = event.target.closest(".section-title[data-collapse]");
-  if (!header) return;
-  toggleCollapse(header);
+  const toggle = event.target.closest(".collapse-toggle[data-collapse]");
+  if (!toggle) return;
+  toggleCollapse(toggle);
 });
 
 window.addEventListener("resize", () => {
@@ -1173,6 +1178,14 @@ window.addEventListener("resize", () => {
     updateCollapseHeight(body);
   });
 });
+
+const updateAllCollapseHeights = () => {
+  document.querySelectorAll(".collapse-body").forEach((body) => {
+    if (!body.classList.contains("collapsed")) {
+      updateCollapseHeight(body);
+    }
+  });
+};
 
 onAuthStateChanged(auth, (user) => {
   unsubscribers.forEach((unsubscribe) => unsubscribe());
