@@ -109,6 +109,12 @@ const formatNumber = (value) => {
   return num.toLocaleString("es-PY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
+const formatGs = (value) => {
+  const num = Number(value);
+  if (Number.isNaN(num)) return "0";
+  return num.toLocaleString("es-PY", { maximumFractionDigits: 0 });
+};
+
 const formatDate = (value) => {
   if (!value) return "";
   return new Date(value).toLocaleDateString("es-PY");
@@ -210,7 +216,7 @@ const renderRecipeDraft = () => {
       .map((item, index) => `
         <div class="list-item">
           <strong>${item.materialName}</strong>
-          Cantidad: ${formatNumber(item.quantity)} ${item.unit} | Costo: Gs ${formatNumber(item.totalCost)}
+          Cantidad: ${formatNumber(item.quantity)} ${item.unit} | Costo: Gs ${formatGs(item.totalCost)}
           <div><button class="btn ghost" type="button" data-remove-ingredient="${index}">Quitar</button></div>
         </div>
       `)
@@ -220,7 +226,7 @@ const renderRecipeDraft = () => {
   recipeCostPreview.innerHTML = `
     <div class="list-item">
       <strong>Resumen de costo</strong>
-      Total receta: Gs ${formatNumber(totals.totalCost)} | Costo por unidad: Gs ${formatNumber(totals.costPerUnit)}
+      Total receta: Gs ${formatGs(totals.totalCost)} | Costo por unidad: Gs ${formatGs(totals.costPerUnit)}
     </div>
   `;
 };
@@ -234,7 +240,7 @@ const updateRecipeIngredientFields = () => {
     return;
   }
   recipeForm.unit.value = material.unit || "";
-  recipeForm.unitCost.value = Number(material.price || 0).toFixed(2);
+  recipeForm.unitCost.value = Math.round(Number(material.price || 0)).toString();
 };
 
 const updateBatchCostPreview = () => {
@@ -248,8 +254,8 @@ const updateBatchCostPreview = () => {
   }
   const costPerUnit = Number(recipe.costPerUnit || 0);
   const totalCost = costPerUnit * quantity;
-  batchForm.unitCost.value = costPerUnit ? costPerUnit.toFixed(2) : "";
-  batchForm.totalCost.value = totalCost ? totalCost.toFixed(2) : "";
+  batchForm.unitCost.value = costPerUnit ? Math.round(costPerUnit).toString() : "";
+  batchForm.totalCost.value = totalCost ? Math.round(totalCost).toString() : "";
 };
 
 const setUnitButtons = (unit) => {
@@ -286,7 +292,7 @@ const updatePurchaseTotal = () => {
   const normalized = material ? normalizeQuantity(quantity, rawUnit, baseUnit) : quantity;
   const baseQuantity = normalized ?? quantity;
   const total = baseQuantity * unitPrice;
-  purchaseForm.total.value = Number.isNaN(total) ? "" : total.toFixed(2);
+  purchaseForm.total.value = Number.isNaN(total) ? "" : Math.round(total).toString();
 };
 
 const syncState = (key, items) => {
@@ -333,7 +339,7 @@ const renderAll = () => {
   renderList(rawMaterialList, state.rawMaterials, (item) => `
     <div class="list-item">
       <strong>${item.name}</strong>
-      Unidad: ${item.unit} | Precio: Gs ${formatNumber(item.price)}${item.supplier ? ` | Proveedor: ${item.supplier}` : ""}
+      Unidad: ${item.unit} | Precio: Gs ${formatGs(item.price)}${item.supplier ? ` | Proveedor: ${item.supplier}` : ""}
       <div class="list-actions">
         <button class="btn ghost" type="button" data-edit-raw-material="${item.id}">Editar</button>
         <button class="btn ghost danger" type="button" data-delete-raw-material="${item.id}">Eliminar</button>
@@ -346,7 +352,7 @@ const renderAll = () => {
       <strong>${item.materialName}</strong>
       Fecha: ${formatDate(item.date)} | Cantidad: ${formatNumber(item.quantityPurchased ?? item.quantity)} ${item.unitPurchased ?? item.unit}
       ${item.unitPurchased && item.unitPurchased !== item.unit ? `<div>Equivalente: ${formatNumber(item.quantity)} ${item.unit}</div>` : ""}
-      <div>Precio unitario: Gs ${formatNumber(item.unitPrice)} | Total: Gs ${formatNumber(item.total)}</div>
+      <div>Precio unitario: Gs ${formatGs(item.unitPrice)} | Total: Gs ${formatGs(item.total)}</div>
       <div class="list-actions">
         <button class="btn ghost" type="button" data-edit-purchase="${item.id}">Editar</button>
         <button class="btn ghost danger" type="button" data-delete-purchase="${item.id}">Eliminar</button>
@@ -381,7 +387,7 @@ const renderAll = () => {
     <div class="list-item">
       <strong>${item.name}</strong>
       Rinde: ${formatNumber(item.yieldQuantity)} ${item.yieldUnit}
-      <div>Costo total: Gs ${formatNumber(item.totalCost)} | Costo por unidad: Gs ${formatNumber(item.costPerUnit)}</div>
+      <div>Costo total: Gs ${formatGs(item.totalCost)} | Costo por unidad: Gs ${formatGs(item.costPerUnit)}</div>
       <div class="list-actions">
         <button class="btn ghost" type="button" data-edit-recipe="${item.id}">Editar</button>
         <button class="btn ghost danger" type="button" data-delete-recipe="${item.id}">Eliminar</button>
@@ -393,7 +399,7 @@ const renderAll = () => {
     <div class="list-item">
       <strong>${item.recipeName}</strong>
       Fecha: ${formatDate(item.date)} | Cantidad: ${formatNumber(item.quantityProduced)} ${item.unitProduced}
-      <div>Costo total: Gs ${formatNumber(item.totalCost)} | Costo por unidad: Gs ${formatNumber(item.costPerUnit)}</div>
+      <div>Costo total: Gs ${formatGs(item.totalCost)} | Costo por unidad: Gs ${formatGs(item.costPerUnit)}</div>
       <div>Materias primas: ${(item.materialsUsed || [])
         .map((m) => `${m.materialName} ${formatNumber(m.quantity)} ${m.unit}`)
         .join(", ") || "Sin detalle"}</div>
@@ -407,7 +413,7 @@ const renderAll = () => {
   renderList(productList, state.products, (item) => `
     <div class="list-item">
       <strong>${item.name}</strong>
-      Unidad: ${item.unit} | Precio: Gs ${formatNumber(item.price)}
+      Unidad: ${item.unit} | Precio: Gs ${formatGs(item.price)}
       <div class="list-actions">
         <button class="btn ghost" type="button" data-edit-product="${item.id}">Editar</button>
         <button class="btn ghost danger" type="button" data-delete-product="${item.id}">Eliminar</button>
@@ -431,7 +437,7 @@ const renderAll = () => {
     <div class="list-item">
       <strong>${item.productName}</strong>
       Fecha: ${formatDate(item.date)} | Cantidad: ${formatNumber(item.quantity)}
-      <div>Cliente: ${item.clientName || "Sin cliente"} | Total: Gs ${formatNumber(item.total)}</div>
+      <div>Cliente: ${item.clientName || "Sin cliente"} | Total: Gs ${formatGs(item.total)}</div>
       <div>Pago: ${item.payment} | ${item.paid === "si" ? "Pagado" : `Credito hasta ${formatDate(item.dueDate)}`}</div>
       <div class="list-actions">
         <button class="btn ghost" type="button" data-edit-sale="${item.id}">Editar</button>
