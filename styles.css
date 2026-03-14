@@ -140,12 +140,15 @@ body {
   padding: 8px 12px;
   border-radius: 999px;
   font-size: 0.85rem;
+  border: 2px solid var(--border);
 }
 
 .btn.chip.active {
   background: var(--primary);
-  border-color: var(--primary);
+  border-color: var(--primary-dark);
   color: #fff;
+  box-shadow: 0 6px 14px rgba(212, 93, 44, 0.25);
+  transform: translateY(-1px);
 }
 
 .list-actions {
