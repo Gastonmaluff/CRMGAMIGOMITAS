@@ -148,6 +148,79 @@
             </div>
 
             <div class="card">
+              <h2>Recetas</h2>
+              <form id="recipeForm" class="form-grid">
+                <label>
+                  Nombre de la receta
+                  <input name="name" required />
+                </label>
+                <label>
+                  Rinde cantidad
+                  <input name="yieldQuantity" type="number" step="0.01" required />
+                </label>
+                <label>
+                  Rinde unidad (paquete, kg)
+                  <input name="yieldUnit" required />
+                </label>
+                <div class="ingredient-builder">
+                  <label>
+                    Materia prima
+                    <select name="material"></select>
+                  </label>
+                  <label>
+                    Cantidad usada
+                    <input name="quantity" type="number" step="0.01" />
+                  </label>
+                  <label>
+                    Unidad
+                    <input name="unit" />
+                  </label>
+                  <label>
+                    Costo unitario (precio actual)
+                    <input name="unitCost" type="number" step="0.01" readonly />
+                  </label>
+                  <button class="btn" type="button" id="addIngredientBtn">Agregar materia prima</button>
+                </div>
+                <div class="list" id="recipeIngredientsList"></div>
+                <div class="list" id="recipeCostPreview"></div>
+                <button class="btn primary" type="submit">Guardar receta</button>
+              </form>
+              <div class="list" id="recipeList"></div>
+            </div>
+
+            <div class="card">
+              <h2>Lotes de produccion</h2>
+              <form id="batchForm" class="form-grid">
+                <label>
+                  Receta
+                  <select name="recipe" required></select>
+                </label>
+                <label>
+                  Fecha
+                  <input name="date" type="date" required />
+                </label>
+                <label>
+                  Cantidad producida
+                  <input name="quantity" type="number" step="0.01" required />
+                </label>
+                <label>
+                  Unidad producida
+                  <input name="unit" required />
+                </label>
+                <label>
+                  Costo total estimado
+                  <input name="totalCost" type="number" step="0.01" readonly />
+                </label>
+                <label>
+                  Costo por unidad
+                  <input name="unitCost" type="number" step="0.01" readonly />
+                </label>
+                <button class="btn primary" type="submit">Registrar lote</button>
+              </form>
+              <div class="list" id="batchList"></div>
+            </div>
+
+            <div class="card">
               <h2>Resumen de stock (estimado)</h2>
               <div class="list" id="stockSummary"></div>
             </div>

@@ -47,14 +47,21 @@ const rawMaterialForm = document.getElementById("rawMaterialForm");
 const purchaseForm = document.getElementById("purchaseForm");
 const usageForm = document.getElementById("usageForm");
 const productionForm = document.getElementById("productionForm");
+const recipeForm = document.getElementById("recipeForm");
+const batchForm = document.getElementById("batchForm");
 const productForm = document.getElementById("productForm");
 const clientForm = document.getElementById("clientForm");
 const saleForm = document.getElementById("saleForm");
+const addIngredientBtn = document.getElementById("addIngredientBtn");
 
 const rawMaterialList = document.getElementById("rawMaterialList");
 const purchaseList = document.getElementById("purchaseList");
 const usageList = document.getElementById("usageList");
 const productionList = document.getElementById("productionList");
+const recipeIngredientsList = document.getElementById("recipeIngredientsList");
+const recipeCostPreview = document.getElementById("recipeCostPreview");
+const recipeList = document.getElementById("recipeList");
+const batchList = document.getElementById("batchList");
 const stockSummary = document.getElementById("stockSummary");
 const productList = document.getElementById("productList");
 const clientList = document.getElementById("clientList");
@@ -67,12 +74,17 @@ const state = {
   purchases: [],
   usage: [],
   production: [],
+  recipes: [],
+  batches: [],
   products: [],
   clients: [],
   sales: []
 };
 
 let unsubscribers = [];
+const recipeDraft = {
+  ingredients: []
+};
 
 const showAuth = () => {
   authSection.style.display = "grid";
@@ -108,7 +120,7 @@ const resetForm = (form) => {
 
 const renderList = (container, items, renderer) => {
   if (!items.length) {
-    container.innerHTML = '<div class="list-item muted">Sin registros todav?a.</div>';
+    container.innerHTML = '<div class="list-item muted">Sin registros todavia.</div>';
     return;
   }
   container.innerHTML = items.map(renderer).join("");
@@ -155,11 +167,74 @@ const refreshStockSummary = () => {
   `);
 };
 
+const calculateRecipeTotals = () => {
+  const totalCost = recipeDraft.ingredients.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
+  const yieldQuantity = Number(recipeForm.yieldQuantity.value) || 0;
+  const costPerUnit = yieldQuantity > 0 ? totalCost / yieldQuantity : 0;
+  return { totalCost, costPerUnit, yieldQuantity };
+};
+
+const renderRecipeDraft = () => {
+  if (!recipeDraft.ingredients.length) {
+    recipeIngredientsList.innerHTML = '<div class="list-item muted">Agrega materias primas para la receta.</div>';
+  } else {
+    recipeIngredientsList.innerHTML = recipeDraft.ingredients
+      .map((item, index) => `
+        <div class="list-item">
+          <strong>${item.materialName}</strong>
+          Cantidad: ${formatNumber(item.quantity)} ${item.unit} | Costo: Gs ${formatNumber(item.totalCost)}
+          <div><button class="btn ghost" type="button" data-remove-ingredient="${index}">Quitar</button></div>
+        </div>
+      `)
+      .join("");
+  }
+  const totals = calculateRecipeTotals();
+  recipeCostPreview.innerHTML = `
+    <div class="list-item">
+      <strong>Resumen de costo</strong>
+      Total receta: Gs ${formatNumber(totals.totalCost)} | Costo por unidad: Gs ${formatNumber(totals.costPerUnit)}
+    </div>
+  `;
+};
+
+const updateRecipeIngredientFields = () => {
+  const materialId = recipeForm.material.value;
+  const material = state.rawMaterials.find((item) => item.id === materialId);
+  if (!material) {
+    recipeForm.unit.value = "";
+    recipeForm.unitCost.value = "";
+    return;
+  }
+  recipeForm.unit.value = material.unit || "";
+  recipeForm.unitCost.value = Number(material.price || 0).toFixed(2);
+};
+
+const updateBatchCostPreview = () => {
+  const recipeId = batchForm.recipe.value;
+  const recipe = state.recipes.find((item) => item.id === recipeId);
+  const quantity = Number(batchForm.quantity.value);
+  if (!recipe || Number.isNaN(quantity)) {
+    batchForm.totalCost.value = "";
+    batchForm.unitCost.value = "";
+    return;
+  }
+  const costPerUnit = Number(recipe.costPerUnit || 0);
+  const totalCost = costPerUnit * quantity;
+  batchForm.unitCost.value = costPerUnit ? costPerUnit.toFixed(2) : "";
+  batchForm.totalCost.value = totalCost ? totalCost.toFixed(2) : "";
+};
+
 const syncState = (key, items) => {
   state[key] = items;
   if (key === "rawMaterials") {
     updateSelect(purchaseForm.material, items, "Seleccionar");
     updateSelect(usageForm.material, items, "Seleccionar");
+    updateSelect(recipeForm.material, items, "Seleccionar");
+    updateRecipeIngredientFields();
+  }
+  if (key === "recipes") {
+    updateSelect(batchForm.recipe, items, "Seleccionar");
+    updateBatchCostPreview();
   }
   if (key === "products") {
     updateSelect(saleForm.product, items, "Seleccionar");
@@ -217,6 +292,25 @@ const renderAll = () => {
       <strong>${item.product}</strong>
       Fecha: ${formatDate(item.date)} | Cantidad: ${formatNumber(item.quantity)}
       ${item.notes ? `<div>Notas: ${item.notes}</div>` : ""}
+    </div>
+  `);
+
+  renderList(recipeList, state.recipes, (item) => `
+    <div class="list-item">
+      <strong>${item.name}</strong>
+      Rinde: ${formatNumber(item.yieldQuantity)} ${item.yieldUnit}
+      <div>Costo total: Gs ${formatNumber(item.totalCost)} | Costo por unidad: Gs ${formatNumber(item.costPerUnit)}</div>
+    </div>
+  `);
+
+  renderList(batchList, state.batches, (item) => `
+    <div class="list-item">
+      <strong>${item.recipeName}</strong>
+      Fecha: ${formatDate(item.date)} | Cantidad: ${formatNumber(item.quantityProduced)} ${item.unitProduced}
+      <div>Costo total: Gs ${formatNumber(item.totalCost)} | Costo por unidad: Gs ${formatNumber(item.costPerUnit)}</div>
+      <div>Materias primas: ${(item.materialsUsed || [])
+        .map((m) => `${m.materialName} ${formatNumber(m.quantity)} ${m.unit}`)
+        .join(", ") || "Sin detalle"}</div>
     </div>
   `);
 
@@ -381,6 +475,94 @@ productionForm.addEventListener("submit", async (event) => {
   resetForm(productionForm);
 });
 
+addIngredientBtn.addEventListener("click", () => {
+  const materialId = recipeForm.material.value;
+  const material = state.rawMaterials.find((item) => item.id === materialId);
+  const quantity = Number(recipeForm.quantity.value);
+  if (!material || !quantity) return;
+  const unit = recipeForm.unit.value.trim() || material.unit;
+  const unitCost = Number(material.price || 0);
+  const totalCost = quantity * unitCost;
+  recipeDraft.ingredients.push({
+    materialId,
+    materialName: material.name,
+    quantity,
+    unit,
+    unitCost,
+    totalCost
+  });
+  recipeForm.quantity.value = "";
+  renderRecipeDraft();
+});
+
+recipeIngredientsList.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!target.dataset.removeIngredient) return;
+  const index = Number(target.dataset.removeIngredient);
+  if (Number.isNaN(index)) return;
+  recipeDraft.ingredients.splice(index, 1);
+  renderRecipeDraft();
+});
+
+recipeForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const user = auth.currentUser;
+  if (!user) return;
+  if (!recipeDraft.ingredients.length) return;
+  const totals = calculateRecipeTotals();
+  const payload = {
+    name: recipeForm.name.value.trim(),
+    yieldQuantity: Number(recipeForm.yieldQuantity.value),
+    yieldUnit: recipeForm.yieldUnit.value.trim(),
+    ingredients: recipeDraft.ingredients,
+    totalCost: totals.totalCost,
+    costPerUnit: totals.costPerUnit,
+    userId: user.uid,
+    createdAt: serverTimestamp()
+  };
+  await addDoc(collection(db, "recipes"), payload);
+  recipeDraft.ingredients = [];
+  resetForm(recipeForm);
+  updateRecipeIngredientFields();
+  renderRecipeDraft();
+});
+
+batchForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const user = auth.currentUser;
+  if (!user) return;
+  const recipeId = batchForm.recipe.value;
+  const recipe = state.recipes.find((item) => item.id === recipeId);
+  if (!recipe) return;
+  const quantityProduced = Number(batchForm.quantity.value);
+  const costPerUnit = Number(recipe.costPerUnit || 0);
+  const totalCost = costPerUnit * quantityProduced;
+  const scale = recipe.yieldQuantity > 0 ? quantityProduced / recipe.yieldQuantity : 0;
+  const materialsUsed = (recipe.ingredients || []).map((item) => ({
+    materialId: item.materialId,
+    materialName: item.materialName,
+    unit: item.unit,
+    quantity: Number(item.quantity) * scale,
+    unitCost: Number(item.unitCost || 0),
+    totalCost: Number(item.totalCost || 0) * scale
+  }));
+  const payload = {
+    recipeId,
+    recipeName: recipe.name,
+    date: batchForm.date.value,
+    quantityProduced,
+    unitProduced: batchForm.unit.value.trim(),
+    costPerUnit,
+    totalCost,
+    materialsUsed,
+    userId: user.uid,
+    createdAt: serverTimestamp()
+  };
+  await addDoc(collection(db, "batches"), payload);
+  resetForm(batchForm);
+  updateBatchCostPreview();
+});
+
 productForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const user = auth.currentUser;
@@ -452,6 +634,28 @@ purchaseForm.unitPrice.addEventListener("input", () => {
   purchaseForm.total.value = Number.isNaN(total) ? "" : total.toFixed(2);
 });
 
+purchaseForm.material.addEventListener("change", () => {
+  const material = state.rawMaterials.find((item) => item.id === purchaseForm.material.value);
+  if (material) {
+    purchaseForm.unitPrice.value = material.price;
+    const total = Number(purchaseForm.quantity.value) * Number(purchaseForm.unitPrice.value);
+    purchaseForm.total.value = Number.isNaN(total) ? "" : total.toFixed(2);
+  }
+});
+
+recipeForm.material.addEventListener("change", updateRecipeIngredientFields);
+recipeForm.yieldQuantity.addEventListener("input", renderRecipeDraft);
+
+batchForm.recipe.addEventListener("change", () => {
+  const recipe = state.recipes.find((item) => item.id === batchForm.recipe.value);
+  if (recipe) {
+    batchForm.unit.value = recipe.yieldUnit || "";
+  }
+  updateBatchCostPreview();
+});
+
+batchForm.quantity.addEventListener("input", updateBatchCostPreview);
+
 saleForm.product.addEventListener("change", () => {
   const product = state.products.find((item) => item.id === saleForm.product.value);
   if (product) saleForm.unitPrice.value = product.price;
@@ -463,6 +667,9 @@ saleForm.payment.addEventListener("change", updateDueDateVisibility);
 setupTabs();
 setDefaultDates();
 updateDueDateVisibility();
+renderRecipeDraft();
+updateRecipeIngredientFields();
+updateBatchCostPreview();
 
 onAuthStateChanged(auth, (user) => {
   unsubscribers.forEach((unsubscribe) => unsubscribe());
@@ -476,6 +683,8 @@ onAuthStateChanged(auth, (user) => {
   listenCollection("raw_purchases", "purchases", user.uid);
   listenCollection("raw_usage", "usage", user.uid);
   listenCollection("production", "production", user.uid);
+  listenCollection("recipes", "recipes", user.uid);
+  listenCollection("batches", "batches", user.uid);
   listenCollection("products", "products", user.uid);
   listenCollection("clients", "clients", user.uid);
   listenCollection("sales", "sales", user.uid);
