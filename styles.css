@@ -116,11 +116,25 @@ body {
   align-items: center;
   justify-content: space-between;
   margin: 0 0 12px;
+  cursor: pointer;
 }
 
 .chevron {
   font-size: 1.2rem;
   color: var(--muted);
+  transition: transform 0.2s ease;
+}
+
+.section-title.open .chevron {
+  transform: rotate(90deg);
+}
+
+.collapse-body {
+  display: block;
+}
+
+.collapse-body.collapsed {
+  display: none;
 }
 
 .muted {

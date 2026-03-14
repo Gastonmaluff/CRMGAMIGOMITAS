@@ -1135,6 +1135,19 @@ unitGroups.forEach((group) => {
   }
 });
 
+const setupCollapsibles = () => {
+  document.querySelectorAll(".section-title[data-collapse]").forEach((header) => {
+    const body = document.getElementById(header.dataset.collapse);
+    if (!body) return;
+    header.addEventListener("click", () => {
+      const isCollapsed = body.classList.toggle("collapsed");
+      header.classList.toggle("open", !isCollapsed);
+    });
+  });
+};
+
+setupCollapsibles();
+
 onAuthStateChanged(auth, (user) => {
   unsubscribers.forEach((unsubscribe) => unsubscribe());
   unsubscribers = [];
