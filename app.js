@@ -67,7 +67,7 @@ const clientList = document.getElementById("clientList");
 const saleList = document.getElementById("saleList");
 
 const dueDateField = document.getElementById("dueDateField");
-const rawUnitGroup = document.getElementById("rawUnitGroup");
+const unitGroups = Array.from(document.querySelectorAll(".unit-group[data-target]"));
 
 const state = {
   rawMaterials: [],
@@ -233,11 +233,11 @@ const updateRecipeIngredientFields = () => {
   const materialId = recipeForm.material.value;
   const material = state.rawMaterials.find((item) => item.id === materialId);
   if (!material) {
-    recipeForm.unit.value = "";
+    setUnitGroupValue("recipeIngredientUnit", "");
     recipeForm.unitCost.value = "";
     return;
   }
-  recipeForm.unit.value = material.unit || "";
+  setUnitGroupValue("recipeIngredientUnit", material.unit || "");
   recipeForm.unitCost.value = Math.round(Number(material.price || 0)).toString();
 };
 
@@ -256,11 +256,17 @@ const updateBatchCostPreview = () => {
   batchForm.totalCost.value = totalCost ? Math.round(totalCost).toString() : "";
 };
 
-const setUnitButtons = (unit) => {
-  if (!rawUnitGroup) return;
-  rawUnitGroup.querySelectorAll("button[data-unit]").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.unit === unit);
-  });
+const setUnitGroupValue = (targetId, value) => {
+  if (!targetId) return;
+  const input = document.getElementById(targetId);
+  if (input) input.value = value || "";
+  unitGroups
+    .filter((group) => group.dataset.target === targetId)
+    .forEach((group) => {
+      group.querySelectorAll("button[data-unit]").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.unit === value);
+      });
+    });
 };
 
 const normalizeQuantity = (quantity, fromUnit, toUnit) => {
@@ -484,21 +490,22 @@ logoutBtn.addEventListener("click", async () => {
   await signOut(auth);
 });
 
-rawUnitGroup?.addEventListener("click", (event) => {
-  const target = event.target;
-  if (!target.dataset.unit) return;
-  rawMaterialForm.unit.value = target.dataset.unit;
-  setUnitButtons(target.dataset.unit);
-});
-
-rawMaterialForm.unit.addEventListener("input", () => {
-  setUnitButtons(rawMaterialForm.unit.value.trim());
+unitGroups.forEach((group) => {
+  group.addEventListener("click", (event) => {
+    const btn = event.target.closest("button[data-unit]");
+    if (!btn) return;
+    setUnitGroupValue(group.dataset.target, btn.dataset.unit);
+  });
 });
 
 rawMaterialForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const user = auth.currentUser;
   if (!user) return;
+  if (!rawMaterialForm.unit.value) {
+    window.alert("Selecciona una unidad para la materia prima.");
+    return;
+  }
   const referenceQuantity = Number(rawMaterialForm.referenceQuantity.value);
   const referenceCost = Number(rawMaterialForm.referenceCost.value);
   const price = referenceQuantity ? referenceCost / referenceQuantity : 0;
@@ -514,13 +521,17 @@ rawMaterialForm.addEventListener("submit", async (event) => {
   };
   await saveDoc("raw_materials", rawMaterialForm, payload);
   resetForm(rawMaterialForm);
-  setUnitButtons(rawMaterialForm.unit.value);
+  setUnitGroupValue("rawMaterialUnit", rawMaterialForm.unit.value);
 });
 
 purchaseForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const user = auth.currentUser;
   if (!user) return;
+  if (!purchaseForm.purchaseUnit.value) {
+    window.alert("Selecciona la unidad de ingreso.");
+    return;
+  }
   const materialId = purchaseForm.material.value;
   const material = state.rawMaterials.find((item) => item.id === materialId);
   if (!material) return;
@@ -585,6 +596,10 @@ recipeForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const user = auth.currentUser;
   if (!user) return;
+  if (!recipeForm.yieldUnit.value) {
+    window.alert("Selecciona la unidad de rendimiento.");
+    return;
+  }
   if (!recipeDraft.ingredients.length) return;
   const totals = calculateRecipeTotals();
   const payload = {
@@ -612,6 +627,10 @@ batchForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const user = auth.currentUser;
   if (!user) return;
+  if (!batchForm.unit.value) {
+    window.alert("Selecciona la unidad producida.");
+    return;
+  }
   const recipeId = batchForm.recipe.value;
   const recipe = state.recipes.find((item) => item.id === recipeId);
   if (!recipe) return;
@@ -708,7 +727,7 @@ saleForm.addEventListener("submit", async (event) => {
 
 const startEditRawMaterial = (item) => {
   rawMaterialForm.name.value = item.name || "";
-  rawMaterialForm.unit.value = item.unit || "";
+  setUnitGroupValue("rawMaterialUnit", item.unit || "");
   const fallbackQuantity = item.referenceQuantity ?? (item.price ? 1 : "");
   const fallbackCost = item.referenceCost ?? (item.price ? item.price : "");
   rawMaterialForm.referenceQuantity.value = fallbackQuantity;
@@ -716,14 +735,13 @@ const startEditRawMaterial = (item) => {
   rawMaterialForm.supplier.value = item.supplier || "";
   rawMaterialForm.dataset.editId = item.id;
   setSubmitLabel(rawMaterialForm, "Actualizar materia prima");
-  setUnitButtons(rawMaterialForm.unit.value);
 };
 
 const startEditPurchase = (item) => {
   purchaseForm.material.value = item.materialId || "";
   purchaseForm.date.value = item.date || "";
   purchaseForm.quantity.value = item.quantityPurchased ?? item.quantity ?? "";
-  purchaseForm.purchaseUnit.value = item.unitPurchased ?? item.unit ?? "";
+  setUnitGroupValue("purchaseUnit", item.unitPurchased ?? item.unit ?? "");
   purchaseForm.totalCost.value = item.total ?? "";
   purchaseForm.unitPrice.value = item.unitPrice ?? "";
   purchaseForm.dataset.editId = item.id;
@@ -733,7 +751,7 @@ const startEditPurchase = (item) => {
 const startEditRecipe = (item) => {
   recipeForm.name.value = item.name || "";
   recipeForm.yieldQuantity.value = item.yieldQuantity ?? "";
-  recipeForm.yieldUnit.value = item.yieldUnit || "";
+  setUnitGroupValue("recipeYieldUnit", item.yieldUnit || "");
   recipeForm.dataset.editId = item.id;
   recipeDraft.ingredients = (item.ingredients || []).map((ing) => {
     const material = state.rawMaterials.find((m) => m.id === ing.materialId);
@@ -765,7 +783,7 @@ const startEditBatch = (item) => {
   batchForm.date.value = item.date || "";
   batchForm.lotNumber.value = item.lotNumber || "";
   batchForm.quantity.value = item.quantityProduced ?? "";
-  batchForm.unit.value = item.unitProduced || "";
+  setUnitGroupValue("batchUnit", item.unitProduced || "");
   batchForm.dataset.editId = item.id;
   setSubmitLabel(batchForm, "Actualizar lote");
   updateBatchCostPreview();
@@ -898,7 +916,7 @@ purchaseForm.totalCost.addEventListener("input", () => {
 purchaseForm.material.addEventListener("change", () => {
   const material = state.rawMaterials.find((item) => item.id === purchaseForm.material.value);
   if (material) {
-    purchaseForm.purchaseUnit.value = material.unit || purchaseForm.purchaseUnit.value;
+    setUnitGroupValue("purchaseUnit", material.unit || purchaseForm.purchaseUnit.value);
     updatePurchaseTotal();
   }
 });
@@ -911,7 +929,7 @@ recipeForm.yieldQuantity.addEventListener("input", renderRecipeDraft);
 batchForm.recipe.addEventListener("change", () => {
   const recipe = state.recipes.find((item) => item.id === batchForm.recipe.value);
   if (recipe) {
-    batchForm.unit.value = recipe.yieldUnit || "";
+    setUnitGroupValue("batchUnit", recipe.yieldUnit || "");
   }
   updateBatchCostPreview();
 });
@@ -932,7 +950,12 @@ updateDueDateVisibility();
 renderRecipeDraft();
 updateRecipeIngredientFields();
 updateBatchCostPreview();
-setUnitButtons(rawMaterialForm.unit.value);
+unitGroups.forEach((group) => {
+  const input = document.getElementById(group.dataset.target);
+  if (input && input.value) {
+    setUnitGroupValue(group.dataset.target, input.value);
+  }
+});
 
 onAuthStateChanged(auth, (user) => {
   unsubscribers.forEach((unsubscribe) => unsubscribe());

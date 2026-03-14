@@ -72,8 +72,15 @@
                 </label>
                 <label>
                   Unidad producida
-                  <input name="unit" required />
+                  <input id="batchUnit" name="unit" required type="hidden" />
                 </label>
+                <div class="unit-group" data-target="batchUnit">
+                  <button class="btn chip" type="button" data-unit="paquete">paquete</button>
+                  <button class="btn chip" type="button" data-unit="caja">caja</button>
+                  <button class="btn chip" type="button" data-unit="kg">kg</button>
+                  <button class="btn chip" type="button" data-unit="g">g</button>
+                  <button class="btn chip" type="button" data-unit="unidad">unidad</button>
+                </div>
                 <label>
                   Costo total estimado
                   <input name="totalCost" type="number" step="0.01" readonly />
@@ -100,8 +107,15 @@
                 </label>
                 <label>
                   Rinde unidad (paquete, kg)
-                  <input name="yieldUnit" required />
+                  <input id="recipeYieldUnit" name="yieldUnit" required type="hidden" />
                 </label>
+                <div class="unit-group" data-target="recipeYieldUnit">
+                  <button class="btn chip" type="button" data-unit="paquete">paquete</button>
+                  <button class="btn chip" type="button" data-unit="caja">caja</button>
+                  <button class="btn chip" type="button" data-unit="kg">kg</button>
+                  <button class="btn chip" type="button" data-unit="g">g</button>
+                  <button class="btn chip" type="button" data-unit="unidad">unidad</button>
+                </div>
                 <div class="ingredient-builder">
                   <label>
                     Materia prima
@@ -113,8 +127,15 @@
                   </label>
                   <label>
                     Unidad
-                    <input name="unit" />
+                    <input id="recipeIngredientUnit" name="unit" type="hidden" />
                   </label>
+                  <div class="unit-group" data-target="recipeIngredientUnit">
+                    <button class="btn chip" type="button" data-unit="kg">kg</button>
+                    <button class="btn chip" type="button" data-unit="g">g</button>
+                    <button class="btn chip" type="button" data-unit="L">L</button>
+                    <button class="btn chip" type="button" data-unit="ml">ml</button>
+                    <button class="btn chip" type="button" data-unit="unidad">unidad</button>
+                  </div>
                   <label>
                     Costo unitario (precio actual)
                     <input name="unitCost" type="number" step="0.01" readonly />
@@ -137,9 +158,9 @@
                 </label>
                 <label>
                   Unidad (kg, g, L)
-                  <input name="unit" required />
+                  <input id="rawMaterialUnit" name="unit" required type="hidden" />
                 </label>
-                <div class="unit-group" id="rawUnitGroup">
+                <div class="unit-group" data-target="rawMaterialUnit">
                   <button class="btn chip" type="button" data-unit="kg">kg</button>
                   <button class="btn chip" type="button" data-unit="g">g</button>
                   <button class="btn chip" type="button" data-unit="L">L</button>
@@ -180,14 +201,15 @@
                 </label>
                 <label>
                   Unidad de ingreso
-                  <select name="purchaseUnit" required>
-                    <option value="kg">kg</option>
-                    <option value="g">g</option>
-                    <option value="L">L</option>
-                    <option value="ml">ml</option>
-                    <option value="unidad">unidad</option>
-                  </select>
+                  <input id="purchaseUnit" name="purchaseUnit" required type="hidden" />
                 </label>
+                <div class="unit-group" data-target="purchaseUnit">
+                  <button class="btn chip" type="button" data-unit="kg">kg</button>
+                  <button class="btn chip" type="button" data-unit="g">g</button>
+                  <button class="btn chip" type="button" data-unit="L">L</button>
+                  <button class="btn chip" type="button" data-unit="ml">ml</button>
+                  <button class="btn chip" type="button" data-unit="unidad">unidad</button>
+                </div>
                 <label>
                   Costo por esa cantidad
                   <input name="totalCost" type="number" step="0.01" required />
