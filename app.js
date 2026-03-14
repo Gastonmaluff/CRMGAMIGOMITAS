@@ -200,8 +200,35 @@ const refreshStockSummary = () => {
 const calculateRecipeTotals = () => {
   const totalCost = recipeDraft.ingredients.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
   const yieldQuantity = Number(recipeForm.yieldQuantity.value) || 0;
+  const yieldUnit = recipeForm.yieldUnit.value || "";
   const costPerUnit = yieldQuantity > 0 ? totalCost / yieldQuantity : 0;
-  return { totalCost, costPerUnit, yieldQuantity };
+  let costPerKg = null;
+  if (yieldUnit === "kg") {
+    costPerKg = costPerUnit;
+  }
+  if (yieldUnit === "g") {
+    costPerKg = costPerUnit * 1000;
+  }
+  const boxCost = Number(recipeForm.boxCost.value) || 0;
+  const wrapCost = Number(recipeForm.wrapCost.value) || 0;
+  const wrapCount = Number(recipeForm.wrapCount.value) || 0;
+  const packagingCost = boxCost + wrapCost * wrapCount;
+  const displayWeightKg = 0.36;
+  const productCostPerDisplay = costPerKg !== null ? costPerKg * displayWeightKg : null;
+  const totalDisplayCost = costPerKg !== null ? productCostPerDisplay + packagingCost : null;
+  return {
+    totalCost,
+    costPerUnit,
+    yieldQuantity,
+    yieldUnit,
+    costPerKg,
+    packagingCost,
+    productCostPerDisplay,
+    totalDisplayCost,
+    boxCost,
+    wrapCost,
+    wrapCount
+  };
 };
 
 const renderRecipeDraft = () => {
@@ -224,7 +251,10 @@ const renderRecipeDraft = () => {
   recipeCostPreview.innerHTML = `
     <div class="list-item">
       <strong>Resumen de costo</strong>
-      Total receta: Gs ${formatGs(totals.totalCost)} | Costo por unidad: Gs ${formatGs(totals.costPerUnit)}
+      Total receta: Gs ${formatGs(totals.totalCost)}
+      <div>Costo por kg: ${totals.costPerKg !== null ? `Gs ${formatGs(totals.costPerKg)}` : "Definir rendimiento en kg o g"}</div>
+      <div>Empaque por display: Gs ${formatGs(totals.packagingCost)}</div>
+      <div>Costo por display (360 g): ${totals.totalDisplayCost !== null ? `Gs ${formatGs(totals.totalDisplayCost)}` : "Definir rendimiento en kg o g"}</div>
     </div>
   `;
 };
@@ -370,6 +400,7 @@ const renderAll = () => {
       <strong>${item.name}</strong>
       Rinde: ${formatNumber(item.yieldQuantity)} ${item.yieldUnit}
       <div>Costo total: Gs ${formatGs(item.totalCost)} | Costo por unidad: Gs ${formatGs(item.costPerUnit)}</div>
+      <div>Costo por kg: Gs ${formatGs(item.costPerKg ?? 0)} | Costo por display: Gs ${formatGs(item.totalDisplayCost ?? 0)}</div>
       <div class="list-actions">
         <button class="btn ghost" type="button" data-edit-recipe="${item.id}">Editar</button>
         <button class="btn ghost danger" type="button" data-delete-recipe="${item.id}">Eliminar</button>
@@ -495,6 +526,9 @@ unitGroups.forEach((group) => {
     const btn = event.target.closest("button[data-unit]");
     if (!btn) return;
     setUnitGroupValue(group.dataset.target, btn.dataset.unit);
+    if (group.dataset.target === "recipeYieldUnit") {
+      renderRecipeDraft();
+    }
   });
 });
 
@@ -613,6 +647,16 @@ recipeForm.addEventListener("submit", async (event) => {
     })),
     totalCost: totals.totalCost,
     costPerUnit: totals.costPerUnit,
+    costPerKg: totals.costPerKg ?? 0,
+    displayWeightGrams: 360,
+    packaging: {
+      boxCost: totals.boxCost,
+      wrapCost: totals.wrapCost,
+      wrapCount: totals.wrapCount,
+      packagingCost: totals.packagingCost
+    },
+    productCostPerDisplay: totals.productCostPerDisplay ?? 0,
+    totalDisplayCost: totals.totalDisplayCost ?? 0,
     userId: user.uid,
     createdAt: serverTimestamp()
   };
@@ -752,6 +796,9 @@ const startEditRecipe = (item) => {
   recipeForm.name.value = item.name || "";
   recipeForm.yieldQuantity.value = item.yieldQuantity ?? "";
   setUnitGroupValue("recipeYieldUnit", item.yieldUnit || "");
+  recipeForm.boxCost.value = item.packaging?.boxCost ?? "";
+  recipeForm.wrapCost.value = item.packaging?.wrapCost ?? "";
+  recipeForm.wrapCount.value = item.packaging?.wrapCount ?? 12;
   recipeForm.dataset.editId = item.id;
   recipeDraft.ingredients = (item.ingredients || []).map((ing) => {
     const material = state.rawMaterials.find((m) => m.id === ing.materialId);
@@ -925,6 +972,9 @@ purchaseForm.purchaseUnit.addEventListener("change", updatePurchaseTotal);
 
 recipeForm.material.addEventListener("change", updateRecipeIngredientFields);
 recipeForm.yieldQuantity.addEventListener("input", renderRecipeDraft);
+recipeForm.boxCost.addEventListener("input", renderRecipeDraft);
+recipeForm.wrapCost.addEventListener("input", renderRecipeDraft);
+recipeForm.wrapCount.addEventListener("input", renderRecipeDraft);
 
 batchForm.recipe.addEventListener("change", () => {
   const recipe = state.recipes.find((item) => item.id === batchForm.recipe.value);

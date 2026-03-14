@@ -143,6 +143,24 @@
                   <button class="btn" type="button" id="addIngredientBtn">Agregar materia prima</button>
                 </div>
                 <div class="list" id="recipeIngredientsList"></div>
+                <div class="ingredient-builder">
+                  <label>
+                    Display (fijo)
+                    <input name="displayWeight" type="text" value="360 g" readonly />
+                  </label>
+                  <label>
+                    Costo caja de carton
+                    <input name="boxCost" type="number" step="1" />
+                  </label>
+                  <label>
+                    Costo empaque unitario
+                    <input name="wrapCost" type="number" step="1" />
+                  </label>
+                  <label>
+                    Cantidad de empaques por display
+                    <input name="wrapCount" type="number" step="1" value="12" />
+                  </label>
+                </div>
                 <div class="list" id="recipeCostPreview"></div>
                 <button class="btn primary" type="submit">Guardar formula</button>
               </form>
