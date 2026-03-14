@@ -289,6 +289,30 @@ const updateBatchCostPreview = () => {
   batchForm.totalCost.value = totalCost ? Math.round(totalCost).toString() : "";
 };
 
+const buildRecipeSummary = (item) => {
+  const yieldLabel = item.yieldQuantity && item.yieldUnit
+    ? `${formatNumber(item.yieldQuantity)} ${item.yieldUnit}`
+    : "Definir rendimiento";
+  const totalCost = Number(item.totalCost || 0);
+  const yieldQty = Number(item.yieldQuantity || 0);
+  const yieldUnit = item.yieldUnit || "";
+  let costPerKg = Number(item.costPerKg || 0);
+  if (!costPerKg && yieldQty > 0) {
+    if (yieldUnit === "kg") costPerKg = totalCost / yieldQty;
+    if (yieldUnit === "g") costPerKg = (totalCost / yieldQty) * 1000;
+  }
+  const packaging = item.packaging || {};
+  const packagingCost = Number(packaging.packagingCost || 0) ||
+    (Number(packaging.boxCost || 0) + Number(packaging.wrapCost || 0) * Number(packaging.wrapCount || 0));
+  const totalDisplayCost = costPerKg ? costPerKg * 0.36 + packagingCost : 0;
+  return `
+    <div>Rinde: ${yieldLabel}</div>
+    <div>Costo total: Gs ${formatGs(totalCost)}</div>
+    <div>Costo por kg: ${costPerKg ? `Gs ${formatGs(costPerKg)}` : "Definir rendimiento en kg o g"}</div>
+    <div>Costo por display (360 g): ${costPerKg ? `Gs ${formatGs(totalDisplayCost)}` : "Definir rendimiento en kg o g"}</div>
+  `;
+};
+
 const setUnitGroupValue = (targetId, value) => {
   if (!targetId) return;
   const input = document.getElementById(targetId);
@@ -401,9 +425,7 @@ const renderAll = () => {
   renderList(recipeList, state.recipes, (item) => `
     <div class="list-item">
       <strong>${item.name}</strong>
-      Rinde: ${formatNumber(item.yieldQuantity)} ${item.yieldUnit}
-      <div>Costo total: Gs ${formatGs(item.totalCost)} | Costo por unidad: Gs ${formatGs(item.costPerUnit)}</div>
-      <div>Costo por kg: Gs ${formatGs(item.costPerKg ?? 0)} | Costo por display: Gs ${formatGs(item.totalDisplayCost ?? 0)}</div>
+      ${buildRecipeSummary(item)}
       <div class="list-actions">
         <button class="btn ghost" type="button" data-edit-recipe="${item.id}">Editar</button>
         <button class="btn ghost danger" type="button" data-delete-recipe="${item.id}">Eliminar</button>
