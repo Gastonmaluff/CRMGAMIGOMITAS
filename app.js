@@ -62,6 +62,8 @@ const recipeCostPreview = document.getElementById("recipeCostPreview");
 const recipeList = document.getElementById("recipeList");
 const batchList = document.getElementById("batchList");
 const stockSummary = document.getElementById("stockSummary");
+const stockSummaryTotals = document.getElementById("stockSummaryTotals");
+const stockRecipeSelect = document.getElementById("stockRecipeSelect");
 const productList = document.getElementById("productList");
 const clientList = document.getElementById("clientList");
 const saleList = document.getElementById("saleList");
@@ -183,11 +185,52 @@ const refreshStockSummary = () => {
     return {
       name: material.name,
       unit: material.unit,
+      materialId: material.id,
+      price: Number(material.price || 0),
       purchased: summary.purchased,
       used: summary.used,
       available
     };
   });
+
+  const totalValue = rows.reduce((sum, row) => sum + row.available * row.price, 0);
+  const selectedRecipeId = stockRecipeSelect?.value;
+  const selectedRecipe = state.recipes.find((recipe) => recipe.id === selectedRecipeId);
+  let totalKg = null;
+  let totalDisplays = null;
+  if (selectedRecipe && selectedRecipe.ingredients?.length) {
+    let minRatio = Infinity;
+    selectedRecipe.ingredients.forEach((ing) => {
+      const material = state.rawMaterials.find((m) => m.id === ing.materialId);
+      const baseUnit = material?.unit || ing.unitBase || ing.unit;
+      const requiredBase = Number(ing.quantityBase || 0) ||
+        normalizeQuantity(Number(ing.quantity || 0), ing.unit, baseUnit) ||
+        Number(ing.quantity || 0);
+      const available = rows.find((row) => row.materialId === ing.materialId)?.available || 0;
+      if (requiredBase > 0) {
+        minRatio = Math.min(minRatio, available / requiredBase);
+      }
+    });
+    const batchesPossible = Number.isFinite(minRatio) ? Math.max(minRatio, 0) : 0;
+    const totalYield = batchesPossible * Number(selectedRecipe.yieldQuantity || 0);
+    if (selectedRecipe.yieldUnit === "kg") {
+      totalKg = totalYield;
+    } else if (selectedRecipe.yieldUnit === "g") {
+      totalKg = totalYield / 1000;
+    }
+    if (totalKg !== null) {
+      totalDisplays = Math.floor(totalKg / 0.36);
+    }
+  }
+
+  renderList(stockSummaryTotals, [1], () => `
+    <div class="list-item">
+      <strong>Resumen general</strong>
+      <div>Valor en materia prima: Gs ${formatGs(totalValue)}</div>
+      <div>Kilos posibles: ${totalKg !== null ? formatNumber(totalKg) : "Selecciona formula (kg o g)"}</div>
+      <div>Displays posibles (360 g): ${totalDisplays !== null ? totalDisplays.toLocaleString("es-PY") : "Selecciona formula (kg o g)"}</div>
+    </div>
+  `);
 
   renderList(stockSummary, rows, (row) => `
     <div class="list-item">
@@ -365,6 +408,7 @@ const syncState = (key, items) => {
   }
   if (key === "recipes") {
     updateSelect(batchForm.recipe, items, "Seleccionar");
+    updateSelect(stockRecipeSelect, items, "Seleccionar formula");
     updateBatchCostPreview();
   }
   if (key === "products") {
@@ -994,6 +1038,7 @@ purchaseForm.material.addEventListener("change", () => {
 });
 
 purchaseForm.purchaseUnit.addEventListener("change", updatePurchaseTotal);
+stockRecipeSelect?.addEventListener("change", refreshStockSummary);
 
 recipeForm.material.addEventListener("change", updateRecipeIngredientFields);
 recipeForm.yieldQuantity.addEventListener("input", renderRecipeDraft);
