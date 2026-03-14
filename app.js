@@ -297,7 +297,6 @@ const refreshStockSummary = () => {
     </div>
   `);
 
-  requestAnimationFrame(updateAllCollapseHeights);
 };
 
 const calculateRecipeTotals = () => {
@@ -589,7 +588,6 @@ const renderAll = () => {
     </div>
   `);
 
-  requestAnimationFrame(updateAllCollapseHeights);
 };
 
 const setupTabs = () => {
@@ -1139,30 +1137,6 @@ unitGroups.forEach((group) => {
   }
 });
 
-const updateCollapseHeight = (body) => {
-  if (!body) return;
-  if (body.classList.contains("collapsed")) {
-    body.style.maxHeight = "0px";
-  } else {
-    body.style.maxHeight = `${body.scrollHeight}px`;
-  }
-};
-
-const toggleCollapse = (toggle) => {
-  const body = document.getElementById(toggle.dataset.collapse);
-  if (!body) return;
-  const willCollapse = !body.classList.contains("collapsed");
-  body.classList.toggle("collapsed", willCollapse);
-  toggle.classList.toggle("open", !willCollapse);
-  toggle.setAttribute("aria-expanded", (!willCollapse).toString());
-  updateCollapseHeight(body);
-};
-
-document.querySelectorAll(".collapse-body").forEach((body) => {
-  body.classList.remove("collapsed");
-  updateCollapseHeight(body);
-});
-
 document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
   toggle.classList.add("open");
 });
@@ -1170,22 +1144,13 @@ document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) =>
 document.addEventListener("click", (event) => {
   const toggle = event.target.closest(".collapse-toggle[data-collapse]");
   if (!toggle) return;
-  toggleCollapse(toggle);
+  const body = document.getElementById(toggle.dataset.collapse);
+  if (!body) return;
+  const willCollapse = !body.classList.contains("collapsed");
+  body.classList.toggle("collapsed", willCollapse);
+  toggle.classList.toggle("open", !willCollapse);
+  toggle.setAttribute("aria-expanded", (!willCollapse).toString());
 });
-
-window.addEventListener("resize", () => {
-  document.querySelectorAll(".collapse-body").forEach((body) => {
-    updateCollapseHeight(body);
-  });
-});
-
-const updateAllCollapseHeights = () => {
-  document.querySelectorAll(".collapse-body").forEach((body) => {
-    if (!body.classList.contains("collapsed")) {
-      updateCollapseHeight(body);
-    }
-  });
-};
 
 onAuthStateChanged(auth, (user) => {
   unsubscribers.forEach((unsubscribe) => unsubscribe());
