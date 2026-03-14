@@ -52,12 +52,8 @@
         <section class="tab-panel active" id="production">
           <div class="grid">
             <div class="card">
-              <button class="collapse-header" type="button" data-collapse="prodToday">
-                <span>Produccion de hoy</span>
-                <span class="chevron">▸</span>
-              </button>
-              <div class="collapse-body" id="prodToday">
-                <form id="batchForm" class="form-grid">
+              <h2 class="section-title">Produccion de hoy <span class="chevron">▸</span></h2>
+              <form id="batchForm" class="form-grid">
                 <label>
                   Producto a fabricar
                   <select name="recipe" required></select>
@@ -94,18 +90,13 @@
                   <input name="unitCost" type="number" step="0.01" readonly />
                 </label>
                 <button class="btn primary" type="submit">Registrar produccion</button>
-                </form>
-                <div class="list" id="batchList"></div>
-              </div>
+              </form>
+              <div class="list" id="batchList"></div>
             </div>
 
             <div class="card">
-              <button class="collapse-header" type="button" data-collapse="recipeSection">
-                <span>Formula de producto</span>
-                <span class="chevron">▸</span>
-              </button>
-              <div class="collapse-body" id="recipeSection">
-                <form id="recipeForm" class="form-grid">
+              <h2 class="section-title">Formula de producto <span class="chevron">▸</span></h2>
+              <form id="recipeForm" class="form-grid">
                 <label>
                   Nombre del producto
                   <input name="name" required />
@@ -172,18 +163,13 @@
                 </div>
                 <div class="list" id="recipeCostPreview"></div>
                 <button class="btn primary" type="submit">Guardar formula</button>
-                </form>
-                <div class="list" id="recipeList"></div>
-              </div>
+              </form>
+              <div class="list" id="recipeList"></div>
             </div>
 
             <div class="card">
-              <button class="collapse-header" type="button" data-collapse="rawMaterialSection">
-                <span>Materias primas</span>
-                <span class="chevron">▸</span>
-              </button>
-              <div class="collapse-body" id="rawMaterialSection">
-                <form id="rawMaterialForm" class="form-grid">
+              <h2 class="section-title">Materias primas <span class="chevron">▸</span></h2>
+              <form id="rawMaterialForm" class="form-grid">
                 <label>
                   Nombre
                   <input name="name" required />
@@ -212,18 +198,13 @@
                   <input name="supplier" />
                 </label>
                 <button class="btn primary" type="submit">Guardar materia prima</button>
-                </form>
-                <div class="list" id="rawMaterialList"></div>
-              </div>
+              </form>
+              <div class="list" id="rawMaterialList"></div>
             </div>
 
             <div class="card">
-              <button class="collapse-header" type="button" data-collapse="stockSection">
-                <span>Stock de materias primas</span>
-                <span class="chevron">▸</span>
-              </button>
-              <div class="collapse-body" id="stockSection">
-                <form id="purchaseForm" class="form-grid">
+              <h2 class="section-title">Stock de materias primas <span class="chevron">▸</span></h2>
+              <form id="purchaseForm" class="form-grid">
                 <label>
                   Materia prima
                   <select name="material" required></select>
@@ -256,17 +237,12 @@
                   <input name="unitPrice" type="number" step="0.01" readonly />
                 </label>
                 <button class="btn primary" type="submit">Registrar ingreso</button>
-                </form>
-                <div class="list" id="purchaseList"></div>
-              </div>
+              </form>
+              <div class="list" id="purchaseList"></div>
             </div>
 
             <div class="card">
-              <button class="collapse-header" type="button" data-collapse="stockSummarySection">
-                <span>Resumen de stock (estimado)</span>
-                <span class="chevron">▸</span>
-              </button>
-              <div class="collapse-body" id="stockSummarySection">
+              <h2 class="section-title">Resumen de stock (estimado) <span class="chevron">▸</span></h2>
               <div class="form-grid">
                 <label>
                   Formula para calculo de produccion
@@ -276,7 +252,6 @@
               <div class="list" id="stockSummaryTotals"></div>
               <div class="list" id="stockBalanceList"></div>
               <div class="list" id="stockSummary"></div>
-            </div>
             </div>
           </div>
         </section>

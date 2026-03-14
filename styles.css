@@ -111,37 +111,16 @@ body {
   margin-bottom: 12px;
 }
 
-.collapse-header {
-  width: 100%;
-  border: none;
-  background: transparent;
+.section-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-family: 'Fraunces', serif;
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: var(--ink);
-  cursor: pointer;
-  padding: 0;
   margin: 0 0 12px;
 }
 
 .chevron {
-  transition: transform 0.2s ease;
   font-size: 1.2rem;
-}
-
-.collapse-body {
-  display: none;
-}
-
-.collapse-body.open {
-  display: block;
-}
-
-.collapse-header.open .chevron {
-  transform: rotate(90deg);
+  color: var(--muted);
 }
 
 .muted {

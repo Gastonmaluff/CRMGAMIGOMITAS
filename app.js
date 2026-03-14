@@ -1152,22 +1152,4 @@ onAuthStateChanged(auth, (user) => {
   listenCollection("sales", "sales", user.uid);
 });
 
-const setupCollapsibles = () => {
-  document.querySelectorAll(".collapse-header").forEach((header) => {
-    header.addEventListener("click", () => {
-      const targetId = header.dataset.collapse;
-      const body = document.getElementById(targetId);
-      if (!body) return;
-      const isOpen = body.classList.contains("open");
-      body.classList.toggle("open", !isOpen);
-      header.classList.toggle("open", !isOpen);
-    });
-  });
-  const first = document.querySelector(".collapse-header");
-  if (first) {
-    first.click();
-  }
-};
-
-setupCollapsibles();
 
