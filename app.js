@@ -48,8 +48,6 @@ const panels = document.querySelectorAll(".tab-panel");
 
 const rawMaterialForm = document.getElementById("rawMaterialForm");
 const purchaseForm = document.getElementById("purchaseForm");
-const usageForm = document.getElementById("usageForm");
-const productionForm = document.getElementById("productionForm");
 const recipeForm = document.getElementById("recipeForm");
 const batchForm = document.getElementById("batchForm");
 const productForm = document.getElementById("productForm");
@@ -59,8 +57,6 @@ const addIngredientBtn = document.getElementById("addIngredientBtn");
 
 const rawMaterialList = document.getElementById("rawMaterialList");
 const purchaseList = document.getElementById("purchaseList");
-const usageList = document.getElementById("usageList");
-const productionList = document.getElementById("productionList");
 const recipeIngredientsList = document.getElementById("recipeIngredientsList");
 const recipeCostPreview = document.getElementById("recipeCostPreview");
 const recipeList = document.getElementById("recipeList");
@@ -76,8 +72,6 @@ const rawUnitGroup = document.getElementById("rawUnitGroup");
 const state = {
   rawMaterials: [],
   purchases: [],
-  usage: [],
-  production: [],
   recipes: [],
   batches: [],
   products: [],
@@ -175,10 +169,12 @@ const refreshStockSummary = () => {
     totals[id] = totals[id] || { purchased: 0, used: 0 };
     totals[id].purchased += Number(purchase.quantity || 0);
   });
-  state.usage.forEach((usage) => {
-    const id = usage.materialId;
-    totals[id] = totals[id] || { purchased: 0, used: 0 };
-    totals[id].used += Number(usage.quantity || 0);
+  state.batches.forEach((batch) => {
+    (batch.materialsUsed || []).forEach((material) => {
+      const id = material.materialId;
+      totals[id] = totals[id] || { purchased: 0, used: 0 };
+      totals[id].used += Number(material.quantity || 0);
+    });
   });
 
   const rows = state.rawMaterials.map((material) => {
@@ -283,9 +279,9 @@ const normalizeQuantity = (quantity, fromUnit, toUnit) => {
 
 const updatePurchaseTotal = () => {
   const quantity = Number(purchaseForm.quantity.value);
-  const unitPrice = Number(purchaseForm.unitPrice.value);
-  if (Number.isNaN(quantity) || Number.isNaN(unitPrice)) {
-    purchaseForm.total.value = "";
+  const totalCost = Number(purchaseForm.totalCost.value);
+  if (Number.isNaN(quantity) || Number.isNaN(totalCost)) {
+    purchaseForm.unitPrice.value = "";
     return;
   }
   const material = state.rawMaterials.find((item) => item.id === purchaseForm.material.value);
@@ -293,15 +289,14 @@ const updatePurchaseTotal = () => {
   const baseUnit = material?.unit || rawUnit;
   const normalized = material ? normalizeQuantity(quantity, rawUnit, baseUnit) : quantity;
   const baseQuantity = normalized ?? quantity;
-  const total = baseQuantity * unitPrice;
-  purchaseForm.total.value = Number.isNaN(total) ? "" : Math.round(total).toString();
+  const unitPriceBase = baseQuantity ? totalCost / baseQuantity : 0;
+  purchaseForm.unitPrice.value = Number.isNaN(unitPriceBase) ? "" : Math.round(unitPriceBase).toString();
 };
 
 const syncState = (key, items) => {
   state[key] = items;
   if (key === "rawMaterials") {
     updateSelect(purchaseForm.material, items, "Seleccionar");
-    updateSelect(usageForm.material, items, "Seleccionar");
     updateSelect(recipeForm.material, items, "Seleccionar");
     updateRecipeIngredientFields();
   }
@@ -316,7 +311,7 @@ const syncState = (key, items) => {
     updateSelect(saleForm.client, items, "Opcional");
   }
 
-  if (["rawMaterials", "purchases", "usage"].includes(key)) {
+  if (["rawMaterials", "purchases", "batches"].includes(key)) {
     refreshStockSummary();
   }
 };
@@ -341,7 +336,9 @@ const renderAll = () => {
   renderList(rawMaterialList, state.rawMaterials, (item) => `
     <div class="list-item">
       <strong>${item.name}</strong>
-      Unidad: ${item.unit} | Precio: Gs ${formatGs(item.price)}${item.supplier ? ` | Proveedor: ${item.supplier}` : ""}
+      Unidad: ${item.unit} | Precio unitario: Gs ${formatGs(item.price)}
+      ${item.referenceQuantity && item.referenceCost ? `<div>Referencia: ${formatNumber(item.referenceQuantity)} ${item.unit} = Gs ${formatGs(item.referenceCost)}</div>` : ""}
+      ${item.supplier ? `<div>Proveedor: ${item.supplier}</div>` : ""}
       <div class="list-actions">
         <button class="btn ghost" type="button" data-edit-raw-material="${item.id}">Editar</button>
         <button class="btn ghost danger" type="button" data-delete-raw-material="${item.id}">Eliminar</button>
@@ -354,33 +351,10 @@ const renderAll = () => {
       <strong>${item.materialName}</strong>
       Fecha: ${formatDate(item.date)} | Cantidad: ${formatNumber(item.quantityPurchased ?? item.quantity)} ${item.unitPurchased ?? item.unit}
       ${item.unitPurchased && item.unitPurchased !== item.unit ? `<div>Equivalente: ${formatNumber(item.quantity)} ${item.unit}</div>` : ""}
-      <div>Precio unitario: Gs ${formatGs(item.unitPrice)} | Total: Gs ${formatGs(item.total)}</div>
+      <div>Costo: Gs ${formatGs(item.total)} | Costo unitario base: Gs ${formatGs(item.unitPrice)}</div>
       <div class="list-actions">
         <button class="btn ghost" type="button" data-edit-purchase="${item.id}">Editar</button>
         <button class="btn ghost danger" type="button" data-delete-purchase="${item.id}">Eliminar</button>
-      </div>
-    </div>
-  `);
-
-  renderList(usageList, state.usage, (item) => `
-    <div class="list-item">
-      <strong>${item.materialName}</strong>
-      Fecha: ${formatDate(item.date)} | Usado: ${formatNumber(item.quantity)} ${item.unit}
-      <div class="list-actions">
-        <button class="btn ghost" type="button" data-edit-usage="${item.id}">Editar</button>
-        <button class="btn ghost danger" type="button" data-delete-usage="${item.id}">Eliminar</button>
-      </div>
-    </div>
-  `);
-
-  renderList(productionList, state.production, (item) => `
-    <div class="list-item">
-      <strong>${item.product}</strong>
-      Fecha: ${formatDate(item.date)} | Cantidad: ${formatNumber(item.quantity)}
-      ${item.notes ? `<div>Notas: ${item.notes}</div>` : ""}
-      <div class="list-actions">
-        <button class="btn ghost" type="button" data-edit-production="${item.id}">Editar</button>
-        <button class="btn ghost danger" type="button" data-delete-production="${item.id}">Eliminar</button>
       </div>
     </div>
   `);
@@ -401,6 +375,7 @@ const renderAll = () => {
     <div class="list-item">
       <strong>${item.recipeName}</strong>
       Fecha: ${formatDate(item.date)} | Cantidad: ${formatNumber(item.quantityProduced)} ${item.unitProduced}
+      ${item.lotNumber ? `<div>Lote: ${item.lotNumber}</div>` : ""}
       <div>Costo total: Gs ${formatGs(item.totalCost)} | Costo por unidad: Gs ${formatGs(item.costPerUnit)}</div>
       <div>Materias primas: ${(item.materialsUsed || [])
         .map((m) => `${m.materialName} ${formatNumber(m.quantity)} ${m.unit}`)
@@ -524,10 +499,15 @@ rawMaterialForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const user = auth.currentUser;
   if (!user) return;
+  const referenceQuantity = Number(rawMaterialForm.referenceQuantity.value);
+  const referenceCost = Number(rawMaterialForm.referenceCost.value);
+  const price = referenceQuantity ? referenceCost / referenceQuantity : 0;
   const payload = {
     name: rawMaterialForm.name.value.trim(),
     unit: rawMaterialForm.unit.value.trim(),
-    price: Number(rawMaterialForm.price.value),
+    price,
+    referenceQuantity,
+    referenceCost,
     supplier: rawMaterialForm.supplier.value.trim(),
     userId: user.uid,
     createdAt: serverTimestamp()
@@ -545,10 +525,11 @@ purchaseForm.addEventListener("submit", async (event) => {
   const material = state.rawMaterials.find((item) => item.id === materialId);
   if (!material) return;
   const quantityRaw = Number(purchaseForm.quantity.value);
-  const unitPrice = Number(purchaseForm.unitPrice.value);
+  const totalCost = Number(purchaseForm.totalCost.value);
   const unitRaw = purchaseForm.purchaseUnit.value;
   const normalized = normalizeQuantity(quantityRaw, unitRaw, material.unit);
   const quantityBase = normalized ?? quantityRaw;
+  const unitPriceBase = quantityBase ? totalCost / quantityBase : 0;
   const payload = {
     materialId,
     materialName: material.name,
@@ -557,8 +538,8 @@ purchaseForm.addEventListener("submit", async (event) => {
     unitPurchased: unitRaw,
     date: purchaseForm.date.value,
     quantity: quantityBase,
-    unitPrice,
-    total: quantityBase * unitPrice,
+    unitPrice: unitPriceBase,
+    total: totalCost,
     userId: user.uid,
     createdAt: serverTimestamp()
   };
@@ -566,41 +547,6 @@ purchaseForm.addEventListener("submit", async (event) => {
   resetForm(purchaseForm);
 });
 
-usageForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const user = auth.currentUser;
-  if (!user) return;
-  const materialId = usageForm.material.value;
-  const material = state.rawMaterials.find((item) => item.id === materialId);
-  if (!material) return;
-  const payload = {
-    materialId,
-    materialName: material.name,
-    unit: material.unit,
-    date: usageForm.date.value,
-    quantity: Number(usageForm.quantity.value),
-    userId: user.uid,
-    createdAt: serverTimestamp()
-  };
-  await saveDoc("raw_usage", usageForm, payload);
-  resetForm(usageForm);
-});
-
-productionForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const user = auth.currentUser;
-  if (!user) return;
-  const payload = {
-    date: productionForm.date.value,
-    product: productionForm.product.value.trim(),
-    quantity: Number(productionForm.quantity.value),
-    notes: productionForm.notes.value.trim(),
-    userId: user.uid,
-    createdAt: serverTimestamp()
-  };
-  await saveDoc("production", productionForm, payload);
-  resetForm(productionForm);
-});
 
 addIngredientBtn.addEventListener("click", () => {
   const materialId = recipeForm.material.value;
@@ -685,6 +631,7 @@ batchForm.addEventListener("submit", async (event) => {
     recipeId,
     recipeName: recipe.name,
     date: batchForm.date.value,
+    lotNumber: batchForm.lotNumber.value.trim(),
     quantityProduced,
     unitProduced: batchForm.unit.value.trim(),
     costPerUnit,
@@ -762,7 +709,10 @@ saleForm.addEventListener("submit", async (event) => {
 const startEditRawMaterial = (item) => {
   rawMaterialForm.name.value = item.name || "";
   rawMaterialForm.unit.value = item.unit || "";
-  rawMaterialForm.price.value = item.price ?? "";
+  const fallbackQuantity = item.referenceQuantity ?? (item.price ? 1 : "");
+  const fallbackCost = item.referenceCost ?? (item.price ? item.price : "");
+  rawMaterialForm.referenceQuantity.value = fallbackQuantity;
+  rawMaterialForm.referenceCost.value = fallbackCost;
   rawMaterialForm.supplier.value = item.supplier || "";
   rawMaterialForm.dataset.editId = item.id;
   setSubmitLabel(rawMaterialForm, "Actualizar materia prima");
@@ -774,27 +724,10 @@ const startEditPurchase = (item) => {
   purchaseForm.date.value = item.date || "";
   purchaseForm.quantity.value = item.quantityPurchased ?? item.quantity ?? "";
   purchaseForm.purchaseUnit.value = item.unitPurchased ?? item.unit ?? "";
+  purchaseForm.totalCost.value = item.total ?? "";
   purchaseForm.unitPrice.value = item.unitPrice ?? "";
-  purchaseForm.total.value = item.total ?? "";
   purchaseForm.dataset.editId = item.id;
-  setSubmitLabel(purchaseForm, "Actualizar compra");
-};
-
-const startEditUsage = (item) => {
-  usageForm.material.value = item.materialId || "";
-  usageForm.date.value = item.date || "";
-  usageForm.quantity.value = item.quantity ?? "";
-  usageForm.dataset.editId = item.id;
-  setSubmitLabel(usageForm, "Actualizar uso");
-};
-
-const startEditProduction = (item) => {
-  productionForm.date.value = item.date || "";
-  productionForm.product.value = item.product || "";
-  productionForm.quantity.value = item.quantity ?? "";
-  productionForm.notes.value = item.notes || "";
-  productionForm.dataset.editId = item.id;
-  setSubmitLabel(productionForm, "Actualizar produccion");
+  setSubmitLabel(purchaseForm, "Actualizar ingreso");
 };
 
 const startEditRecipe = (item) => {
@@ -830,6 +763,7 @@ const startEditRecipe = (item) => {
 const startEditBatch = (item) => {
   batchForm.recipe.value = item.recipeId || "";
   batchForm.date.value = item.date || "";
+  batchForm.lotNumber.value = item.lotNumber || "";
   batchForm.quantity.value = item.quantityProduced ?? "";
   batchForm.unit.value = item.unitProduced || "";
   batchForm.dataset.editId = item.id;
@@ -888,32 +822,8 @@ purchaseList.addEventListener("click", async (event) => {
     const item = state.purchases.find((m) => m.id === editId);
     if (item) startEditPurchase(item);
   }
-  if (deleteId && confirmDelete("compra")) {
+  if (deleteId && confirmDelete("ingreso")) {
     await deleteDoc(doc(db, "raw_purchases", deleteId));
-  }
-});
-
-usageList.addEventListener("click", async (event) => {
-  const editId = event.target.dataset.editUsage;
-  const deleteId = event.target.dataset.deleteUsage;
-  if (editId) {
-    const item = state.usage.find((m) => m.id === editId);
-    if (item) startEditUsage(item);
-  }
-  if (deleteId && confirmDelete("uso de materia prima")) {
-    await deleteDoc(doc(db, "raw_usage", deleteId));
-  }
-});
-
-productionList.addEventListener("click", async (event) => {
-  const editId = event.target.dataset.editProduction;
-  const deleteId = event.target.dataset.deleteProduction;
-  if (editId) {
-    const item = state.production.find((m) => m.id === editId);
-    if (item) startEditProduction(item);
-  }
-  if (deleteId && confirmDelete("produccion")) {
-    await deleteDoc(doc(db, "production", deleteId));
   }
 });
 
@@ -981,14 +891,13 @@ purchaseForm.quantity.addEventListener("input", () => {
   updatePurchaseTotal();
 });
 
-purchaseForm.unitPrice.addEventListener("input", () => {
+purchaseForm.totalCost.addEventListener("input", () => {
   updatePurchaseTotal();
 });
 
 purchaseForm.material.addEventListener("change", () => {
   const material = state.rawMaterials.find((item) => item.id === purchaseForm.material.value);
   if (material) {
-    purchaseForm.unitPrice.value = material.price;
     purchaseForm.purchaseUnit.value = material.unit || purchaseForm.purchaseUnit.value;
     updatePurchaseTotal();
   }
@@ -1035,8 +944,6 @@ onAuthStateChanged(auth, (user) => {
   showDashboard(user);
   listenCollection("raw_materials", "rawMaterials", user.uid);
   listenCollection("raw_purchases", "purchases", user.uid);
-  listenCollection("raw_usage", "usage", user.uid);
-  listenCollection("production", "production", user.uid);
   listenCollection("recipes", "recipes", user.uid);
   listenCollection("batches", "batches", user.uid);
   listenCollection("products", "products", user.uid);

@@ -52,123 +52,46 @@
         <section class="tab-panel active" id="production">
           <div class="grid">
             <div class="card">
-              <h2>Materias primas</h2>
-              <form id="rawMaterialForm" class="form-grid">
+              <h2>Produccion de hoy</h2>
+              <form id="batchForm" class="form-grid">
                 <label>
-                  Nombre
-                  <input name="name" required />
+                  Producto a fabricar
+                  <select name="recipe" required></select>
                 </label>
                 <label>
-                  Unidad (kg, g, L)
+                  Fecha (hoy)
+                  <input name="date" type="date" required readonly />
+                </label>
+                <label>
+                  Numero de lote
+                  <input name="lotNumber" required />
+                </label>
+                <label>
+                  Cantidad fabricada
+                  <input name="quantity" type="number" step="0.01" required />
+                </label>
+                <label>
+                  Unidad producida
                   <input name="unit" required />
                 </label>
-                <div class="unit-group" id="rawUnitGroup">
-                  <button class="btn chip" type="button" data-unit="kg">kg</button>
-                  <button class="btn chip" type="button" data-unit="g">g</button>
-                  <button class="btn chip" type="button" data-unit="L">L</button>
-                  <button class="btn chip" type="button" data-unit="ml">ml</button>
-                  <button class="btn chip" type="button" data-unit="unidad">unidad</button>
-                </div>
                 <label>
-                  Precio por unidad
-                  <input name="price" type="number" step="0.01" required />
+                  Costo total estimado
+                  <input name="totalCost" type="number" step="0.01" readonly />
                 </label>
                 <label>
-                  Proveedor (opcional)
-                  <input name="supplier" />
+                  Costo por unidad
+                  <input name="unitCost" type="number" step="0.01" readonly />
                 </label>
-                <button class="btn primary" type="submit">Guardar materia prima</button>
+                <button class="btn primary" type="submit">Registrar produccion</button>
               </form>
-              <div class="list" id="rawMaterialList"></div>
+              <div class="list" id="batchList"></div>
             </div>
 
             <div class="card">
-              <h2>Compras de materia prima</h2>
-              <form id="purchaseForm" class="form-grid">
-                <label>
-                  Materia prima
-                  <select name="material" required></select>
-                </label>
-                <label>
-                  Fecha
-                  <input name="date" type="date" required />
-                </label>
-                <label>
-                  Cantidad
-                  <input name="quantity" type="number" step="0.01" required />
-                </label>
-                <label>
-                  Unidad de compra
-                  <select name="purchaseUnit" required>
-                    <option value="kg">kg</option>
-                    <option value="g">g</option>
-                    <option value="L">L</option>
-                    <option value="ml">ml</option>
-                    <option value="unidad">unidad</option>
-                  </select>
-                </label>
-                <label>
-                  Precio unitario
-                  <input name="unitPrice" type="number" step="0.01" required />
-                </label>
-                <label>
-                  Total
-                  <input name="total" type="number" step="0.01" readonly />
-                </label>
-                <button class="btn primary" type="submit">Registrar compra</button>
-              </form>
-              <div class="list" id="purchaseList"></div>
-            </div>
-
-            <div class="card">
-              <h2>Uso de materia prima</h2>
-              <form id="usageForm" class="form-grid">
-                <label>
-                  Materia prima
-                  <select name="material" required></select>
-                </label>
-                <label>
-                  Fecha
-                  <input name="date" type="date" required />
-                </label>
-                <label>
-                  Cantidad usada
-                  <input name="quantity" type="number" step="0.01" required />
-                </label>
-                <button class="btn primary" type="submit">Registrar uso</button>
-              </form>
-              <div class="list" id="usageList"></div>
-            </div>
-
-            <div class="card">
-              <h2>Produccion diaria</h2>
-              <form id="productionForm" class="form-grid">
-                <label>
-                  Fecha
-                  <input name="date" type="date" required />
-                </label>
-                <label>
-                  Producto
-                  <input name="product" required />
-                </label>
-                <label>
-                  Cantidad
-                  <input name="quantity" type="number" step="0.01" required />
-                </label>
-                <label>
-                  Notas (opcional)
-                  <input name="notes" />
-                </label>
-                <button class="btn primary" type="submit">Registrar Produccion</button>
-              </form>
-              <div class="list" id="productionList"></div>
-            </div>
-
-            <div class="card">
-              <h2>Recetas</h2>
+              <h2>Formula de producto</h2>
               <form id="recipeForm" class="form-grid">
                 <label>
-                  Nombre de la receta
+                  Nombre del producto
                   <input name="name" required />
                 </label>
                 <label>
@@ -200,41 +123,82 @@
                 </div>
                 <div class="list" id="recipeIngredientsList"></div>
                 <div class="list" id="recipeCostPreview"></div>
-                <button class="btn primary" type="submit">Guardar receta</button>
+                <button class="btn primary" type="submit">Guardar formula</button>
               </form>
               <div class="list" id="recipeList"></div>
             </div>
 
             <div class="card">
-              <h2>Lotes de produccion</h2>
-              <form id="batchForm" class="form-grid">
+              <h2>Materias primas</h2>
+              <form id="rawMaterialForm" class="form-grid">
                 <label>
-                  Receta
-                  <select name="recipe" required></select>
+                  Nombre
+                  <input name="name" required />
+                </label>
+                <label>
+                  Unidad (kg, g, L)
+                  <input name="unit" required />
+                </label>
+                <div class="unit-group" id="rawUnitGroup">
+                  <button class="btn chip" type="button" data-unit="kg">kg</button>
+                  <button class="btn chip" type="button" data-unit="g">g</button>
+                  <button class="btn chip" type="button" data-unit="L">L</button>
+                  <button class="btn chip" type="button" data-unit="ml">ml</button>
+                  <button class="btn chip" type="button" data-unit="unidad">unidad</button>
+                </div>
+                <label>
+                  Cantidad de referencia
+                  <input name="referenceQuantity" type="number" step="0.01" required />
+                </label>
+                <label>
+                  Costo por esa cantidad
+                  <input name="referenceCost" type="number" step="0.01" required />
+                </label>
+                <label>
+                  Proveedor (opcional)
+                  <input name="supplier" />
+                </label>
+                <button class="btn primary" type="submit">Guardar materia prima</button>
+              </form>
+              <div class="list" id="rawMaterialList"></div>
+            </div>
+
+            <div class="card">
+              <h2>Stock de materias primas</h2>
+              <form id="purchaseForm" class="form-grid">
+                <label>
+                  Materia prima
+                  <select name="material" required></select>
                 </label>
                 <label>
                   Fecha
                   <input name="date" type="date" required />
                 </label>
                 <label>
-                  Cantidad producida
+                  Cantidad ingresada
                   <input name="quantity" type="number" step="0.01" required />
                 </label>
                 <label>
-                  Unidad producida
-                  <input name="unit" required />
+                  Unidad de ingreso
+                  <select name="purchaseUnit" required>
+                    <option value="kg">kg</option>
+                    <option value="g">g</option>
+                    <option value="L">L</option>
+                    <option value="ml">ml</option>
+                    <option value="unidad">unidad</option>
+                  </select>
                 </label>
                 <label>
-                  Costo total estimado
-                  <input name="totalCost" type="number" step="0.01" readonly />
+                  Costo por esa cantidad
+                  <input name="totalCost" type="number" step="0.01" required />
                 </label>
                 <label>
-                  Costo por unidad
-                  <input name="unitCost" type="number" step="0.01" readonly />
+                  Costo unitario base
+                  <input name="unitPrice" type="number" step="0.01" readonly />
                 </label>
-                <button class="btn primary" type="submit">Registrar lote</button>
+                <button class="btn primary" type="submit">Registrar ingreso</button>
               </form>
-              <div class="list" id="batchList"></div>
+              <div class="list" id="purchaseList"></div>
             </div>
 
             <div class="card">
