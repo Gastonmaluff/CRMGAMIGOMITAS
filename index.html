@@ -192,13 +192,16 @@
                   <button class="btn chip" type="button" data-unit="unidad">unidad</button>
                 </div>
                 <label>
-                  Cantidad de referencia
-                  <input name="referenceQuantity" type="number" step="0.01" required />
+                  Costo de referencia (por unidad base)
+                  <input name="referenceCost" type="number" step="0.01" />
                 </label>
                 <label>
-                  Costo por esa cantidad
-                  <input name="referenceCost" type="number" step="0.01" required />
+                  Stock minimo (opcional)
+                  <input name="minStock" type="number" step="0.01" />
                 </label>
+                <input name="referenceQuantity" type="hidden" value="1" />
+                <input name="legacyReferenceQuantity" type="hidden" />
+                <input name="legacyReferenceCostTotal" type="hidden" />
                 <label>
                   Proveedor (opcional)
                   <input name="supplier" />

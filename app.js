@@ -542,8 +542,8 @@ const renderAll = () => {
   renderList(rawMaterialList, state.rawMaterials, (item) => `
     <div class="list-item">
       <strong>${item.name}</strong>
-      Unidad: ${item.unit} | Precio unitario: Gs ${formatGs(item.price)}
-      ${item.referenceQuantity && item.referenceCost ? `<div>Referencia: ${formatNumber(item.referenceQuantity)} ${item.unit} = Gs ${formatGs(item.referenceCost)}</div>` : ""}
+      Unidad: ${item.unit} | Costo referencia: Gs ${formatGs(item.referenceCost || item.price)}
+      ${item.minStock ? `<div>Stock minimo: ${formatNumber(item.minStock)} ${item.unit}</div>` : ""}
       ${item.supplier ? `<div>Proveedor: ${item.supplier}</div>` : ""}
       <div class="list-actions">
         <button class="btn ghost" type="button" data-edit-raw-material="${item.id}">Editar</button>
@@ -710,19 +710,25 @@ rawMaterialForm.addEventListener("submit", async (event) => {
     window.alert("Selecciona una unidad para la materia prima.");
     return;
   }
-  const referenceQuantity = Number(rawMaterialForm.referenceQuantity.value);
   const referenceCost = Number(rawMaterialForm.referenceCost.value);
-  const price = referenceQuantity ? referenceCost / referenceQuantity : 0;
+  const referenceQuantity = Number(rawMaterialForm.referenceQuantity.value) || 1;
+  const price = Number.isNaN(referenceCost) ? 0 : referenceCost;
+  const minStock = rawMaterialForm.minStock.value ? Number(rawMaterialForm.minStock.value) : null;
+  const legacyReferenceQuantity = rawMaterialForm.legacyReferenceQuantity.value;
+  const legacyReferenceCostTotal = rawMaterialForm.legacyReferenceCostTotal.value;
   const payload = {
     name: rawMaterialForm.name.value.trim(),
     unit: rawMaterialForm.unit.value.trim(),
     price,
     referenceQuantity,
-    referenceCost,
+    referenceCost: Number.isNaN(referenceCost) ? 0 : referenceCost,
+    minStock,
     supplier: rawMaterialForm.supplier.value.trim(),
     userId: user.uid,
     createdAt: serverTimestamp()
   };
+  if (legacyReferenceQuantity) payload.legacyReferenceQuantity = Number(legacyReferenceQuantity);
+  if (legacyReferenceCostTotal) payload.legacyReferenceCostTotal = Number(legacyReferenceCostTotal);
   await saveDoc("raw_materials", rawMaterialForm, payload);
   resetForm(rawMaterialForm);
   setUnitGroupValue("rawMaterialUnit", rawMaterialForm.unit.value);
@@ -951,10 +957,11 @@ saleForm.addEventListener("submit", async (event) => {
 const startEditRawMaterial = (item) => {
   rawMaterialForm.name.value = item.name || "";
   setUnitGroupValue("rawMaterialUnit", item.unit || "");
-  const fallbackQuantity = item.referenceQuantity ?? (item.price ? 1 : "");
-  const fallbackCost = item.referenceCost ?? (item.price ? item.price : "");
-  rawMaterialForm.referenceQuantity.value = fallbackQuantity;
-  rawMaterialForm.referenceCost.value = fallbackCost;
+  rawMaterialForm.referenceQuantity.value = 1;
+  rawMaterialForm.referenceCost.value = item.price ?? item.referenceCost ?? "";
+  rawMaterialForm.minStock.value = item.minStock ?? "";
+  rawMaterialForm.legacyReferenceQuantity.value = item.referenceQuantity ?? "";
+  rawMaterialForm.legacyReferenceCostTotal.value = item.referenceCost ?? "";
   rawMaterialForm.supplier.value = item.supplier || "";
   rawMaterialForm.dataset.editId = item.id;
   setSubmitLabel(rawMaterialForm, "Actualizar materia prima");
