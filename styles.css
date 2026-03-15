@@ -141,14 +141,14 @@ body {
 
 .collapse-body {
   overflow: hidden;
-  max-height: 2000px;
-  transition: max-height 0.25s ease, opacity 0.25s ease;
-  opacity: 1;
-}
-
-.collapse-body.collapsed {
   max-height: 0;
   opacity: 0;
+  transition: max-height 0.25s ease, opacity 0.25s ease;
+}
+
+.collapse-body.open {
+  max-height: var(--collapse-max, 2000px);
+  opacity: 1;
 }
 
 .muted {

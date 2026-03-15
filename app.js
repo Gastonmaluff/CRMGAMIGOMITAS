@@ -297,6 +297,7 @@ const refreshStockSummary = () => {
     </div>
   `);
 
+  requestAnimationFrame(refreshCollapseHeights);
 };
 
 const calculateRecipeTotals = () => {
@@ -588,6 +589,7 @@ const renderAll = () => {
     </div>
   `);
 
+  requestAnimationFrame(refreshCollapseHeights);
 };
 
 const setupTabs = () => {
@@ -1137,8 +1139,28 @@ unitGroups.forEach((group) => {
   }
 });
 
-document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
+const setCollapseMax = (body) => {
+  if (!body) return;
+  body.style.setProperty("--collapse-max", `${body.scrollHeight}px`);
+};
+
+const openSection = (toggle, body) => {
+  setCollapseMax(body);
+  body.classList.add("open");
   toggle.classList.add("open");
+  toggle.setAttribute("aria-expanded", "true");
+};
+
+const closeSection = (toggle, body) => {
+  body.classList.remove("open");
+  toggle.classList.remove("open");
+  toggle.setAttribute("aria-expanded", "false");
+};
+
+document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
+  const body = document.getElementById(toggle.dataset.collapse);
+  if (!body) return;
+  openSection(toggle, body);
 });
 
 document.addEventListener("click", (event) => {
@@ -1146,22 +1168,27 @@ document.addEventListener("click", (event) => {
   if (!toggle) return;
   const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
-  document.querySelectorAll(".collapse-body").forEach((other) => {
-    if (other !== body) {
-      other.classList.add("collapsed");
-    }
-  });
   document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((otherToggle) => {
+    const otherBody = document.getElementById(otherToggle.dataset.collapse);
+    if (!otherBody) return;
     if (otherToggle !== toggle) {
-      otherToggle.classList.remove("open");
-      otherToggle.setAttribute("aria-expanded", "false");
+      closeSection(otherToggle, otherBody);
     }
   });
-  const willCollapse = !body.classList.contains("collapsed");
-  body.classList.toggle("collapsed", willCollapse);
-  toggle.classList.toggle("open", !willCollapse);
-  toggle.setAttribute("aria-expanded", (!willCollapse).toString());
+  if (body.classList.contains("open")) {
+    closeSection(toggle, body);
+  } else {
+    openSection(toggle, body);
+  }
 });
+
+const refreshCollapseHeights = () => {
+  document.querySelectorAll(".collapse-body.open").forEach((body) => {
+    setCollapseMax(body);
+  });
+};
+
+window.addEventListener("resize", refreshCollapseHeights);
 
 onAuthStateChanged(auth, (user) => {
   unsubscribers.forEach((unsubscribe) => unsubscribe());
