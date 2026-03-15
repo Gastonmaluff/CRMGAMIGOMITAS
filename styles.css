@@ -325,6 +325,12 @@ select:focus {
   margin-bottom: 4px;
 }
 
+.section-subtitle {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 6px 0 10px;
+}
+
 .hidden {
   display: none;
 }

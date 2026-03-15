@@ -555,6 +555,7 @@ const renderAll = () => {
   renderList(purchaseList, state.purchases, (item) => `
     <div class="list-item">
       <strong>${item.materialName}</strong>
+      <div>Tipo: ${item.type || "ingreso"}</div>
       Fecha: ${formatDate(item.date)} | Cantidad: ${formatNumber(item.quantityPurchased ?? item.quantity)} ${item.unitPurchased ?? item.unit}
       ${item.unitPurchased && item.unitPurchased !== item.unit ? `<div>Equivalente: ${formatNumber(item.quantity)} ${item.unit}</div>` : ""}
       <div>Costo: Gs ${formatGs(item.total)} | Costo unitario base: Gs ${formatGs(item.unitPrice)}</div>
@@ -761,6 +762,7 @@ purchaseForm.addEventListener("submit", async (event) => {
     quantity: quantityBase,
     unitPrice: unitPriceBase,
     total: totalCost,
+    type: "ingreso",
     userId: user.uid,
     createdAt: serverTimestamp()
   };
