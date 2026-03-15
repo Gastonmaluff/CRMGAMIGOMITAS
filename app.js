@@ -406,11 +406,13 @@ const updateBatchRecipeFromProduct = () => {
   const productId = batchProductSelect?.value;
   const product = state.products.find((item) => item.id === productId);
   const recipe = findRecipeForProduct(product);
+  const unitGroup = document.querySelector('.unit-group[data-target="batchUnit"]');
   if (!recipe) {
     batchForm.recipe.value = "";
     batchForm.totalCost.value = "";
     batchForm.unitCost.value = "";
     setUnitGroupValue("batchUnit", "");
+    if (unitGroup) unitGroup.classList.remove("locked");
     if (batchRecipeNotice) {
       batchRecipeNotice.textContent = "No hay formula asociada. Primero carga la formula del producto.";
     }
@@ -421,6 +423,7 @@ const updateBatchRecipeFromProduct = () => {
     batchRecipeNotice.textContent = "";
   }
   setUnitGroupValue("batchUnit", recipe.yieldUnit || "");
+  if (unitGroup) unitGroup.classList.add("locked");
   updateBatchCostPreview();
 };
 

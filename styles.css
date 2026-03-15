@@ -207,6 +207,19 @@ select {
   font-family: inherit;
 }
 
+input[readonly],
+input[disabled],
+select[disabled] {
+  background: #f3f4f6;
+  color: var(--muted);
+  border-color: var(--border-dark);
+}
+
+.unit-group.locked {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
 input:focus,
 select:focus {
   outline: 2px solid rgba(17, 24, 39, 0.15);
