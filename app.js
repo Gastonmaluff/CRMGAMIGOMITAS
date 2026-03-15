@@ -50,6 +50,8 @@ const rawMaterialForm = document.getElementById("rawMaterialForm");
 const purchaseForm = document.getElementById("purchaseForm");
 const recipeForm = document.getElementById("recipeForm");
 const batchForm = document.getElementById("batchForm");
+const batchProductSelect = document.getElementById("batchProductSelect");
+const batchRecipeNotice = document.getElementById("batchRecipeNotice");
 const productForm = document.getElementById("productForm");
 const clientForm = document.getElementById("clientForm");
 const saleForm = document.getElementById("saleForm");
@@ -392,6 +394,36 @@ const updateBatchCostPreview = () => {
   batchForm.totalCost.value = totalCost ? Math.round(totalCost).toString() : "";
 };
 
+const normalizeText = (value) => (value || "").trim().toLowerCase();
+
+const findRecipeForProduct = (product) => {
+  if (!product) return null;
+  return state.recipes.find((recipe) => recipe.productId === product.id)
+    || state.recipes.find((recipe) => normalizeText(recipe.name) === normalizeText(product.name));
+};
+
+const updateBatchRecipeFromProduct = () => {
+  const productId = batchProductSelect?.value;
+  const product = state.products.find((item) => item.id === productId);
+  const recipe = findRecipeForProduct(product);
+  if (!recipe) {
+    batchForm.recipe.value = "";
+    batchForm.totalCost.value = "";
+    batchForm.unitCost.value = "";
+    setUnitGroupValue("batchUnit", "");
+    if (batchRecipeNotice) {
+      batchRecipeNotice.textContent = "No hay formula asociada. Primero carga la formula del producto.";
+    }
+    return;
+  }
+  batchForm.recipe.value = recipe.id;
+  if (batchRecipeNotice) {
+    batchRecipeNotice.textContent = "";
+  }
+  setUnitGroupValue("batchUnit", recipe.yieldUnit || "");
+  updateBatchCostPreview();
+};
+
 const buildRecipeSummary = (item) => {
   const yieldLabel = item.yieldQuantity && item.yieldUnit
     ? `${formatNumber(item.yieldQuantity)} ${item.yieldUnit}`
@@ -470,9 +502,13 @@ const syncState = (key, items) => {
     updateSelect(batchForm.recipe, items, "Seleccionar");
     updateSelect(stockRecipeSelect, items, "Seleccionar formula");
     updateBatchCostPreview();
+    if (batchProductSelect?.value) {
+      updateBatchRecipeFromProduct();
+    }
   }
   if (key === "products") {
     updateSelect(saleForm.product, items, "Seleccionar");
+    updateSelect(batchProductSelect, items, "Seleccionar");
   }
   if (key === "clients") {
     updateSelect(saleForm.client, items, "Opcional");
@@ -767,8 +803,11 @@ recipeForm.addEventListener("submit", async (event) => {
   }
   if (!recipeDraft.ingredients.length) return;
   const totals = calculateRecipeTotals();
+  const productName = recipeForm.name.value.trim();
+  const matchedProduct = state.products.find((item) => normalizeText(item.name) === normalizeText(productName));
   const payload = {
-    name: recipeForm.name.value.trim(),
+    name: productName,
+    productId: matchedProduct?.id || "",
     yieldQuantity: Number(recipeForm.yieldQuantity.value),
     yieldUnit: recipeForm.yieldUnit.value.trim(),
     ingredients: recipeDraft.ingredients.map((ing) => ({
@@ -807,6 +846,12 @@ batchForm.addEventListener("submit", async (event) => {
     return;
   }
   const recipeId = batchForm.recipe.value;
+  if (!recipeId) {
+    if (batchRecipeNotice) {
+      batchRecipeNotice.textContent = "No hay formula asociada. Primero carga la formula del producto.";
+    }
+    return;
+  }
   const recipe = state.recipes.find((item) => item.id === recipeId);
   if (!recipe) return;
   const quantityProduced = Number(batchForm.quantity.value);
@@ -1114,6 +1159,10 @@ batchForm.recipe.addEventListener("change", () => {
     setUnitGroupValue("batchUnit", recipe.yieldUnit || "");
   }
   updateBatchCostPreview();
+});
+
+batchProductSelect?.addEventListener("change", () => {
+  updateBatchRecipeFromProduct();
 });
 
 batchForm.quantity.addEventListener("input", updateBatchCostPreview);

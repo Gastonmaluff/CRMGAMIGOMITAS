@@ -53,8 +53,13 @@
                 <form id="batchForm" class="form-grid">
                 <label>
                   Producto a fabricar
+                  <select id="batchProductSelect" name="product" required></select>
+                </label>
+                <label class="hidden">
+                  Formula asociada
                   <select name="recipe" required></select>
                 </label>
+                <div class="error" id="batchRecipeNotice"></div>
                 <label>
                   Fecha (hoy)
                   <input name="date" type="date" required readonly />
