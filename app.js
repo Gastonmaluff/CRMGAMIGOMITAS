@@ -11,6 +11,7 @@ import {
   collection,
   addDoc,
   doc,
+  writeBatch,
   updateDoc,
   deleteDoc,
   onSnapshot,
@@ -167,14 +168,20 @@ const updateSelect = (select, items, placeholder) => {
   select.innerHTML = options.join("");
 };
 
-const refreshStockSummary = () => {
+const computeStockTotals = () => {
   const totals = {};
   state.purchases.forEach((purchase) => {
     const id = purchase.materialId;
     totals[id] = totals[id] || { purchased: 0, used: 0 };
-    totals[id].purchased += Number(purchase.quantity || 0);
+    const type = purchase.type || "ingreso";
+    if (type === "ingreso") {
+      totals[id].purchased += Number(purchase.quantity || 0);
+    } else {
+      totals[id].used += Number(purchase.quantity || 0);
+    }
   });
   state.batches.forEach((batch) => {
+    if (batch.stockDeducted) return;
     (batch.materialsUsed || []).forEach((material) => {
       const id = material.materialId;
       totals[id] = totals[id] || { purchased: 0, used: 0 };
@@ -201,6 +208,11 @@ const refreshStockSummary = () => {
     return acc;
   }, {});
 
+  return { rows, availabilityMap };
+};
+
+const refreshStockSummary = () => {
+  const { rows, availabilityMap } = computeStockTotals();
   const totalValue = rows.reduce((sum, row) => sum + row.available * row.price, 0);
   const selectedRecipeId = stockRecipeSelect?.value;
   const selectedRecipe = state.recipes.find((recipe) => recipe.id === selectedRecipeId);
@@ -866,17 +878,54 @@ batchForm.addEventListener("submit", async (event) => {
   const recipe = state.recipes.find((item) => item.id === recipeId);
   if (!recipe) return;
   const quantityProduced = Number(batchForm.quantity.value);
+  if (!quantityProduced || !recipe.yieldQuantity) {
+    if (batchRecipeNotice) {
+      batchRecipeNotice.textContent = "Completa cantidad producida y formula valida.";
+    }
+    return;
+  }
+  const ratio = quantityProduced / Number(recipe.yieldQuantity || 1);
+  const { availabilityMap } = computeStockTotals();
+  const shortages = [];
+  const materialsToConsume = (recipe.ingredients || []).map((ing) => {
+    const material = state.rawMaterials.find((m) => m.id === ing.materialId);
+    const baseUnit = material?.unit || ing.unitBase || ing.unit;
+    const baseRequired = Number(ing.quantityBase || 0) ||
+      normalizeQuantity(Number(ing.quantity || 0), ing.unit, baseUnit) ||
+      Number(ing.quantity || 0);
+    const required = baseRequired * ratio;
+    const available = availabilityMap[ing.materialId] ?? 0;
+    if (available + 1e-6 < required) {
+      shortages.push(`${ing.materialName}: faltan ${formatNumber(required - available)} ${baseUnit}`);
+    }
+    return {
+      material,
+      materialId: ing.materialId,
+      materialName: ing.materialName,
+      unit: baseUnit,
+      quantity: required,
+      unitCost: Number(ing.unitCost || material?.price || 0)
+    };
+  });
+
+  if (shortages.length) {
+    if (batchRecipeNotice) {
+      batchRecipeNotice.textContent = `Stock insuficiente. ${shortages.join(" | ")}`;
+    }
+    return;
+  }
+
   const costPerUnit = Number(recipe.costPerUnit || 0);
   const totalCost = costPerUnit * quantityProduced;
-  const scale = recipe.yieldQuantity > 0 ? quantityProduced / recipe.yieldQuantity : 0;
-  const materialsUsed = (recipe.ingredients || []).map((item) => ({
+  const materialsUsed = materialsToConsume.map((item) => ({
     materialId: item.materialId,
     materialName: item.materialName,
     unit: item.unit,
-    quantity: Number(item.quantity) * scale,
-    unitCost: Number(item.unitCost || 0),
-    totalCost: Number(item.totalCost || 0) * scale
+    quantity: item.quantity,
+    unitCost: item.unitCost,
+    totalCost: item.quantity * item.unitCost
   }));
+  const batchRef = doc(collection(db, "batches"));
   const payload = {
     recipeId,
     recipeName: recipe.name,
@@ -887,12 +936,40 @@ batchForm.addEventListener("submit", async (event) => {
     costPerUnit,
     totalCost,
     materialsUsed,
+    stockDeducted: true,
     userId: user.uid,
     createdAt: serverTimestamp()
   };
-  await saveDoc("batches", batchForm, payload);
+  const batch = writeBatch(db);
+  batch.set(batchRef, payload);
+  materialsToConsume.forEach((item) => {
+    const movementRef = doc(collection(db, "raw_purchases"));
+    const movementTotal = item.quantity * item.unitCost;
+    batch.set(movementRef, {
+      type: "consumo por produccion",
+      materialId: item.materialId,
+      materialName: item.materialName,
+      unit: item.unit,
+      quantityPurchased: item.quantity,
+      unitPurchased: item.unit,
+      date: batchForm.date.value,
+      quantity: item.quantity,
+      unitPrice: item.unitCost,
+      total: movementTotal,
+      recipeId: recipe.id,
+      recipeName: recipe.name,
+      batchId: batchRef.id,
+      lotNumber: batchForm.lotNumber.value.trim(),
+      userId: user.uid,
+      createdAt: serverTimestamp()
+    });
+  });
+  await batch.commit();
   resetForm(batchForm);
   updateBatchCostPreview();
+  if (batchRecipeNotice) {
+    batchRecipeNotice.textContent = "Produccion registrada y stock actualizado.";
+  }
 });
 
 productForm.addEventListener("submit", async (event) => {
