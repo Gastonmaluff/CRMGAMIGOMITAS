@@ -1146,6 +1146,17 @@ document.addEventListener("click", (event) => {
   if (!toggle) return;
   const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
+  document.querySelectorAll(".collapse-body").forEach((other) => {
+    if (other !== body) {
+      other.classList.add("collapsed");
+    }
+  });
+  document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((otherToggle) => {
+    if (otherToggle !== toggle) {
+      otherToggle.classList.remove("open");
+      otherToggle.setAttribute("aria-expanded", "false");
+    }
+  });
   const willCollapse = !body.classList.contains("collapsed");
   body.classList.toggle("collapsed", willCollapse);
   toggle.classList.toggle("open", !willCollapse);
