@@ -463,10 +463,6 @@ select:focus {
     margin-bottom: 16px;
   }
 
-  .tabs {
-    grid-template-columns: 1fr;
-  }
-
   .brand-logo {
     max-height: 34px;
   }
