@@ -256,14 +256,23 @@
               <h2 class="section-title">Resumen de stock (estimado) <button class="collapse-toggle" type="button" data-collapse="stockSummarySection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="stockSummarySection">
                 <div class="form-grid">
-                <label>
-                  Formula para calculo de produccion
-                  <select id="stockRecipeSelect"></select>
-                </label>
+                  <label>
+                    Formula para calculo de produccion
+                    <select id="stockRecipeSelect"></select>
+                  </label>
                 </div>
-                <div class="list" id="stockSummaryTotals"></div>
-                <div class="list" id="stockBalanceList"></div>
-                <div class="list" id="stockSummary"></div>
+                <div class="summary-block">
+                  <h3 class="section-subtitle">Resumen general</h3>
+                  <div class="summary-card" id="stockSummaryGeneral"></div>
+                </div>
+                <div class="summary-block">
+                  <h3 class="section-subtitle">Materias primas</h3>
+                  <div class="materials-table" id="stockMaterialsList"></div>
+                </div>
+                <div class="summary-block">
+                  <h3 class="section-subtitle">Produccion realizada</h3>
+                  <div class="summary-card" id="stockProductionSummary"></div>
+                </div>
               </div>
             </div>
           </div>

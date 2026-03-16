@@ -65,10 +65,10 @@ const recipeIngredientsList = document.getElementById("recipeIngredientsList");
 const recipeCostPreview = document.getElementById("recipeCostPreview");
 const recipeList = document.getElementById("recipeList");
 const batchList = document.getElementById("batchList");
-const stockSummary = document.getElementById("stockSummary");
-const stockSummaryTotals = document.getElementById("stockSummaryTotals");
+const stockSummaryGeneral = document.getElementById("stockSummaryGeneral");
+const stockMaterialsList = document.getElementById("stockMaterialsList");
+const stockProductionSummary = document.getElementById("stockProductionSummary");
 const stockRecipeSelect = document.getElementById("stockRecipeSelect");
-const stockBalanceList = document.getElementById("stockBalanceList");
 const productList = document.getElementById("productList");
 const clientList = document.getElementById("clientList");
 const saleList = document.getElementById("saleList");
@@ -227,22 +227,31 @@ const computeStockTotals = () => {
   return { rows, availabilityMap };
 };
 
+const computeProductionTotals = () => {
+  let totalKg = 0;
+  state.batches.forEach((batch) => {
+    const qty = Number(batch.quantityProduced || 0);
+    if (!qty) return;
+    const unit = batch.unitProduced;
+    if (unit === "kg") totalKg += qty;
+    if (unit === "g") totalKg += qty / 1000;
+  });
+  const totalDisplays = Math.floor(totalKg / 0.36);
+  return { totalKg, totalDisplays };
+};
+
 const refreshStockSummary = () => {
   const { rows, availabilityMap } = computeStockTotals();
+  const totalValue = rows.reduce((sum, row) => sum + row.available * row.price, 0);
   const selectedRecipeId = stockRecipeSelect?.value;
   const selectedRecipe = state.recipes.find((recipe) => recipe.id === selectedRecipeId);
-  let maxBatches = null;
-  let limiting = null;
-  let totalYield = null;
-  let displayEstimate = null;
-  let displayLabel = null;
-  let totalCostAvailable = null;
-  let recipeCostPerBatch = 0;
-
   const ingredientRows = [];
+  let limitingRow = null;
+  let maxBatches = null;
+  let productionMaxKg = null;
+  let displaysMax = null;
+
   if (selectedRecipe && selectedRecipe.ingredients?.length) {
-    let minRatio = Infinity;
-    let limitingIngredient = null;
     selectedRecipe.ingredients.forEach((ing) => {
       const material = state.rawMaterials.find((m) => m.id === ing.materialId);
       const baseUnit = material?.unit || ing.unitBase || ing.unit;
@@ -250,114 +259,111 @@ const refreshStockSummary = () => {
         normalizeQuantity(Number(ing.quantity || 0), ing.unit, baseUnit) ||
         Number(ing.quantity || 0);
       const available = availabilityMap[ing.materialId] ?? 0;
-      const unitCost = Number(ing.unitCost || material?.price || 0);
       const lotsPossible = requiredBase > 0 ? available / requiredBase : Infinity;
-      ingredientRows.push({
+      const row = {
         materialId: ing.materialId,
         name: ing.materialName,
         unit: baseUnit,
         requiredBase,
         available,
-        unitCost,
-        minStock: material?.minStock ?? null,
         lotsPossible
-      });
-      if (requiredBase > 0 && lotsPossible < minRatio) {
-        minRatio = lotsPossible;
-        limitingIngredient = { name: ing.materialName, unit: baseUnit };
+      };
+      ingredientRows.push(row);
+      if (requiredBase > 0 && (!limitingRow || lotsPossible < limitingRow.lotsPossible)) {
+        limitingRow = row;
       }
     });
 
-    maxBatches = Number.isFinite(minRatio) ? Math.max(minRatio, 0) : 0;
-    if (limitingIngredient) {
-      limiting = `${limitingIngredient.name} (${limitingIngredient.unit})`;
-    }
-
+    maxBatches = limitingRow ? Math.max(limitingRow.lotsPossible, 0) : 0;
     const yieldQuantity = Number(selectedRecipe.yieldQuantity || 0);
     const yieldUnit = selectedRecipe.yieldUnit || "";
-    totalYield = yieldQuantity > 0 ? maxBatches * yieldQuantity : null;
-
-    if (yieldUnit === "kg" || yieldUnit === "g") {
-      if (totalYield !== null) {
-        const totalKg = yieldUnit === "kg" ? totalYield : totalYield / 1000;
-        displayEstimate = Math.floor(totalKg / 0.36);
-      } else {
-        displayEstimate = null;
-      }
-      displayLabel = "Displays posibles (360 g)";
-    } else if (yieldUnit) {
-      const labelMap = {
-        paquete: "Paquetes posibles",
-        caja: "Cajas posibles",
-        unidad: "Unidades posibles"
-      };
-      displayLabel = labelMap[yieldUnit] || `Produccion posible (${yieldUnit})`;
-      displayEstimate = totalYield;
+    if (yieldQuantity > 0 && Number.isFinite(maxBatches)) {
+      const totalYield = maxBatches * yieldQuantity;
+      if (yieldUnit === "kg") productionMaxKg = totalYield;
+      if (yieldUnit === "g") productionMaxKg = totalYield / 1000;
     }
-
-    recipeCostPerBatch = Number(selectedRecipe.totalCost || 0);
-    if (!recipeCostPerBatch) {
-      recipeCostPerBatch = ingredientRows.reduce(
-        (sum, row) => sum + row.requiredBase * row.unitCost,
-        0
-      );
+    if (productionMaxKg !== null) {
+      displaysMax = Math.floor(productionMaxKg / 0.36);
     }
-    totalCostAvailable = recipeCostPerBatch && maxBatches !== null
-      ? recipeCostPerBatch * maxBatches
-      : null;
   }
 
   if (!selectedRecipe) {
-    stockSummaryTotals.innerHTML = '<div class="list-item muted">Selecciona una formula para ver el resumen.</div>';
+    stockSummaryGeneral.innerHTML = '<div class="muted">Selecciona una formula para ver el resumen.</div>';
+    stockMaterialsList.innerHTML = '<div class="list-item muted">Selecciona una formula para ver el detalle de materias primas.</div>';
   } else {
-    const yieldUnitLabel = selectedRecipe.yieldUnit || "unidad";
-    const productionLabel = totalYield !== null
-      ? `${formatNumber(totalYield)} ${yieldUnitLabel} (${formatNumber(maxBatches || 0)} lotes)`
-      : "Definir rendimiento en la formula";
-    stockSummaryTotals.innerHTML = `
-      <div class="list-item">
-        <strong>Resumen de decision</strong>
-        <div>Costo total estimado disponible: ${totalCostAvailable !== null ? `Gs ${formatGs(totalCostAvailable)}` : "N/D"}</div>
-        <div>Produccion maxima: ${productionLabel}</div>
-        <div>Cuello de botella: ${limiting || "N/D"}</div>
-        <div>${displayLabel || "Displays/paquetes posibles"}: ${displayEstimate !== null ? formatNumber(displayEstimate) : "N/D"}</div>
+    stockSummaryGeneral.innerHTML = `
+      <div class="summary-metric">
+        <strong>Costo total estimado disponible</strong>
+        <div>Gs ${formatGs(totalValue)}</div>
+      </div>
+      <div class="summary-metric">
+        <strong>Produccion maxima</strong>
+        <div>${productionMaxKg !== null ? `${formatNumber(productionMaxKg)} kg` : "N/D"}</div>
+      </div>
+      <div class="summary-metric">
+        <strong>Lotes posibles</strong>
+        <div>${maxBatches !== null && Number.isFinite(maxBatches) ? formatNumber(maxBatches) : "N/D"}</div>
+      </div>
+      <div class="summary-metric">
+        <strong>Displays posibles (360 g)</strong>
+        <div>${displaysMax !== null ? formatNumber(displaysMax) : "N/D"}</div>
+      </div>
+      <div class="summary-metric">
+        <strong>Cuello de botella</strong>
+        <div>${limitingRow ? `${limitingRow.name} (${limitingRow.unit})` : "N/D"}</div>
       </div>
     `;
-  }
 
-  if (!selectedRecipe) {
-    stockBalanceList.innerHTML = '<div class="list-item muted">Selecciona una formula para ver el detalle por materia prima.</div>';
-  } else {
-    renderList(stockBalanceList, ingredientRows, (row) => {
-      const requiredPerBatch = row.requiredBase;
+    const header = `
+      <div class="materials-row header">
+        <div>Materia prima</div>
+        <div>Disponible</div>
+        <div>Requerido/lote</div>
+        <div>Lotes posibles</div>
+        <div>Estado</div>
+      </div>
+    `;
+    const body = ingredientRows.map((row) => {
+      const available = Number(row.available || 0);
       const lotsPossible = row.lotsPossible;
-      const status = getStockStatus({
-        available: row.available,
-        minStock: row.minStock,
-        requiredPerBatch
-      });
+      let statusLabel = "OK";
+      let statusClass = "status-ok";
+      if (available <= 0 || (!Number.isFinite(lotsPossible) ? false : lotsPossible < 5)) {
+        statusLabel = "Critico";
+        statusClass = "status-critical";
+      } else if (!Number.isFinite(lotsPossible)) {
+        statusLabel = "OK";
+        statusClass = "status-ok";
+      } else if (lotsPossible <= 10) {
+        statusLabel = "Bajo";
+        statusClass = "status-low";
+      }
+      const isBottleneck = limitingRow && row.materialId === limitingRow.materialId;
+      const badge = isBottleneck ? '<span class="badge">Cuello</span>' : "";
       return `
-        <div class="list-item ${status.alertClass}">
-          <strong>${row.name}</strong>
-          <div>Disponible: ${formatNumber(row.available)} ${row.unit}</div>
-          <div>Requerido por lote: ${formatNumber(requiredPerBatch)} ${row.unit}</div>
-          <div>Lotes posibles: ${Number.isFinite(lotsPossible) ? formatNumber(lotsPossible) : "N/D"}</div>
-          <div class="status-tag ${status.tagClass}">${status.label}</div>
+        <div class="materials-row ${isBottleneck ? "bottleneck" : ""}">
+          <div class="materials-cell" data-label="Materia prima"><strong>${row.name}</strong>${badge}</div>
+          <div class="materials-cell" data-label="Disponible">${formatNumber(row.available)} ${row.unit}</div>
+          <div class="materials-cell" data-label="Requerido/lote">${formatNumber(row.requiredBase)} ${row.unit}</div>
+          <div class="materials-cell" data-label="Lotes posibles">${Number.isFinite(lotsPossible) ? formatNumber(lotsPossible) : "N/D"}</div>
+          <div class="materials-cell" data-label="Estado"><span class="status-tag ${statusClass}">${statusLabel}</span></div>
         </div>
       `;
-    });
+    }).join("");
+    stockMaterialsList.innerHTML = header + body;
   }
 
-  renderList(stockSummary, rows, (row) => {
-    const status = getStockStatus({ available: row.available, minStock: row.minStock });
-    return `
-      <div class="list-item ${status.alertClass}">
-        <strong>${row.name}</strong>
-        Comprado: ${formatNumber(row.purchased)} ${row.unit} | Usado: ${formatNumber(row.used)} ${row.unit} | Disponible: ${formatNumber(row.available)} ${row.unit}
-        <div class="status-tag ${status.tagClass}">${status.label}</div>
-      </div>
-    `;
-  });
+  const productionTotals = computeProductionTotals();
+  stockProductionSummary.innerHTML = `
+    <div class="summary-metric">
+      <strong>Produccion total en kg</strong>
+      <div>${formatNumber(productionTotals.totalKg)} kg</div>
+    </div>
+    <div class="summary-metric">
+      <strong>Displays producidos (360 g)</strong>
+      <div>${formatNumber(productionTotals.totalDisplays)}</div>
+    </div>
+  `;
 
   requestAnimationFrame(refreshCollapseHeights);
 };
