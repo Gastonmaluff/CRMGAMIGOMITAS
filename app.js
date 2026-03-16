@@ -58,9 +58,17 @@ const metricKgYesterday = document.getElementById("metricKgYesterday");
 const metricDisplaysStock = document.getElementById("metricDisplaysStock");
 const metricLotsPossible = document.getElementById("metricLotsPossible");
 const metricBottleneck = document.getElementById("metricBottleneck");
+const productionDashboard = document.getElementById("overviewDashboard");
+const salesDashboard = document.getElementById("salesDashboard");
+const salesMetricMonth = document.getElementById("salesMetricMonth");
+const salesMetricYesterday = document.getElementById("salesMetricYesterday");
+const salesMetricAvailable = document.getElementById("salesMetricAvailable");
+const salesMetricGoal = document.getElementById("salesMetricGoal");
 const productForm = document.getElementById("productForm");
 const clientForm = document.getElementById("clientForm");
 const saleForm = document.getElementById("saleForm");
+const salesGoalForm = document.getElementById("salesGoalForm");
+const salesGoalNotice = document.getElementById("salesGoalNotice");
 const addIngredientBtn = document.getElementById("addIngredientBtn");
 
 const rawMaterialList = document.getElementById("rawMaterialList");
@@ -87,7 +95,8 @@ const state = {
   batches: [],
   products: [],
   clients: [],
-  sales: []
+  sales: [],
+  salesGoals: []
 };
 
 let unsubscribers = [];
@@ -313,6 +322,61 @@ const computeRecipeStockMetrics = (recipe, availabilityMap) => {
   return { ingredientRows, limitingRow, maxBatches, productionMaxKg, displaysMax };
 };
 
+const isDateInRange = (dateValue, startDate, endDate) => {
+  if (!dateValue || !startDate || !endDate) return false;
+  return dateValue >= startDate && dateValue <= endDate;
+};
+
+const computeDisplaysFromSales = (sales, startDate, endDate) => {
+  let total = 0;
+  let hasDisplayUnit = false;
+  sales.forEach((sale) => {
+    if (!isDateInRange(sale.date, startDate, endDate)) return;
+    const product = state.products.find((item) => item.id === sale.productId);
+    const unit = normalizeText(product?.unit || "");
+    if (unit.includes("display")) {
+      total += Number(sale.quantity || 0);
+      hasDisplayUnit = true;
+    }
+  });
+  return hasDisplayUnit ? total : null;
+};
+
+const computeDisplaysForDate = (sales, dateValue) => {
+  let total = 0;
+  let hasDisplayUnit = false;
+  sales.forEach((sale) => {
+    if (sale.date !== dateValue) return;
+    const product = state.products.find((item) => item.id === sale.productId);
+    const unit = normalizeText(product?.unit || "");
+    if (unit.includes("display")) {
+      total += Number(sale.quantity || 0);
+      hasDisplayUnit = true;
+    }
+  });
+  return hasDisplayUnit ? total : null;
+};
+
+const updateDashboardVisibility = (activeTab) => {
+  if (!productionDashboard || !salesDashboard) return;
+  if (activeTab === "sales") {
+    productionDashboard.classList.add("hidden");
+    salesDashboard.classList.remove("hidden");
+  } else {
+    productionDashboard.classList.remove("hidden");
+    salesDashboard.classList.add("hidden");
+  }
+};
+
+const updateSalesGoalForm = (goal) => {
+  if (!salesGoalForm) return;
+  salesGoalForm.dataset.editId = goal?.id || "";
+  salesGoalForm.startDate.value = goal?.startDate || "";
+  salesGoalForm.endDate.value = goal?.endDate || "";
+  salesGoalForm.targetDisplays.value = goal?.targetDisplays ?? "";
+  if (salesGoalNotice) salesGoalNotice.textContent = "";
+};
+
 const refreshDashboard = ({ rows, availabilityMap }) => {
   if (!metricKgYesterday) return;
   const yesterday = new Date();
@@ -331,6 +395,37 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
   metricDisplaysStock.textContent = displaysStock;
   metricLotsPossible.textContent = lotsPossible;
   metricBottleneck.textContent = bottleneck;
+};
+
+const refreshSalesDashboard = ({ rows, availabilityMap }) => {
+  if (!salesMetricMonth) return;
+  const goal = state.salesGoals[0];
+  const startDate = goal?.startDate || "";
+  const endDate = goal?.endDate || "";
+  const displaysInPeriod = goal ? computeDisplaysFromSales(state.sales, startDate, endDate) : null;
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayValue = toDateInputValue(yesterday);
+  const displaysYesterday = computeDisplaysForDate(state.sales, yesterdayValue);
+
+  const activeRecipe = getActiveRecipe();
+  const metrics = computeRecipeStockMetrics(activeRecipe, availabilityMap);
+  const availableDisplays = metrics.displaysMax !== null ? formatNumber(metrics.displaysMax) : "N/D";
+
+  salesMetricMonth.textContent = displaysInPeriod !== null ? formatNumber(displaysInPeriod) : "N/D";
+  salesMetricYesterday.textContent = displaysYesterday !== null ? formatNumber(displaysYesterday) : "N/D";
+  salesMetricAvailable.textContent = availableDisplays;
+
+  if (!goal || !goal.targetDisplays) {
+    salesMetricGoal.textContent = "Sin objetivo";
+  } else if (displaysInPeriod === null) {
+    salesMetricGoal.textContent = "N/D";
+  } else {
+    const percent = goal.targetDisplays > 0
+      ? (displaysInPeriod / goal.targetDisplays) * 100
+      : 0;
+    salesMetricGoal.textContent = `${formatNumber(percent)}%`;
+  }
 };
 
 const refreshStockSummary = () => {
@@ -674,9 +769,16 @@ const syncState = (key, items) => {
   if (key === "clients") {
     updateSelect(saleForm.client, items, "Opcional");
   }
+  if (key === "salesGoals") {
+    updateSalesGoalForm(items[0]);
+  }
 
   if (["rawMaterials", "purchases", "batches"].includes(key)) {
     refreshStockSummary();
+  }
+  if (["sales", "products", "salesGoals", "rawMaterials", "purchases", "batches"].includes(key)) {
+    const stockData = computeStockTotals();
+    refreshSalesDashboard(stockData);
   }
 };
 
@@ -805,8 +907,11 @@ const setupTabs = () => {
       tab.classList.add("active");
       const target = document.getElementById(tab.dataset.tab);
       if (target) target.classList.add("active");
+      updateDashboardVisibility(tab.dataset.tab);
     });
   });
+  const initialTab = document.querySelector(".tab.active")?.dataset.tab || "production";
+  updateDashboardVisibility(initialTab);
 };
 
 const updateDueDateVisibility = () => {
@@ -1220,6 +1325,37 @@ saleForm.addEventListener("submit", async (event) => {
   updateDueDateVisibility();
 });
 
+salesGoalForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const user = auth.currentUser;
+  if (!user) return;
+  const startDate = salesGoalForm.startDate.value;
+  const endDate = salesGoalForm.endDate.value;
+  const targetDisplays = Number(salesGoalForm.targetDisplays.value);
+  if (!startDate || !endDate) {
+    if (salesGoalNotice) salesGoalNotice.textContent = "Completa las fechas del periodo.";
+    return;
+  }
+  if (endDate < startDate) {
+    if (salesGoalNotice) salesGoalNotice.textContent = "La fecha fin no puede ser menor que la fecha inicio.";
+    return;
+  }
+  if (!targetDisplays || targetDisplays <= 0) {
+    if (salesGoalNotice) salesGoalNotice.textContent = "El objetivo de displays debe ser mayor que 0.";
+    return;
+  }
+  const payload = {
+    startDate,
+    endDate,
+    targetDisplays,
+    userId: user.uid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  };
+  await saveDoc("sales_goals", salesGoalForm, payload);
+  if (salesGoalNotice) salesGoalNotice.textContent = "Objetivo guardado.";
+});
+
 const startEditRawMaterial = (item) => {
   rawMaterialForm.name.value = item.name || "";
   setUnitGroupValue("rawMaterialUnit", item.unit || "");
@@ -1543,6 +1679,7 @@ onAuthStateChanged(auth, (user) => {
   listenCollection("products", "products", user.uid);
   listenCollection("clients", "clients", user.uid);
   listenCollection("sales", "sales", user.uid);
+  listenCollection("sales_goals", "salesGoals", user.uid);
 });
 
 

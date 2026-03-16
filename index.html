@@ -66,6 +66,28 @@
             <div class="overview-sub">cuello de botella</div>
           </div>
         </div>
+        <div class="overview-grid hidden" id="salesDashboard">
+          <div class="overview-card">
+            <div class="overview-label">Displays mes</div>
+            <div class="overview-value" id="salesMetricMonth">N/D</div>
+            <div class="overview-sub">periodo objetivo</div>
+          </div>
+          <div class="overview-card">
+            <div class="overview-label">Displays ayer</div>
+            <div class="overview-value" id="salesMetricYesterday">N/D</div>
+            <div class="overview-sub">ventas del dia anterior</div>
+          </div>
+          <div class="overview-card">
+            <div class="overview-label">Displays disponibles</div>
+            <div class="overview-value" id="salesMetricAvailable">N/D</div>
+            <div class="overview-sub">segun stock actual</div>
+          </div>
+          <div class="overview-card">
+            <div class="overview-label">Cumplimiento</div>
+            <div class="overview-value" id="salesMetricGoal">Sin objetivo</div>
+            <div class="overview-sub">objetivo del mes</div>
+          </div>
+        </div>
 
         <section class="tab-panel active" id="production">
           <div class="grid">
@@ -302,6 +324,26 @@
 
         <section class="tab-panel" id="sales">
           <div class="grid">
+            <div class="card">
+              <h2>Objetivo del mes</h2>
+              <form id="salesGoalForm" class="form-grid">
+                <label>
+                  Inicio del periodo
+                  <input name="startDate" type="date" required />
+                </label>
+                <label>
+                  Fin del periodo
+                  <input name="endDate" type="date" required />
+                </label>
+                <label>
+                  Objetivo de displays
+                  <input name="targetDisplays" type="number" step="1" min="1" required />
+                </label>
+                <button class="btn primary" type="submit">Guardar objetivo</button>
+              </form>
+              <div class="error" id="salesGoalNotice"></div>
+            </div>
+
             <div class="card">
               <h2>Productos</h2>
               <form id="productForm" class="form-grid">
