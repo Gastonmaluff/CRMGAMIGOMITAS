@@ -644,7 +644,7 @@ const renderAll = () => {
 
   renderList(batchList, state.batches, (item) => `
     <div class="list-item">
-      <strong>${item.recipeName}</strong>
+      <strong>${item.productName || item.recipeName}</strong>
       Fecha: ${formatDate(item.date)} | Cantidad: ${formatNumber(item.quantityProduced)} ${item.unitProduced}
       ${item.lotNumber ? `<div>Lote: ${item.lotNumber}</div>` : ""}
       <div>Costo total: Gs ${formatGs(item.totalCost)} | Costo por unidad: Gs ${formatGs(item.costPerUnit)}</div>
@@ -921,6 +921,13 @@ batchForm.addEventListener("submit", async (event) => {
     window.alert("Selecciona la unidad producida.");
     return;
   }
+  const lotNumber = batchForm.lotNumber.value.trim();
+  if (!lotNumber) {
+    if (batchRecipeNotice) {
+      batchRecipeNotice.textContent = "Ingresa el numero de lote.";
+    }
+    return;
+  }
   const recipeId = batchForm.recipe.value;
   if (!recipeId) {
     if (batchRecipeNotice) {
@@ -930,10 +937,28 @@ batchForm.addEventListener("submit", async (event) => {
   }
   const recipe = state.recipes.find((item) => item.id === recipeId);
   if (!recipe) return;
+  const productId = batchForm.product.value;
+  const product = state.products.find((item) => item.id === productId);
   const quantityProduced = Number(batchForm.quantity.value);
   if (!quantityProduced || !recipe.yieldQuantity) {
     if (batchRecipeNotice) {
       batchRecipeNotice.textContent = "Completa cantidad producida y formula valida.";
+    }
+    return;
+  }
+  const batchDate = batchForm.date.value;
+  const lotKey = normalizeText(lotNumber);
+  const duplicate = state.batches.some((batch) => {
+    const sameDate = batch.date === batchDate;
+    const sameProduct = productId
+      ? batch.productId === productId
+      : normalizeText(batch.productName || "") === normalizeText(product?.name || "");
+    const sameLot = normalizeText(batch.lotNumber || "") === lotKey;
+    return sameDate && sameProduct && sameLot;
+  });
+  if (duplicate) {
+    if (batchRecipeNotice) {
+      batchRecipeNotice.textContent = "Ya existe un lote con ese numero para este producto en la fecha indicada.";
     }
     return;
   }
@@ -982,8 +1007,10 @@ batchForm.addEventListener("submit", async (event) => {
   const payload = {
     recipeId,
     recipeName: recipe.name,
-    date: batchForm.date.value,
-    lotNumber: batchForm.lotNumber.value.trim(),
+    productId: product?.id || "",
+    productName: product?.name || "",
+    date: batchDate,
+    lotNumber,
     quantityProduced,
     unitProduced: batchForm.unit.value.trim(),
     costPerUnit,
@@ -1000,6 +1027,11 @@ batchForm.addEventListener("submit", async (event) => {
     const movementTotal = item.quantity * item.unitCost;
     batch.set(movementRef, {
       type: "consumo por produccion",
+      batchId: batchRef.id,
+      lotNumber,
+      productId: product?.id || "",
+      productName: product?.name || "",
+      recipeId,
       materialId: item.materialId,
       materialName: item.materialName,
       unit: item.unit,
