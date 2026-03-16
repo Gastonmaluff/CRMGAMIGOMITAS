@@ -120,6 +120,19 @@ const formatDate = (value) => {
   return new Date(value).toLocaleDateString("es-PY");
 };
 
+const getStockStatus = ({ available, minStock, requiredPerBatch }) => {
+  const availableNum = Number(available || 0);
+  const minNum = Number(minStock || 0);
+  const requiredNum = Number(requiredPerBatch || 0);
+  if (availableNum <= 0 || (requiredNum > 0 && availableNum + 1e-6 < requiredNum)) {
+    return { label: "Critico", tagClass: "status-critical", alertClass: "alert-critical" };
+  }
+  if (minNum > 0 && availableNum < minNum) {
+    return { label: "Bajo", tagClass: "status-low", alertClass: "alert-low" };
+  }
+  return { label: "OK", tagClass: "status-ok", alertClass: "" };
+};
+
 const resetForm = (form) => {
   form.reset();
   form.dataset.editId = "";
@@ -197,6 +210,7 @@ const computeStockTotals = () => {
       unit: material.unit,
       materialId: material.id,
       price: Number(material.price || 0),
+      minStock: material.minStock ?? null,
       purchased: summary.purchased,
       used: summary.used,
       available
@@ -243,6 +257,7 @@ const refreshStockSummary = () => {
         requiredBase,
         available,
         unitCost,
+        minStock: material?.minStock ?? null,
         lotsPossible
       });
       if (requiredBase > 0 && lotsPossible < minRatio) {
@@ -314,36 +329,33 @@ const refreshStockSummary = () => {
     renderList(stockBalanceList, ingredientRows, (row) => {
       const requiredPerBatch = row.requiredBase;
       const lotsPossible = row.lotsPossible;
-      let statusClass = "status-ok";
-      let statusText = "OK";
-      if (!Number.isFinite(lotsPossible) || requiredPerBatch <= 0) {
-        statusClass = "status-ok";
-        statusText = "OK";
-      } else if (lotsPossible < 1) {
-        statusClass = "status-critical";
-        statusText = "Critico";
-      } else if (maxBatches !== null && lotsPossible <= maxBatches + 1e-6) {
-        statusClass = "status-low";
-        statusText = "Bajo";
-      }
+      const status = getStockStatus({
+        available: row.available,
+        minStock: row.minStock,
+        requiredPerBatch
+      });
       return `
-        <div class="list-item">
+        <div class="list-item ${status.alertClass}">
           <strong>${row.name}</strong>
           <div>Disponible: ${formatNumber(row.available)} ${row.unit}</div>
           <div>Requerido por lote: ${formatNumber(requiredPerBatch)} ${row.unit}</div>
           <div>Lotes posibles: ${Number.isFinite(lotsPossible) ? formatNumber(lotsPossible) : "N/D"}</div>
-          <div class="status-tag ${statusClass}">${statusText}</div>
+          <div class="status-tag ${status.tagClass}">${status.label}</div>
         </div>
       `;
     });
   }
 
-  renderList(stockSummary, rows, (row) => `
-    <div class="list-item">
-      <strong>${row.name}</strong>
-      Comprado: ${formatNumber(row.purchased)} ${row.unit} | Usado: ${formatNumber(row.used)} ${row.unit} | Disponible: ${formatNumber(row.available)} ${row.unit}
-    </div>
-  `);
+  renderList(stockSummary, rows, (row) => {
+    const status = getStockStatus({ available: row.available, minStock: row.minStock });
+    return `
+      <div class="list-item ${status.alertClass}">
+        <strong>${row.name}</strong>
+        Comprado: ${formatNumber(row.purchased)} ${row.unit} | Usado: ${formatNumber(row.used)} ${row.unit} | Disponible: ${formatNumber(row.available)} ${row.unit}
+        <div class="status-tag ${status.tagClass}">${status.label}</div>
+      </div>
+    `;
+  });
 
   requestAnimationFrame(refreshCollapseHeights);
 };
@@ -585,18 +597,25 @@ const listenCollection = (collectionName, key, userId) => {
 };
 
 const renderAll = () => {
-  renderList(rawMaterialList, state.rawMaterials, (item) => `
-    <div class="list-item">
-      <strong>${item.name}</strong>
-      Unidad: ${item.unit} | Costo referencia: Gs ${formatGs(item.referenceCost || item.price)}
-      ${item.minStock ? `<div>Stock minimo: ${formatNumber(item.minStock)} ${item.unit}</div>` : ""}
-      ${item.supplier ? `<div>Proveedor: ${item.supplier}</div>` : ""}
-      <div class="list-actions">
-        <button class="btn ghost" type="button" data-edit-raw-material="${item.id}">Editar</button>
-        <button class="btn ghost danger" type="button" data-delete-raw-material="${item.id}">Eliminar</button>
+  const { availabilityMap } = computeStockTotals();
+  renderList(rawMaterialList, state.rawMaterials, (item) => {
+    const available = availabilityMap[item.id] ?? 0;
+    const status = getStockStatus({ available, minStock: item.minStock });
+    return `
+      <div class="list-item ${status.alertClass}">
+        <strong>${item.name}</strong>
+        Unidad: ${item.unit} | Costo referencia: Gs ${formatGs(item.referenceCost || item.price)}
+        <div>Disponible: ${formatNumber(available)} ${item.unit}</div>
+        ${item.minStock ? `<div>Stock minimo: ${formatNumber(item.minStock)} ${item.unit}</div>` : ""}
+        <div class="status-tag ${status.tagClass}">${status.label}</div>
+        ${item.supplier ? `<div>Proveedor: ${item.supplier}</div>` : ""}
+        <div class="list-actions">
+          <button class="btn ghost" type="button" data-edit-raw-material="${item.id}">Editar</button>
+          <button class="btn ghost danger" type="button" data-delete-raw-material="${item.id}">Eliminar</button>
+        </div>
       </div>
-    </div>
-  `);
+    `;
+  });
 
   renderList(purchaseList, state.purchases, (item) => `
     <div class="list-item">

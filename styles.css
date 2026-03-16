@@ -355,6 +355,16 @@ select:focus {
   border-color: #fca5a5;
 }
 
+.list-item.alert-low {
+  border-color: #fcd34d;
+  background: #fff8e1;
+}
+
+.list-item.alert-critical {
+  border-color: #fca5a5;
+  background: #fff5f5;
+}
+
 .hidden {
   display: none;
 }
