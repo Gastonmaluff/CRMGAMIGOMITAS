@@ -460,6 +460,20 @@ const findRecipeForProduct = (product) => {
     || state.recipes.find((recipe) => normalizeText(recipe.name) === normalizeText(product.name));
 };
 
+const findProductForRecipe = (recipe) => {
+  if (!recipe) return null;
+  return state.products.find((product) => product.id === recipe.productId)
+    || state.products.find((product) => normalizeText(product.name) === normalizeText(recipe.name));
+};
+
+const updateBatchProductFromRecipe = () => {
+  const recipe = state.recipes.find((item) => item.id === batchForm.recipe.value);
+  const product = findProductForRecipe(recipe);
+  if (batchProductSelect) {
+    batchProductSelect.value = product?.id || "";
+  }
+};
+
 const updateBatchRecipeFromProduct = () => {
   const productId = batchProductSelect?.value;
   const product = state.products.find((item) => item.id === productId);
@@ -477,9 +491,7 @@ const updateBatchRecipeFromProduct = () => {
     return;
   }
   batchForm.recipe.value = recipe.id;
-  if (batchRecipeNotice) {
-    batchRecipeNotice.textContent = "";
-  }
+  if (batchRecipeNotice) batchRecipeNotice.textContent = "";
   setUnitGroupValue("batchUnit", recipe.yieldUnit || "");
   if (unitGroup) unitGroup.classList.add("locked");
   updateBatchCostPreview();
@@ -563,13 +575,16 @@ const syncState = (key, items) => {
     updateSelect(batchForm.recipe, items, "Seleccionar");
     updateSelect(stockRecipeSelect, items, "Seleccionar formula");
     updateBatchCostPreview();
-    if (batchProductSelect?.value) {
-      updateBatchRecipeFromProduct();
+    if (batchForm.recipe.value) {
+      updateBatchProductFromRecipe();
     }
   }
   if (key === "products") {
     updateSelect(saleForm.product, items, "Seleccionar");
     updateSelect(batchProductSelect, items, "Seleccionar");
+    if (batchForm.recipe.value) {
+      updateBatchProductFromRecipe();
+    }
   }
   if (key === "clients") {
     updateSelect(saleForm.client, items, "Opcional");
@@ -937,8 +952,10 @@ batchForm.addEventListener("submit", async (event) => {
   }
   const recipe = state.recipes.find((item) => item.id === recipeId);
   if (!recipe) return;
-  const productId = batchForm.product.value;
-  const product = state.products.find((item) => item.id === productId);
+  const productIdInput = batchForm.product.value;
+  const product = state.products.find((item) => item.id === productIdInput) || findProductForRecipe(recipe);
+  const resolvedProductId = product?.id || "";
+  const resolvedProductName = product?.name || recipe.name || "";
   const quantityProduced = Number(batchForm.quantity.value);
   if (!quantityProduced || !recipe.yieldQuantity) {
     if (batchRecipeNotice) {
@@ -950,9 +967,9 @@ batchForm.addEventListener("submit", async (event) => {
   const lotKey = normalizeText(lotNumber);
   const duplicate = state.batches.some((batch) => {
     const sameDate = batch.date === batchDate;
-    const sameProduct = productId
-      ? batch.productId === productId
-      : normalizeText(batch.productName || "") === normalizeText(product?.name || "");
+    const sameProduct = resolvedProductId
+      ? batch.productId === resolvedProductId
+      : normalizeText(batch.productName || "") === normalizeText(resolvedProductName);
     const sameLot = normalizeText(batch.lotNumber || "") === lotKey;
     return sameDate && sameProduct && sameLot;
   });
@@ -1007,8 +1024,8 @@ batchForm.addEventListener("submit", async (event) => {
   const payload = {
     recipeId,
     recipeName: recipe.name,
-    productId: product?.id || "",
-    productName: product?.name || "",
+    productId: resolvedProductId,
+    productName: resolvedProductName,
     date: batchDate,
     lotNumber,
     quantityProduced,
@@ -1029,8 +1046,8 @@ batchForm.addEventListener("submit", async (event) => {
       type: "consumo por produccion",
       batchId: batchRef.id,
       lotNumber,
-      productId: product?.id || "",
-      productName: product?.name || "",
+      productId: resolvedProductId,
+      productName: resolvedProductName,
       recipeId,
       materialId: item.materialId,
       materialName: item.materialName,
@@ -1181,6 +1198,9 @@ const startEditBatch = (item) => {
   batchForm.lotNumber.value = item.lotNumber || "";
   batchForm.quantity.value = item.quantityProduced ?? "";
   setUnitGroupValue("batchUnit", item.unitProduced || "");
+  if (batchProductSelect) {
+    batchProductSelect.value = item.productId || "";
+  }
   batchForm.dataset.editId = item.id;
   setSubmitLabel(batchForm, "Actualizar lote");
   updateBatchCostPreview();
@@ -1329,8 +1349,15 @@ recipeForm.wrapCount.addEventListener("input", renderRecipeDraft);
 
 batchForm.recipe.addEventListener("change", () => {
   const recipe = state.recipes.find((item) => item.id === batchForm.recipe.value);
+  const unitGroup = document.querySelector('.unit-group[data-target="batchUnit"]');
   if (recipe) {
     setUnitGroupValue("batchUnit", recipe.yieldUnit || "");
+    if (unitGroup) unitGroup.classList.add("locked");
+    updateBatchProductFromRecipe();
+    if (batchRecipeNotice) batchRecipeNotice.textContent = "";
+  } else {
+    setUnitGroupValue("batchUnit", "");
+    if (unitGroup) unitGroup.classList.remove("locked");
   }
   updateBatchCostPreview();
 });
