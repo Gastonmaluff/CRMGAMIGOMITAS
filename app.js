@@ -54,6 +54,10 @@ const batchForm = document.getElementById("batchForm");
 const batchProductSelect = document.getElementById("batchProductSelect");
 const batchRecipeNotice = document.getElementById("batchRecipeNotice");
 const batchProductInfo = document.getElementById("batchProductInfo");
+const metricKgYesterday = document.getElementById("metricKgYesterday");
+const metricDisplaysStock = document.getElementById("metricDisplaysStock");
+const metricLotsPossible = document.getElementById("metricLotsPossible");
+const metricBottleneck = document.getElementById("metricBottleneck");
 const productForm = document.getElementById("productForm");
 const clientForm = document.getElementById("clientForm");
 const saleForm = document.getElementById("saleForm");
@@ -240,19 +244,40 @@ const computeProductionTotals = () => {
   return { totalKg, totalDisplays };
 };
 
-const refreshStockSummary = () => {
-  const { rows, availabilityMap } = computeStockTotals();
-  const totalValue = rows.reduce((sum, row) => sum + row.available * row.price, 0);
+const toDateInputValue = (date) => {
+  const tzOffset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - tzOffset).toISOString().slice(0, 10);
+};
+
+const computeKgForDate = (dateValue) => {
+  let totalKg = 0;
+  state.batches.forEach((batch) => {
+    if (batch.date !== dateValue) return;
+    const qty = Number(batch.quantityProduced || 0);
+    if (!qty) return;
+    if (batch.unitProduced === "kg") totalKg += qty;
+    if (batch.unitProduced === "g") totalKg += qty / 1000;
+  });
+  return totalKg;
+};
+
+const getActiveRecipe = () => {
   const selectedRecipeId = stockRecipeSelect?.value;
-  const selectedRecipe = state.recipes.find((recipe) => recipe.id === selectedRecipeId);
+  if (selectedRecipeId) {
+    return state.recipes.find((recipe) => recipe.id === selectedRecipeId) || null;
+  }
+  if (state.recipes.length === 1) return state.recipes[0];
+  return null;
+};
+
+const computeRecipeStockMetrics = (recipe, availabilityMap) => {
   const ingredientRows = [];
   let limitingRow = null;
   let maxBatches = null;
   let productionMaxKg = null;
   let displaysMax = null;
-
-  if (selectedRecipe && selectedRecipe.ingredients?.length) {
-    selectedRecipe.ingredients.forEach((ing) => {
+  if (recipe && recipe.ingredients?.length) {
+    recipe.ingredients.forEach((ing) => {
       const material = state.rawMaterials.find((m) => m.id === ing.materialId);
       const baseUnit = material?.unit || ing.unitBase || ing.unit;
       const requiredBase = Number(ing.quantityBase || 0) ||
@@ -273,10 +298,9 @@ const refreshStockSummary = () => {
         limitingRow = row;
       }
     });
-
     maxBatches = limitingRow ? Math.max(limitingRow.lotsPossible, 0) : 0;
-    const yieldQuantity = Number(selectedRecipe.yieldQuantity || 0);
-    const yieldUnit = selectedRecipe.yieldUnit || "";
+    const yieldQuantity = Number(recipe.yieldQuantity || 0);
+    const yieldUnit = recipe.yieldUnit || "";
     if (yieldQuantity > 0 && Number.isFinite(maxBatches)) {
       const totalYield = maxBatches * yieldQuantity;
       if (yieldUnit === "kg") productionMaxKg = totalYield;
@@ -286,6 +310,40 @@ const refreshStockSummary = () => {
       displaysMax = Math.floor(productionMaxKg / 0.36);
     }
   }
+  return { ingredientRows, limitingRow, maxBatches, productionMaxKg, displaysMax };
+};
+
+const refreshDashboard = ({ rows, availabilityMap }) => {
+  if (!metricKgYesterday) return;
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayValue = toDateInputValue(yesterday);
+  const kgYesterday = computeKgForDate(yesterdayValue);
+  metricKgYesterday.textContent = `${formatNumber(kgYesterday)} kg`;
+
+  const activeRecipe = getActiveRecipe();
+  const metrics = computeRecipeStockMetrics(activeRecipe, availabilityMap);
+  const displaysStock = metrics.displaysMax !== null ? formatNumber(metrics.displaysMax) : "N/D";
+  const lotsPossible = metrics.maxBatches !== null && Number.isFinite(metrics.maxBatches)
+    ? formatNumber(metrics.maxBatches)
+    : "N/D";
+  const bottleneck = metrics.limitingRow ? metrics.limitingRow.name : "N/D";
+  metricDisplaysStock.textContent = displaysStock;
+  metricLotsPossible.textContent = lotsPossible;
+  metricBottleneck.textContent = bottleneck;
+};
+
+const refreshStockSummary = () => {
+  const { rows, availabilityMap } = computeStockTotals();
+  const totalValue = rows.reduce((sum, row) => sum + row.available * row.price, 0);
+  const selectedRecipeId = stockRecipeSelect?.value;
+  const selectedRecipe = state.recipes.find((recipe) => recipe.id === selectedRecipeId);
+  const metrics = computeRecipeStockMetrics(selectedRecipe, availabilityMap);
+  const ingredientRows = metrics.ingredientRows;
+  const limitingRow = metrics.limitingRow;
+  const maxBatches = metrics.maxBatches;
+  const productionMaxKg = metrics.productionMaxKg;
+  const displaysMax = metrics.displaysMax;
 
   if (!selectedRecipe) {
     stockSummaryGeneral.innerHTML = '<div class="muted">Selecciona una formula para ver el resumen.</div>';
@@ -365,6 +423,7 @@ const refreshStockSummary = () => {
     </div>
   `;
 
+  refreshDashboard({ rows, availabilityMap });
   requestAnimationFrame(refreshCollapseHeights);
 };
 
