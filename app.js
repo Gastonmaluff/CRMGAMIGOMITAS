@@ -174,6 +174,7 @@ const renderList = (container, items, renderer) => {
 };
 
 const updateSelect = (select, items, placeholder) => {
+  if (!select || select.tagName !== "SELECT") return;
   const options = [`<option value="">${placeholder}</option>`];
   items.forEach((item) => {
     options.push(`<option value="${item.id}">${item.name}</option>`);
@@ -475,6 +476,7 @@ const updateBatchProductFromRecipe = () => {
 };
 
 const updateBatchRecipeFromProduct = () => {
+  if (!batchProductSelect || batchProductSelect.tagName !== "SELECT") return;
   const productId = batchProductSelect?.value;
   const product = state.products.find((item) => item.id === productId);
   const recipe = findRecipeForProduct(product);
@@ -1362,9 +1364,11 @@ batchForm.recipe.addEventListener("change", () => {
   updateBatchCostPreview();
 });
 
-batchProductSelect?.addEventListener("change", () => {
-  updateBatchRecipeFromProduct();
-});
+if (batchProductSelect?.tagName === "SELECT") {
+  batchProductSelect.addEventListener("change", () => {
+    updateBatchRecipeFromProduct();
+  });
+}
 
 batchForm.quantity.addEventListener("input", updateBatchCostPreview);
 

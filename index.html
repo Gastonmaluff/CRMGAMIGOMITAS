@@ -51,10 +51,7 @@
               <h2 class="section-title">Produccion de hoy <button class="collapse-toggle" type="button" data-collapse="prodToday" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="prodToday">
                 <form id="batchForm" class="form-grid">
-                <label class="hidden">
-                  Producto a fabricar
-                  <select id="batchProductSelect" name="product"></select>
-                </label>
+                <input id="batchProductSelect" name="product" type="hidden" />
                 <label>
                   Formula asociada
                   <select name="recipe" required></select>
