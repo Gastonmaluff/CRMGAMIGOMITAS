@@ -331,6 +331,30 @@ select:focus {
   margin: 6px 0 10px;
 }
 
+.status-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--border-dark);
+  color: var(--ink);
+}
+
+.status-ok {
+  background: #f3f4f6;
+}
+
+.status-low {
+  background: #fef3c7;
+  border-color: #fcd34d;
+}
+
+.status-critical {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
 .hidden {
   display: none;
 }
