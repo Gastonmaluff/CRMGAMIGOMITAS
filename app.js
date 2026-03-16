@@ -53,6 +53,7 @@ const recipeForm = document.getElementById("recipeForm");
 const batchForm = document.getElementById("batchForm");
 const batchProductSelect = document.getElementById("batchProductSelect");
 const batchRecipeNotice = document.getElementById("batchRecipeNotice");
+const batchProductInfo = document.getElementById("batchProductInfo");
 const productForm = document.getElementById("productForm");
 const clientForm = document.getElementById("clientForm");
 const saleForm = document.getElementById("saleForm");
@@ -473,6 +474,13 @@ const updateBatchProductFromRecipe = () => {
   if (batchProductSelect) {
     batchProductSelect.value = product?.id || "";
   }
+  if (batchProductInfo) {
+    batchProductInfo.textContent = product?.name
+      ? `Producto: ${product.name}`
+      : recipe?.name
+        ? `Producto: ${recipe.name}`
+        : "";
+  }
 };
 
 const updateBatchRecipeFromProduct = () => {
@@ -490,10 +498,20 @@ const updateBatchRecipeFromProduct = () => {
     if (batchRecipeNotice) {
       batchRecipeNotice.textContent = "No hay formula asociada. Primero carga la formula del producto.";
     }
+    if (batchProductInfo) {
+      batchProductInfo.textContent = "";
+    }
     return;
   }
   batchForm.recipe.value = recipe.id;
   if (batchRecipeNotice) batchRecipeNotice.textContent = "";
+  if (batchProductInfo) {
+    batchProductInfo.textContent = product?.name
+      ? `Producto: ${product.name}`
+      : recipe?.name
+        ? `Producto: ${recipe.name}`
+        : "";
+  }
   setUnitGroupValue("batchUnit", recipe.yieldUnit || "");
   if (unitGroup) unitGroup.classList.add("locked");
   updateBatchCostPreview();
@@ -1360,6 +1378,7 @@ batchForm.recipe.addEventListener("change", () => {
   } else {
     setUnitGroupValue("batchUnit", "");
     if (unitGroup) unitGroup.classList.remove("locked");
+    if (batchProductInfo) batchProductInfo.textContent = "";
   }
   updateBatchCostPreview();
 });
