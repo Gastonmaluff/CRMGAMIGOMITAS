@@ -96,6 +96,112 @@
             </div>
 
             <div class="card">
+              <h2 class="section-title">Resumen de stock (estimado) <button class="collapse-toggle" type="button" data-collapse="stockSummarySection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
+              <div class="collapse-body" id="stockSummarySection">
+                <div class="form-grid">
+                  <label>
+                    Formula para calculo de produccion
+                    <select id="stockRecipeSelect"></select>
+                  </label>
+                </div>
+                <div class="summary-block">
+                  <h3 class="section-subtitle">Resumen general</h3>
+                  <div class="summary-card" id="stockSummaryGeneral"></div>
+                </div>
+                <div class="summary-block">
+                  <h3 class="section-subtitle">Materias primas</h3>
+                  <div class="materials-table" id="stockMaterialsList"></div>
+                </div>
+                <div class="summary-block">
+                  <h3 class="section-subtitle">Produccion realizada</h3>
+                  <div class="summary-card" id="stockProductionSummary"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h2 class="section-title">Stock de materias primas <button class="collapse-toggle" type="button" data-collapse="stockSection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
+              <div class="collapse-body" id="stockSection">
+                <form id="purchaseForm" class="form-grid">
+                <label>
+                  Materia prima
+                  <select name="material" required></select>
+                </label>
+                <label>
+                  Fecha
+                  <input name="date" type="date" required />
+                </label>
+                <label>
+                  Cantidad ingresada
+                  <input name="quantity" type="number" step="0.01" required />
+                </label>
+                <label>
+                  Unidad de ingreso
+                  <input id="purchaseUnit" name="purchaseUnit" required type="hidden" />
+                </label>
+                <div class="unit-group" data-target="purchaseUnit">
+                  <button class="btn chip" type="button" data-unit="kg">kg</button>
+                  <button class="btn chip" type="button" data-unit="g">g</button>
+                  <button class="btn chip" type="button" data-unit="L">L</button>
+                  <button class="btn chip" type="button" data-unit="ml">ml</button>
+                  <button class="btn chip" type="button" data-unit="unidad">unidad</button>
+                </div>
+                <label>
+                  Costo por esa cantidad
+                  <input name="totalCost" type="number" step="0.01" required />
+                </label>
+                <label>
+                  Costo unitario base
+                  <input name="unitPrice" type="number" step="0.01" readonly />
+                </label>
+                <button class="btn primary" type="submit">Registrar ingreso</button>
+                </form>
+                <div class="section-subtitle">Movimientos recientes</div>
+                <div class="list" id="purchaseList"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h2 class="section-title">Materias primas <button class="collapse-toggle" type="button" data-collapse="rawMaterialSection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
+              <div class="collapse-body" id="rawMaterialSection">
+                <form id="rawMaterialForm" class="form-grid">
+                <label>
+                  Nombre
+                  <input name="name" required />
+                </label>
+                <label>
+                  Unidad (kg, g, L)
+                  <input id="rawMaterialUnit" name="unit" required type="hidden" />
+                </label>
+                <div class="unit-group" data-target="rawMaterialUnit">
+                  <button class="btn chip" type="button" data-unit="kg">kg</button>
+                  <button class="btn chip" type="button" data-unit="g">g</button>
+                  <button class="btn chip" type="button" data-unit="L">L</button>
+                  <button class="btn chip" type="button" data-unit="ml">ml</button>
+                  <button class="btn chip" type="button" data-unit="unidad">unidad</button>
+                </div>
+                <label>
+                  Costo de referencia (por unidad base)
+                  <input name="referenceCost" type="number" step="0.01" />
+                </label>
+                <label>
+                  Stock minimo (opcional)
+                  <input name="minStock" type="number" step="0.01" />
+                </label>
+                <input name="referenceQuantity" type="hidden" value="1" />
+                <input name="legacyReferenceQuantity" type="hidden" />
+                <input name="legacyReferenceCostTotal" type="hidden" />
+                <label>
+                  Proveedor (opcional)
+                  <input name="supplier" />
+                </label>
+                <button class="btn primary" type="submit">Guardar materia prima</button>
+                </form>
+                <div class="list" id="rawMaterialList"></div>
+              </div>
+            </div>
+
+            <div class="card">
               <h2 class="section-title">Formula de producto <button class="collapse-toggle" type="button" data-collapse="recipeSection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="recipeSection">
                 <form id="recipeForm" class="form-grid">
@@ -167,112 +273,6 @@
                 <button class="btn primary" type="submit">Guardar formula</button>
                 </form>
                 <div class="list" id="recipeList"></div>
-              </div>
-            </div>
-
-            <div class="card">
-              <h2 class="section-title">Materias primas <button class="collapse-toggle" type="button" data-collapse="rawMaterialSection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
-              <div class="collapse-body" id="rawMaterialSection">
-                <form id="rawMaterialForm" class="form-grid">
-                <label>
-                  Nombre
-                  <input name="name" required />
-                </label>
-                <label>
-                  Unidad (kg, g, L)
-                  <input id="rawMaterialUnit" name="unit" required type="hidden" />
-                </label>
-                <div class="unit-group" data-target="rawMaterialUnit">
-                  <button class="btn chip" type="button" data-unit="kg">kg</button>
-                  <button class="btn chip" type="button" data-unit="g">g</button>
-                  <button class="btn chip" type="button" data-unit="L">L</button>
-                  <button class="btn chip" type="button" data-unit="ml">ml</button>
-                  <button class="btn chip" type="button" data-unit="unidad">unidad</button>
-                </div>
-                <label>
-                  Costo de referencia (por unidad base)
-                  <input name="referenceCost" type="number" step="0.01" />
-                </label>
-                <label>
-                  Stock minimo (opcional)
-                  <input name="minStock" type="number" step="0.01" />
-                </label>
-                <input name="referenceQuantity" type="hidden" value="1" />
-                <input name="legacyReferenceQuantity" type="hidden" />
-                <input name="legacyReferenceCostTotal" type="hidden" />
-                <label>
-                  Proveedor (opcional)
-                  <input name="supplier" />
-                </label>
-                <button class="btn primary" type="submit">Guardar materia prima</button>
-                </form>
-                <div class="list" id="rawMaterialList"></div>
-              </div>
-            </div>
-
-            <div class="card">
-              <h2 class="section-title">Stock de materias primas <button class="collapse-toggle" type="button" data-collapse="stockSection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
-              <div class="collapse-body" id="stockSection">
-                <form id="purchaseForm" class="form-grid">
-                <label>
-                  Materia prima
-                  <select name="material" required></select>
-                </label>
-                <label>
-                  Fecha
-                  <input name="date" type="date" required />
-                </label>
-                <label>
-                  Cantidad ingresada
-                  <input name="quantity" type="number" step="0.01" required />
-                </label>
-                <label>
-                  Unidad de ingreso
-                  <input id="purchaseUnit" name="purchaseUnit" required type="hidden" />
-                </label>
-                <div class="unit-group" data-target="purchaseUnit">
-                  <button class="btn chip" type="button" data-unit="kg">kg</button>
-                  <button class="btn chip" type="button" data-unit="g">g</button>
-                  <button class="btn chip" type="button" data-unit="L">L</button>
-                  <button class="btn chip" type="button" data-unit="ml">ml</button>
-                  <button class="btn chip" type="button" data-unit="unidad">unidad</button>
-                </div>
-                <label>
-                  Costo por esa cantidad
-                  <input name="totalCost" type="number" step="0.01" required />
-                </label>
-                <label>
-                  Costo unitario base
-                  <input name="unitPrice" type="number" step="0.01" readonly />
-                </label>
-                <button class="btn primary" type="submit">Registrar ingreso</button>
-                </form>
-                <div class="section-subtitle">Movimientos recientes</div>
-                <div class="list" id="purchaseList"></div>
-              </div>
-            </div>
-
-            <div class="card">
-              <h2 class="section-title">Resumen de stock (estimado) <button class="collapse-toggle" type="button" data-collapse="stockSummarySection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
-              <div class="collapse-body" id="stockSummarySection">
-                <div class="form-grid">
-                  <label>
-                    Formula para calculo de produccion
-                    <select id="stockRecipeSelect"></select>
-                  </label>
-                </div>
-                <div class="summary-block">
-                  <h3 class="section-subtitle">Resumen general</h3>
-                  <div class="summary-card" id="stockSummaryGeneral"></div>
-                </div>
-                <div class="summary-block">
-                  <h3 class="section-subtitle">Materias primas</h3>
-                  <div class="materials-table" id="stockMaterialsList"></div>
-                </div>
-                <div class="summary-block">
-                  <h3 class="section-subtitle">Produccion realizada</h3>
-                  <div class="summary-card" id="stockProductionSummary"></div>
-                </div>
               </div>
             </div>
           </div>
