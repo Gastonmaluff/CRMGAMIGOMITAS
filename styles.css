@@ -111,7 +111,7 @@ body {
 .section-title-text {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   flex: 1;
   min-width: 0;
   line-height: 1.2;
@@ -126,8 +126,8 @@ body {
 }
 
 .section-title-text svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   color: var(--muted);
   flex: 0 0 auto;
 }
