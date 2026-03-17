@@ -104,6 +104,19 @@ body {
   align-items: center;
   justify-content: space-between;
   margin: 0 0 12px;
+  min-height: 52px;
+  gap: 12px;
+}
+
+.section-title-text {
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  line-height: 1.2;
+  max-height: 2.4em;
 }
 
 .chevron {
