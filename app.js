@@ -79,11 +79,11 @@ const recipeList = document.getElementById("recipeList");
 const batchList = document.getElementById("batchList");
 const stockSummaryGeneral = document.getElementById("stockSummaryGeneral");
 const stockMaterialsList = document.getElementById("stockMaterialsList");
-const stockProductionSummary = document.getElementById("stockProductionSummary");
 const stockRecipeSelect = document.getElementById("stockRecipeSelect");
 const productList = document.getElementById("productList");
 const clientList = document.getElementById("clientList");
 const saleList = document.getElementById("saleList");
+const finishedStockList = document.getElementById("finishedStockList");
 
 const dueDateField = document.getElementById("dueDateField");
 const unitGroups = Array.from(document.querySelectorAll(".unit-group[data-target]"));
@@ -240,19 +240,6 @@ const computeStockTotals = () => {
   return { rows, availabilityMap };
 };
 
-const computeProductionTotals = () => {
-  let totalKg = 0;
-  state.batches.forEach((batch) => {
-    const qty = Number(batch.quantityProduced || 0);
-    if (!qty) return;
-    const unit = batch.unitProduced;
-    if (unit === "kg") totalKg += qty;
-    if (unit === "g") totalKg += qty / 1000;
-  });
-  const totalDisplays = Math.floor(totalKg / 0.36);
-  return { totalKg, totalDisplays };
-};
-
 const toDateInputValue = (date) => {
   const tzOffset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - tzOffset).toISOString().slice(0, 10);
@@ -355,6 +342,119 @@ const computeDisplaysForDate = (sales, dateValue) => {
     }
   });
   return hasDisplayUnit ? total : null;
+};
+
+const computeDisplaysFromUnit = (quantity, unit) => {
+  if (!unit) return null;
+  if (unit === "kg") return quantity / 0.36;
+  if (unit === "g") return quantity / 360;
+  if (unit.includes("display")) return quantity;
+  return null;
+};
+
+const computeDisplaysFromBatch = (batch, recipe) => {
+  const qty = Number(batch.quantityProduced || 0);
+  if (!qty) return 0;
+  const unit = normalizeText(batch.unitProduced || "");
+  if (unit === "kg" || unit === "g") {
+    return computeDisplaysFromUnit(qty, unit);
+  }
+  if (recipe) {
+    const recipeUnit = normalizeText(recipe.yieldUnit || "");
+    if (recipeUnit === "kg" || recipeUnit === "g") {
+      if (unit === recipeUnit) {
+        return computeDisplaysFromUnit(qty, recipeUnit);
+      }
+    }
+  }
+  return null;
+};
+
+const computeDisplaysFromSale = (sale, product, recipe) => {
+  const qty = Number(sale.quantity || 0);
+  if (!qty) return 0;
+  const unit = normalizeText(product?.unit || "");
+  if (unit) {
+    const converted = computeDisplaysFromUnit(qty, unit);
+    if (converted !== null) return converted;
+  }
+  if (recipe) {
+    const recipeUnit = normalizeText(recipe.yieldUnit || "");
+    if (recipeUnit === "kg" || recipeUnit === "g") {
+      if (unit === recipeUnit) {
+        return computeDisplaysFromUnit(qty, recipeUnit);
+      }
+    }
+  }
+  return null;
+};
+
+const buildFinishedStockRows = () => {
+  const map = {};
+  const ensureEntry = (key, name) => {
+    if (!map[key]) {
+      map[key] = {
+        key,
+        name,
+        produced: 0,
+        sold: 0,
+        canCompute: true
+      };
+    }
+    return map[key];
+  };
+
+  state.batches.forEach((batch) => {
+    const productId = batch.productId || "";
+    const name = batch.productName || batch.recipeName || "Producto";
+    const key = productId || normalizeText(name);
+    const entry = ensureEntry(key, name);
+    const product = state.products.find((item) => item.id === productId);
+    const recipe = product ? findRecipeForProduct(product) : null;
+    const displays = computeDisplaysFromBatch(batch, recipe);
+    if (displays === null) {
+      entry.canCompute = false;
+    } else {
+      entry.produced += displays;
+    }
+  });
+
+  state.sales.forEach((sale) => {
+    const productId = sale.productId || "";
+    const name = sale.productName || "Producto";
+    const key = productId || normalizeText(name);
+    const entry = ensureEntry(key, name);
+    const product = state.products.find((item) => item.id === productId);
+    const recipe = product ? findRecipeForProduct(product) : null;
+    const displays = computeDisplaysFromSale(sale, product, recipe);
+    if (displays === null) {
+      entry.canCompute = false;
+    } else {
+      entry.sold += displays;
+    }
+  });
+
+  return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
+};
+
+const refreshFinishedStock = () => {
+  if (!finishedStockList) return;
+  const rows = buildFinishedStockRows();
+  if (!rows.length) {
+    finishedStockList.innerHTML = '<div class="list-item muted">Sin registros todavia.</div>';
+    return;
+  }
+  finishedStockList.innerHTML = rows.map((row) => {
+    const stockDisplays = row.canCompute ? row.produced - row.sold : null;
+    const stockKg = stockDisplays !== null ? stockDisplays * 0.36 : null;
+    return `
+      <div class="list-item">
+        <strong>${row.name}</strong>
+        <div>Displays disponibles: ${stockDisplays !== null ? formatNumber(stockDisplays) : "N/D"}</div>
+        <div>Equivalente en kg: ${stockKg !== null ? `${formatNumber(stockKg)} kg` : "N/D"}</div>
+      </div>
+    `;
+  }).join("");
 };
 
 const updateDashboardVisibility = (activeTab) => {
@@ -505,18 +605,6 @@ const refreshStockSummary = () => {
     }).join("");
     stockMaterialsList.innerHTML = header + body;
   }
-
-  const productionTotals = computeProductionTotals();
-  stockProductionSummary.innerHTML = `
-    <div class="summary-metric">
-      <strong>Produccion total en kg</strong>
-      <div>${formatNumber(productionTotals.totalKg)} kg</div>
-    </div>
-    <div class="summary-metric">
-      <strong>Displays producidos (360 g)</strong>
-      <div>${formatNumber(productionTotals.totalDisplays)}</div>
-    </div>
-  `;
 
   refreshDashboard({ rows, availabilityMap });
   requestAnimationFrame(refreshCollapseHeights);
@@ -779,6 +867,9 @@ const syncState = (key, items) => {
   if (["sales", "products", "salesGoals", "rawMaterials", "purchases", "batches"].includes(key)) {
     const stockData = computeStockTotals();
     refreshSalesDashboard(stockData);
+  }
+  if (["batches", "sales", "products", "recipes"].includes(key)) {
+    refreshFinishedStock();
   }
 };
 
