@@ -1026,9 +1026,11 @@ const renderAll = () => {
   renderList(batchList, state.batches, (item) => {
     const createdAt = item.createdAt?.seconds ? new Date(item.createdAt.seconds * 1000) : null;
     const timeLabel = createdAt ? formatTime(createdAt) : "N/D";
-    const userLabel = item.createdByEmail
-      ? item.createdByEmail.split("@")[0]
-      : item.createdBy || "N/D";
+    const userLabel = item.createdByName
+      ? item.createdByName
+      : item.createdByEmail
+        ? item.createdByEmail
+        : "Registro anterior";
     const materials = (item.materialsUsed || [])
       .map((m) => `
         <div class="batch-material">
@@ -1337,6 +1339,9 @@ batchForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const user = auth.currentUser;
   if (!user) return;
+  const existingBatch = batchForm.dataset.editId
+    ? state.batches.find((item) => item.id === batchForm.dataset.editId)
+    : null;
   if (!batchForm.unit.value) {
     window.alert("Selecciona la unidad producida.");
     return;
@@ -1439,8 +1444,9 @@ batchForm.addEventListener("submit", async (event) => {
     totalCost,
     materialsUsed,
     stockDeducted: true,
-    createdBy: user.uid,
-    createdByEmail: user.email || "",
+    createdBy: existingBatch?.createdBy || user.uid,
+    createdByEmail: existingBatch?.createdByEmail || user.email || "",
+    createdByName: existingBatch?.createdByName || user.displayName || "",
     userId: user.uid,
     createdAt: serverTimestamp()
   };
