@@ -353,27 +353,21 @@ select:focus {
 .overview-breakdown {
   display: grid;
   gap: 6px;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   color: var(--muted);
+  margin-top: 6px;
 }
 
-.overview-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: #f3f4f6;
-  border: 1px solid var(--border);
+.overview-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
   color: var(--ink);
 }
 
-.overview-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--ink);
-  opacity: 0.6;
+.overview-row span {
+  color: var(--muted);
 }
 
 .grid {

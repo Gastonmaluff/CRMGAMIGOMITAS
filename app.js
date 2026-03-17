@@ -528,8 +528,7 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
       metricDisplaysBreakdown.innerHTML = finishedTotals.breakdown
         .sort((a, b) => b.displays - a.displays)
         .map((item) => `
-          <div class="overview-chip">
-            <span class="overview-dot"></span>
+          <div class="overview-row">
             <span>${item.name}</span>
             <strong>${formatInteger(item.displays)}</strong>
           </div>
