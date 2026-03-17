@@ -1873,7 +1873,11 @@ const closeSection = (toggle, body) => {
 document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
   const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
-  openSection(toggle, body);
+  if (["salesGoalSection", "productsSection", "clientsSection", "salesSection"].includes(toggle.dataset.collapse)) {
+    closeSection(toggle, body);
+  } else {
+    openSection(toggle, body);
+  }
 });
 
 document.addEventListener("click", (event) => {

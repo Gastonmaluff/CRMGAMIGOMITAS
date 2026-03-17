@@ -329,8 +329,9 @@
         <section class="tab-panel" id="sales">
           <div class="grid">
             <div class="card">
-              <h2 class="section-title"><span class="section-title-text"><i data-lucide="target"></i><span class="section-title-label">Objetivo del mes</span></span></h2>
-              <form id="salesGoalForm" class="form-grid">
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="target"></i><span class="section-title-label">Objetivo del mes</span></span> <button class="collapse-toggle" type="button" data-collapse="salesGoalSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
+              <div class="collapse-body" id="salesGoalSection">
+                <form id="salesGoalForm" class="form-grid">
                 <label>
                   Inicio del periodo
                   <input name="startDate" type="date" required />
@@ -344,13 +345,15 @@
                   <input name="targetDisplays" type="number" step="1" min="1" required />
                 </label>
                 <button class="btn primary" type="submit">Guardar objetivo</button>
-              </form>
-              <div class="error" id="salesGoalNotice"></div>
+                </form>
+                <div class="error" id="salesGoalNotice"></div>
+              </div>
             </div>
 
             <div class="card">
-              <h2 class="section-title"><span class="section-title-text"><i data-lucide="package"></i><span class="section-title-label">Productos</span></span></h2>
-              <form id="productForm" class="form-grid">
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="package"></i><span class="section-title-label">Productos</span></span> <button class="collapse-toggle" type="button" data-collapse="productsSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
+              <div class="collapse-body" id="productsSection">
+                <form id="productForm" class="form-grid">
                 <label>
                   Nombre
                   <input name="name" required />
@@ -364,13 +367,15 @@
                   <input name="price" type="number" step="0.01" required />
                 </label>
                 <button class="btn primary" type="submit">Guardar producto</button>
-              </form>
+                </form>
                 <div class="list scroll" id="productList"></div>
+              </div>
             </div>
 
             <div class="card">
-              <h2 class="section-title"><span class="section-title-text"><i data-lucide="users"></i><span class="section-title-label">Clientes</span></span></h2>
-              <form id="clientForm" class="form-grid">
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="users"></i><span class="section-title-label">Clientes</span></span> <button class="collapse-toggle" type="button" data-collapse="clientsSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
+              <div class="collapse-body" id="clientsSection">
+                <form id="clientForm" class="form-grid">
                 <label>
                   Nombre
                   <input name="name" required />
@@ -384,13 +389,15 @@
                   <input name="address" />
                 </label>
                 <button class="btn primary" type="submit">Guardar cliente</button>
-              </form>
+                </form>
                 <div class="list scroll" id="clientList"></div>
+              </div>
             </div>
 
             <div class="card">
-              <h2 class="section-title"><span class="section-title-text"><i data-lucide="shopping-cart"></i><span class="section-title-label">Ventas</span></span></h2>
-              <form id="saleForm" class="form-grid">
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="shopping-cart"></i><span class="section-title-label">Ventas</span></span> <button class="collapse-toggle" type="button" data-collapse="salesSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
+              <div class="collapse-body" id="salesSection">
+                <form id="saleForm" class="form-grid">
                 <label>
                   Fecha
                   <input name="date" type="date" required />
@@ -432,8 +439,9 @@
                   <input name="dueDate" type="date" />
                 </label>
                 <button class="btn primary" type="submit">Registrar venta</button>
-              </form>
+                </form>
                 <div class="list scroll" id="saleList"></div>
+              </div>
             </div>
           </div>
         </section>
