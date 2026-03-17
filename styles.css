@@ -437,6 +437,21 @@ select:focus {
   font-size: 0.82rem;
   color: var(--muted);
   margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.batch-meta span {
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .batch-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
 }
 
 .batch-actions {

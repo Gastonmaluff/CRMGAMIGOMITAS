@@ -1050,7 +1050,11 @@ const renderAll = () => {
         <div class="batch-header">
           <div>
             <div class="batch-title">${item.productName || item.recipeName}</div>
-            <div class="batch-meta">Fecha: ${formatDate(item.date)} | Hora: ${timeLabel} | Usuario: ${userLabel}</div>
+            <div class="batch-meta">
+              <span>Fecha: ${formatDate(item.date)}</span>
+              <span>Hora: ${timeLabel}</span>
+              <span>Usuario: ${userLabel}</span>
+            </div>
           </div>
           <div class="batch-actions">
             <button class="btn ghost" type="button" data-edit-batch="${item.id}">Editar</button>
