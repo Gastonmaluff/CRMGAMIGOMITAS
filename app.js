@@ -270,7 +270,37 @@ const getActiveRecipe = () => {
     return state.recipes.find((recipe) => recipe.id === selectedRecipeId) || null;
   }
   if (state.recipes.length === 1) return state.recipes[0];
-  return null;
+
+  const buildBaseSignature = (recipe) => {
+    const ingredients = (recipe.ingredients || []).map((ing) => {
+      const qty = Number(ing.quantityBase || ing.quantity || 0);
+      return {
+        materialId: ing.materialId,
+        quantity: Number.isFinite(qty) ? Number(qty.toFixed(6)) : 0
+      };
+    }).filter((ing) => ing.materialId);
+    if (!ingredients.length) return "";
+    ingredients.sort((a, b) => a.quantity - b.quantity);
+    const core = ingredients.length > 1 ? ingredients.slice(1) : ingredients;
+    core.sort((a, b) => a.materialId.localeCompare(b.materialId));
+    return core.map((ing) => `${ing.materialId}:${ing.quantity}`).join("|");
+  };
+
+  const groups = new Map();
+  state.recipes.forEach((recipe) => {
+    const signature = buildBaseSignature(recipe);
+    if (!signature) return;
+    if (!groups.has(signature)) groups.set(signature, []);
+    groups.get(signature).push(recipe);
+  });
+  if (!groups.size) return state.recipes[0] || null;
+  let bestGroup = null;
+  groups.forEach((recipes) => {
+    if (!bestGroup || recipes.length > bestGroup.length) {
+      bestGroup = recipes;
+    }
+  });
+  return bestGroup ? bestGroup[0] : state.recipes[0] || null;
 };
 
 const computeRecipeStockMetrics = (recipe, availabilityMap) => {
@@ -519,8 +549,8 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
   let lotsPossible = "N/D";
   let bottleneck = "N/D";
   if (!activeRecipe) {
-    lotsPossible = "Seleccionar formula";
-    bottleneck = "Seleccionar formula";
+    lotsPossible = state.recipes.length ? "Sin formula base" : "Sin formulas";
+    bottleneck = state.recipes.length ? "Sin formula base" : "Sin formulas";
   } else if (!rows.length || rows.every((row) => row.available <= 0)) {
     lotsPossible = "Sin stock cargado";
     bottleneck = "Sin stock cargado";
