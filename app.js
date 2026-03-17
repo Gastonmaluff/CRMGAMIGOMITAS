@@ -437,9 +437,21 @@ const buildFinishedStockRows = () => {
   return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
 };
 
+const computeFinishedStockTotals = () => {
+  const rows = buildFinishedStockRows();
+  let total = 0;
+  let hasData = false;
+  rows.forEach((row) => {
+    if (!row.canCompute) return;
+    hasData = true;
+    total += row.produced - row.sold;
+  });
+  return { totalDisplays: hasData ? total : null, rows };
+};
+
 const refreshFinishedStock = () => {
   if (!finishedStockList) return;
-  const rows = buildFinishedStockRows();
+  const { rows } = computeFinishedStockTotals();
   if (!rows.length) {
     finishedStockList.innerHTML = '<div class="list-item muted">Sin registros todavia.</div>';
     return;
@@ -487,7 +499,10 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
 
   const activeRecipe = getActiveRecipe();
   const metrics = computeRecipeStockMetrics(activeRecipe, availabilityMap);
-  const displaysStock = metrics.displaysMax !== null ? formatNumber(metrics.displaysMax) : "N/D";
+  const finishedTotals = computeFinishedStockTotals();
+  const displaysStock = finishedTotals.totalDisplays !== null
+    ? formatNumber(finishedTotals.totalDisplays)
+    : "N/D";
   const lotsPossible = metrics.maxBatches !== null && Number.isFinite(metrics.maxBatches)
     ? formatNumber(metrics.maxBatches)
     : "N/D";
@@ -508,9 +523,10 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
   const yesterdayValue = toDateInputValue(yesterday);
   const displaysYesterday = computeDisplaysForDate(state.sales, yesterdayValue);
 
-  const activeRecipe = getActiveRecipe();
-  const metrics = computeRecipeStockMetrics(activeRecipe, availabilityMap);
-  const availableDisplays = metrics.displaysMax !== null ? formatNumber(metrics.displaysMax) : "N/D";
+  const finishedTotals = computeFinishedStockTotals();
+  const availableDisplays = finishedTotals.totalDisplays !== null
+    ? formatNumber(finishedTotals.totalDisplays)
+    : "N/D";
 
   salesMetricMonth.textContent = displaysInPeriod !== null ? formatNumber(displaysInPeriod) : "N/D";
   salesMetricYesterday.textContent = displaysYesterday !== null ? formatNumber(displaysYesterday) : "N/D";
@@ -867,6 +883,7 @@ const syncState = (key, items) => {
   if (["sales", "products", "salesGoals", "rawMaterials", "purchases", "batches"].includes(key)) {
     const stockData = computeStockTotals();
     refreshSalesDashboard(stockData);
+    refreshDashboard(stockData);
   }
   if (["batches", "sales", "products", "recipes"].includes(key)) {
     refreshFinishedStock();
