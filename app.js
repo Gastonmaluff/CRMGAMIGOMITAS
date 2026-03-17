@@ -71,6 +71,14 @@ const saleForm = document.getElementById("saleForm");
 const salesGoalForm = document.getElementById("salesGoalForm");
 const salesGoalNotice = document.getElementById("salesGoalNotice");
 const addIngredientBtn = document.getElementById("addIngredientBtn");
+const quickClientToggle = document.getElementById("quickClientToggle");
+const quickClientPanel = document.getElementById("quickClientPanel");
+const quickClientName = document.getElementById("quickClientName");
+const quickClientPhone = document.getElementById("quickClientPhone");
+const quickClientAddress = document.getElementById("quickClientAddress");
+const quickClientSave = document.getElementById("quickClientSave");
+const quickClientCancel = document.getElementById("quickClientCancel");
+const quickClientNotice = document.getElementById("quickClientNotice");
 
 const rawMaterialList = document.getElementById("rawMaterialList");
 const purchaseList = document.getElementById("purchaseList");
@@ -1562,6 +1570,57 @@ saleForm.addEventListener("submit", async (event) => {
   await saveDoc("sales", saleForm, payload);
   resetForm(saleForm);
   updateDueDateVisibility();
+});
+
+const toggleQuickClient = (show) => {
+  if (!quickClientPanel) return;
+  quickClientPanel.classList.toggle("hidden", !show);
+  if (show && quickClientName) quickClientName.focus();
+};
+
+quickClientToggle?.addEventListener("click", () => {
+  const isHidden = quickClientPanel?.classList.contains("hidden");
+  toggleQuickClient(isHidden);
+});
+
+quickClientCancel?.addEventListener("click", () => {
+  if (quickClientNotice) quickClientNotice.textContent = "";
+  toggleQuickClient(false);
+});
+
+quickClientSave?.addEventListener("click", async () => {
+  const user = auth.currentUser;
+  if (!user) return;
+  const name = quickClientName?.value.trim() || "";
+  const phone = quickClientPhone?.value.trim() || "";
+  const address = quickClientAddress?.value.trim() || "";
+  if (!name) {
+    if (quickClientNotice) quickClientNotice.textContent = "Completa el nombre del cliente.";
+    return;
+  }
+  const payload = {
+    name,
+    phone,
+    address,
+    userId: user.uid,
+    createdAt: serverTimestamp()
+  };
+  const docRef = await addDoc(collection(db, "clients"), payload);
+  if (saleForm?.client) {
+    let option = saleForm.client.querySelector(`option[value="${docRef.id}"]`);
+    if (!option) {
+      option = document.createElement("option");
+      option.value = docRef.id;
+      option.textContent = name;
+      saleForm.client.appendChild(option);
+    }
+    saleForm.client.value = docRef.id;
+  }
+  if (quickClientName) quickClientName.value = "";
+  if (quickClientPhone) quickClientPhone.value = "";
+  if (quickClientAddress) quickClientAddress.value = "";
+  if (quickClientNotice) quickClientNotice.textContent = "";
+  toggleQuickClient(false);
 });
 
 salesGoalForm?.addEventListener("submit", async (event) => {

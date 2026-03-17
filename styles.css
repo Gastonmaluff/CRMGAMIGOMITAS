@@ -217,6 +217,25 @@ body {
   color: var(--muted);
 }
 
+.inline-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.inline-panel {
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: #f9fafb;
+  display: grid;
+  gap: 8px;
+}
+
+.inline-grid {
+  display: grid;
+  gap: 10px;
+}
+
 .form-grid label {
   display: grid;
   gap: 6px;

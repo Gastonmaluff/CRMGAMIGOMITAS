@@ -406,6 +406,30 @@
                   Cliente
                   <select name="client"></select>
                 </label>
+                <div class="inline-actions">
+                  <button class="btn ghost" type="button" id="quickClientToggle">+ Nuevo cliente</button>
+                </div>
+                <div class="inline-panel hidden" id="quickClientPanel">
+                  <div class="inline-grid">
+                    <label>
+                      Nombre
+                      <input id="quickClientName" type="text" />
+                    </label>
+                    <label>
+                      Telefono
+                      <input id="quickClientPhone" type="text" />
+                    </label>
+                    <label>
+                      Direccion
+                      <input id="quickClientAddress" type="text" />
+                    </label>
+                  </div>
+                  <div class="list-actions">
+                    <button class="btn primary" type="button" id="quickClientSave">Guardar cliente</button>
+                    <button class="btn ghost" type="button" id="quickClientCancel">Cancelar</button>
+                  </div>
+                  <div class="error" id="quickClientNotice"></div>
+                </div>
                 <label>
                   Producto
                   <select name="product" required></select>
