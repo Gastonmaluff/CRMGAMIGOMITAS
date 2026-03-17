@@ -74,6 +74,7 @@ const addIngredientBtn = document.getElementById("addIngredientBtn");
 const quickClientToggle = document.getElementById("quickClientToggle");
 const quickClientPanel = document.getElementById("quickClientPanel");
 const quickClientName = document.getElementById("quickClientName");
+const quickClientRuc = document.getElementById("quickClientRuc");
 const quickClientPhone = document.getElementById("quickClientPhone");
 const quickClientAddress = document.getElementById("quickClientAddress");
 const quickClientSave = document.getElementById("quickClientSave");
@@ -1114,7 +1115,8 @@ const renderAll = () => {
   renderList(clientList, state.clients, (item) => `
     <div class="list-item">
       <strong>${item.name}</strong>
-      ${item.phone ? `Tel: ${item.phone}` : ""}
+      ${item.ruc ? `RUC: ${item.ruc}` : ""}
+      ${item.phone ? ` | Tel: ${item.phone}` : ""}
       ${item.address ? ` | Dir: ${item.address}` : ""}
       <div class="list-actions">
         <button class="btn ghost" type="button" data-edit-client="${item.id}">Editar</button>
@@ -1532,6 +1534,7 @@ clientForm.addEventListener("submit", async (event) => {
   if (!user) return;
   const payload = {
     name: clientForm.name.value.trim(),
+    ruc: clientForm.ruc.value.trim(),
     phone: clientForm.phone.value.trim(),
     address: clientForm.address.value.trim(),
     userId: user.uid,
@@ -1592,6 +1595,7 @@ quickClientSave?.addEventListener("click", async () => {
   const user = auth.currentUser;
   if (!user) return;
   const name = quickClientName?.value.trim() || "";
+  const ruc = quickClientRuc?.value.trim() || "";
   const phone = quickClientPhone?.value.trim() || "";
   const address = quickClientAddress?.value.trim() || "";
   if (!name) {
@@ -1600,6 +1604,7 @@ quickClientSave?.addEventListener("click", async () => {
   }
   const payload = {
     name,
+    ruc,
     phone,
     address,
     userId: user.uid,
@@ -1617,6 +1622,7 @@ quickClientSave?.addEventListener("click", async () => {
     saleForm.client.value = docRef.id;
   }
   if (quickClientName) quickClientName.value = "";
+  if (quickClientRuc) quickClientRuc.value = "";
   if (quickClientPhone) quickClientPhone.value = "";
   if (quickClientAddress) quickClientAddress.value = "";
   if (quickClientNotice) quickClientNotice.textContent = "";
@@ -1735,6 +1741,7 @@ const startEditProduct = (item) => {
 
 const startEditClient = (item) => {
   clientForm.name.value = item.name || "";
+  clientForm.ruc.value = item.ruc || "";
   clientForm.phone.value = item.phone || "";
   clientForm.address.value = item.address || "";
   clientForm.dataset.editId = item.id;
