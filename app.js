@@ -1026,7 +1026,9 @@ const renderAll = () => {
   renderList(batchList, state.batches, (item) => {
     const createdAt = item.createdAt?.seconds ? new Date(item.createdAt.seconds * 1000) : null;
     const timeLabel = createdAt ? formatTime(createdAt) : "N/D";
-    const userLabel = item.createdByEmail || item.createdBy || "N/D";
+    const userLabel = item.createdByEmail
+      ? item.createdByEmail.split("@")[0]
+      : item.createdBy || "N/D";
     const materials = (item.materialsUsed || [])
       .map((m) => `
         <div class="batch-material">
