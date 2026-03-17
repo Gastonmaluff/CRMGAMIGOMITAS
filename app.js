@@ -141,6 +141,11 @@ const formatDate = (value) => {
   return new Date(value).toLocaleDateString("es-PY");
 };
 
+const formatTime = (value) => {
+  if (!value) return "";
+  return new Date(value).toLocaleTimeString("es-PY", { hour: "2-digit", minute: "2-digit" });
+};
+
 const getStockStatus = ({ available, minStock, requiredPerBatch }) => {
   const availableNum = Number(available || 0);
   const minNum = Number(minStock || 0);
@@ -1018,21 +1023,55 @@ const renderAll = () => {
     </div>
   `);
 
-  renderList(batchList, state.batches, (item) => `
-    <div class="list-item">
-      <strong>${item.productName || item.recipeName}</strong>
-      Fecha: ${formatDate(item.date)} | Cantidad: ${formatNumber(item.quantityProduced)} ${item.unitProduced}
-      ${item.lotNumber ? `<div>Lote: ${item.lotNumber}</div>` : ""}
-      <div>Costo total: Gs ${formatGs(item.totalCost)} | Costo por unidad: Gs ${formatGs(item.costPerUnit)}</div>
-      <div>Materias primas: ${(item.materialsUsed || [])
-        .map((m) => `${m.materialName} ${formatNumber(m.quantity)} ${m.unit}`)
-        .join(", ") || "Sin detalle"}</div>
-      <div class="list-actions">
-        <button class="btn ghost" type="button" data-edit-batch="${item.id}">Editar</button>
-        <button class="btn ghost danger" type="button" data-delete-batch="${item.id}">Eliminar</button>
+  renderList(batchList, state.batches, (item) => {
+    const createdAt = item.createdAt?.seconds ? new Date(item.createdAt.seconds * 1000) : null;
+    const timeLabel = createdAt ? formatTime(createdAt) : "N/D";
+    const userLabel = item.createdByEmail || item.createdBy || "N/D";
+    const materials = (item.materialsUsed || [])
+      .map((m) => `
+        <div class="batch-material">
+          <span>${m.materialName}</span>
+          <strong>${formatNumber(m.quantity)} ${m.unit}</strong>
+        </div>
+      `)
+      .join("");
+    return `
+      <div class="list-item batch-card">
+        <div class="batch-header">
+          <div>
+            <div class="batch-title">${item.productName || item.recipeName}</div>
+            <div class="batch-meta">Fecha: ${formatDate(item.date)} | Hora: ${timeLabel} | Usuario: ${userLabel}</div>
+          </div>
+          <div class="batch-actions">
+            <button class="btn ghost" type="button" data-edit-batch="${item.id}">Editar</button>
+            <button class="btn ghost danger" type="button" data-delete-batch="${item.id}">Eliminar</button>
+          </div>
+        </div>
+        <div class="batch-grid">
+          <div>
+            <div class="batch-label">Cantidad producida</div>
+            <div class="batch-value">${formatNumber(item.quantityProduced)} ${item.unitProduced}</div>
+          </div>
+          <div>
+            <div class="batch-label">Numero de lote</div>
+            <div class="batch-value">${item.lotNumber || "N/D"}</div>
+          </div>
+          <div>
+            <div class="batch-label">Costo total</div>
+            <div class="batch-value">Gs ${formatGs(item.totalCost)}</div>
+          </div>
+          <div>
+            <div class="batch-label">Costo por unidad</div>
+            <div class="batch-value">Gs ${formatGs(item.costPerUnit)}</div>
+          </div>
+        </div>
+        <div class="batch-materials">
+          <div class="batch-label">Materias primas utilizadas</div>
+          ${materials || '<div class="muted">Sin detalle</div>'}
+        </div>
       </div>
-    </div>
-  `);
+    `;
+  });
 
   renderList(productList, state.products, (item) => `
     <div class="list-item">
@@ -1398,6 +1437,8 @@ batchForm.addEventListener("submit", async (event) => {
     totalCost,
     materialsUsed,
     stockDeducted: true,
+    createdBy: user.uid,
+    createdByEmail: user.email || "",
     userId: user.uid,
     createdAt: serverTimestamp()
   };
