@@ -109,14 +109,27 @@ body {
 }
 
 .section-title-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: 1;
   min-width: 0;
+  line-height: 1.2;
+}
+
+.section-title-label {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
-  line-height: 1.2;
   max-height: 2.4em;
+}
+
+.section-title-text svg {
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+  flex: 0 0 auto;
 }
 
 .chevron {

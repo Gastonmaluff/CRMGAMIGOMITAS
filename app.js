@@ -130,6 +130,12 @@ const formatGs = (value) => {
   return num.toLocaleString("es-PY", { maximumFractionDigits: 0 });
 };
 
+const refreshIcons = () => {
+  if (window.lucide && typeof window.lucide.createIcons === "function") {
+    window.lucide.createIcons();
+  }
+};
+
 const formatInteger = (value) => {
   const num = Number(value);
   if (Number.isNaN(num)) return "0";
@@ -1119,6 +1125,7 @@ const renderAll = () => {
   `);
 
   requestAnimationFrame(refreshCollapseHeights);
+  refreshIcons();
 };
 
 const setupTabs = () => {

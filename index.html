@@ -93,7 +93,7 @@
         <section class="tab-panel active" id="production">
           <div class="grid">
             <div class="card">
-              <h2 class="section-title"><span class="section-title-text">Produccion de hoy</span> <button class="collapse-toggle" type="button" data-collapse="prodToday" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="clipboard-check"></i><span class="section-title-label">Produccion de hoy</span></span> <button class="collapse-toggle" type="button" data-collapse="prodToday" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="prodToday">
                 <form id="batchForm" class="form-grid">
                 <input id="batchProductSelect" name="product" type="hidden" />
@@ -141,14 +141,14 @@
             </div>
 
             <div class="card">
-              <h2 class="section-title"><span class="section-title-text">Stock Actual</span> <button class="collapse-toggle" type="button" data-collapse="finishedStockSection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="box"></i><span class="section-title-label">Stock Actual</span></span> <button class="collapse-toggle" type="button" data-collapse="finishedStockSection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="finishedStockSection">
                 <div class="list" id="finishedStockList"></div>
               </div>
             </div>
 
             <div class="card">
-              <h2 class="section-title"><span class="section-title-text">Stock de Materias Primas</span> <button class="collapse-toggle" type="button" data-collapse="stockSummarySection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="layers"></i><span class="section-title-label">Stock de Materias Primas</span></span> <button class="collapse-toggle" type="button" data-collapse="stockSummarySection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="stockSummarySection">
                 <div class="form-grid">
                   <label>
@@ -168,7 +168,7 @@
             </div>
 
             <div class="card">
-              <h2 class="section-title"><span class="section-title-text">Ingresar Materia Prima al stock</span> <button class="collapse-toggle" type="button" data-collapse="stockSection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="arrow-down-circle"></i><span class="section-title-label">Ingresar Materia Prima al stock</span></span> <button class="collapse-toggle" type="button" data-collapse="stockSection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="stockSection">
                 <form id="purchaseForm" class="form-grid">
                 <label>
@@ -210,7 +210,7 @@
             </div>
 
             <div class="card">
-              <h2 class="section-title"><span class="section-title-text">Materias primas</span> <button class="collapse-toggle" type="button" data-collapse="rawMaterialSection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="droplet"></i><span class="section-title-label">Materias primas</span></span> <button class="collapse-toggle" type="button" data-collapse="rawMaterialSection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="rawMaterialSection">
                 <form id="rawMaterialForm" class="form-grid">
                 <label>
@@ -250,7 +250,7 @@
             </div>
 
             <div class="card">
-              <h2 class="section-title"><span class="section-title-text">Formula de producto</span> <button class="collapse-toggle" type="button" data-collapse="recipeSection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="file-text"></i><span class="section-title-label">Formula de producto</span></span> <button class="collapse-toggle" type="button" data-collapse="recipeSection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="recipeSection">
                 <form id="recipeForm" class="form-grid">
                 <label>
@@ -329,7 +329,7 @@
         <section class="tab-panel" id="sales">
           <div class="grid">
             <div class="card">
-              <h2>Objetivo del mes</h2>
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="target"></i><span class="section-title-label">Objetivo del mes</span></span></h2>
               <form id="salesGoalForm" class="form-grid">
                 <label>
                   Inicio del periodo
@@ -349,7 +349,7 @@
             </div>
 
             <div class="card">
-              <h2>Productos</h2>
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="package"></i><span class="section-title-label">Productos</span></span></h2>
               <form id="productForm" class="form-grid">
                 <label>
                   Nombre
@@ -369,7 +369,7 @@
             </div>
 
             <div class="card">
-              <h2>Clientes</h2>
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="users"></i><span class="section-title-label">Clientes</span></span></h2>
               <form id="clientForm" class="form-grid">
                 <label>
                   Nombre
@@ -389,7 +389,7 @@
             </div>
 
             <div class="card">
-              <h2>Ventas</h2>
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="shopping-cart"></i><span class="section-title-label">Ventas</span></span></h2>
               <form id="saleForm" class="form-grid">
                 <label>
                   Fecha
@@ -441,7 +441,13 @@
     </main>
   </div>
 
+  <script src="https://unpkg.com/lucide@latest"></script>
   <script type="module" src="app.js"></script>
+  <script>
+    if (window.lucide && typeof window.lucide.createIcons === "function") {
+      window.lucide.createIcons();
+    }
+  </script>
 </body>
 </html>
 
