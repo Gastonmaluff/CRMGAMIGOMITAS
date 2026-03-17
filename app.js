@@ -56,6 +56,7 @@ const batchRecipeNotice = document.getElementById("batchRecipeNotice");
 const batchProductInfo = document.getElementById("batchProductInfo");
 const metricKgYesterday = document.getElementById("metricKgYesterday");
 const metricDisplaysStock = document.getElementById("metricDisplaysStock");
+const metricDisplaysBreakdown = document.getElementById("metricDisplaysBreakdown");
 const metricLotsPossible = document.getElementById("metricLotsPossible");
 const metricBottleneck = document.getElementById("metricBottleneck");
 const productionDashboard = document.getElementById("overviewDashboard");
@@ -127,6 +128,12 @@ const formatGs = (value) => {
   const num = Number(value);
   if (Number.isNaN(num)) return "0";
   return num.toLocaleString("es-PY", { maximumFractionDigits: 0 });
+};
+
+const formatInteger = (value) => {
+  const num = Number(value);
+  if (Number.isNaN(num)) return "0";
+  return Math.round(num).toLocaleString("es-PY", { maximumFractionDigits: 0 });
 };
 
 const formatDate = (value) => {
@@ -441,12 +448,18 @@ const computeFinishedStockTotals = () => {
   const rows = buildFinishedStockRows();
   let total = 0;
   let hasData = false;
+  const breakdown = [];
   rows.forEach((row) => {
     if (!row.canCompute) return;
     hasData = true;
-    total += row.produced - row.sold;
+    const displays = row.produced - row.sold;
+    total += displays;
+    breakdown.push({
+      name: row.name,
+      displays
+    });
   });
-  return { totalDisplays: hasData ? total : null, rows };
+  return { totalDisplays: hasData ? total : null, rows, breakdown };
 };
 
 const refreshFinishedStock = () => {
@@ -501,13 +514,29 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
   const metrics = computeRecipeStockMetrics(activeRecipe, availabilityMap);
   const finishedTotals = computeFinishedStockTotals();
   const displaysStock = finishedTotals.totalDisplays !== null
-    ? formatNumber(finishedTotals.totalDisplays)
+    ? formatInteger(finishedTotals.totalDisplays)
     : "N/D";
   const lotsPossible = metrics.maxBatches !== null && Number.isFinite(metrics.maxBatches)
     ? formatNumber(metrics.maxBatches)
     : "N/D";
   const bottleneck = metrics.limitingRow ? metrics.limitingRow.name : "N/D";
   metricDisplaysStock.textContent = displaysStock;
+  if (metricDisplaysBreakdown) {
+    if (!finishedTotals.breakdown.length) {
+      metricDisplaysBreakdown.innerHTML = "";
+    } else {
+      metricDisplaysBreakdown.innerHTML = finishedTotals.breakdown
+        .sort((a, b) => b.displays - a.displays)
+        .map((item) => `
+          <div class="overview-chip">
+            <span class="overview-dot"></span>
+            <span>${item.name}</span>
+            <strong>${formatInteger(item.displays)}</strong>
+          </div>
+        `)
+        .join("");
+    }
+  }
   metricLotsPossible.textContent = lotsPossible;
   metricBottleneck.textContent = bottleneck;
 };
@@ -525,7 +554,7 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
 
   const finishedTotals = computeFinishedStockTotals();
   const availableDisplays = finishedTotals.totalDisplays !== null
-    ? formatNumber(finishedTotals.totalDisplays)
+    ? formatInteger(finishedTotals.totalDisplays)
     : "N/D";
 
   salesMetricMonth.textContent = displaysInPeriod !== null ? formatNumber(displaysInPeriod) : "N/D";
