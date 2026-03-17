@@ -1069,10 +1069,15 @@ const renderAll = () => {
             <div class="batch-value">Gs ${formatGs(item.costPerUnit)}</div>
           </div>
         </div>
-        <div class="batch-materials">
-          <div class="batch-label">Materias primas utilizadas</div>
-          ${materials || '<div class="muted">Sin detalle</div>'}
-        </div>
+        <details class="batch-collapse">
+          <summary class="batch-collapse-header">
+            <span>Materias primas utilizadas</span>
+            <span class="batch-chevron">▾</span>
+          </summary>
+          <div class="batch-materials">
+            ${materials || '<div class="muted">Sin detalle</div>'}
+          </div>
+        </details>
       </div>
     `;
   });

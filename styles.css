@@ -456,6 +456,36 @@ select:focus {
   gap: 8px;
 }
 
+.batch-collapse {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.batch-collapse-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.batch-collapse-header::-webkit-details-marker {
+  display: none;
+}
+
+.batch-chevron {
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.batch-collapse[open] .batch-chevron {
+  transform: rotate(180deg);
+}
+
 .batch-material {
   display: flex;
   justify-content: space-between;
