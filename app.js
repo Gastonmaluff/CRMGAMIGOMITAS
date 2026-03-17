@@ -93,6 +93,7 @@ const stockRecipeSelect = document.getElementById("stockRecipeSelect");
 const productList = document.getElementById("productList");
 const clientList = document.getElementById("clientList");
 const saleList = document.getElementById("saleList");
+const saleProductStock = document.getElementById("saleProductStock");
 const finishedStockList = document.getElementById("finishedStockList");
 
 const dueDateField = document.getElementById("dueDateField");
@@ -113,6 +114,7 @@ let unsubscribers = [];
 const recipeDraft = {
   ingredients: []
 };
+let saleProductIndex = new Map();
 
 const showAuth = () => {
   authSection.style.display = "grid";
@@ -430,10 +432,13 @@ const computeDisplaysFromBatch = (batch, recipe) => {
 const computeDisplaysFromSale = (sale, product, recipe) => {
   const qty = Number(sale.quantity || 0);
   if (!qty) return 0;
-  const unit = normalizeText(product?.unit || "");
+  const unit = normalizeText(product?.unit || sale.unit || "");
   if (unit) {
     const converted = computeDisplaysFromUnit(qty, unit);
     if (converted !== null) return converted;
+  }
+  if (!product && !unit) {
+    return qty;
   }
   if (recipe) {
     const recipeUnit = normalizeText(recipe.yieldUnit || "");
@@ -492,6 +497,27 @@ const buildFinishedStockRows = () => {
   });
 
   return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
+};
+
+const refreshSaleProductOptions = () => {
+  if (!saleForm?.product) return;
+  const { rows } = computeFinishedStockTotals();
+  saleProductIndex = new Map();
+  const options = ['<option value="">Seleccionar</option>'];
+  rows.forEach((row) => {
+    if (!row.name) return;
+    const displays = row.canCompute ? row.produced - row.sold : null;
+    const key = row.key || normalizeText(row.name);
+    const value = row.key && row.key.startsWith("name:") ? row.key : row.key;
+    const optionValue = row.key || `name:${normalizeText(row.name)}`;
+    const label = displays !== null
+      ? `${row.name} (${formatInteger(displays)} disponibles)`
+      : `${row.name} (N/D)`;
+    const disabled = displays !== null && displays <= 0;
+    options.push(`<option value="${optionValue}" ${disabled ? "disabled" : ""}>${label}</option>`);
+    saleProductIndex.set(optionValue, { ...row, displays });
+  });
+  saleForm.product.innerHTML = options.join("");
 };
 
 const computeFinishedStockTotals = () => {
@@ -950,7 +976,9 @@ const syncState = (key, items) => {
     }
   }
   if (key === "products") {
-    updateSelect(saleForm.product, items, "Seleccionar");
+    if (productForm) {
+      updateSelect(saleForm.product, items, "Seleccionar");
+    }
     updateSelect(batchProductSelect, items, "Seleccionar");
     if (batchForm.recipe.value) {
       updateBatchProductFromRecipe();
@@ -973,6 +1001,7 @@ const syncState = (key, items) => {
   }
   if (["batches", "sales", "products", "recipes"].includes(key)) {
     refreshFinishedStock();
+    refreshSaleProductOptions();
   }
 };
 
@@ -1101,16 +1130,29 @@ const renderAll = () => {
     `;
   });
 
-  renderList(productList, state.products, (item) => `
-    <div class="list-item">
-      <strong>${item.name}</strong>
-      Unidad: ${item.unit} | Precio: Gs ${formatGs(item.price)}
-      <div class="list-actions">
-        <button class="btn ghost" type="button" data-edit-product="${item.id}">Editar</button>
-        <button class="btn ghost danger" type="button" data-delete-product="${item.id}">Eliminar</button>
+  if (productForm) {
+    renderList(productList, state.products, (item) => `
+      <div class="list-item">
+        <strong>${item.name}</strong>
+        Unidad: ${item.unit} | Precio: Gs ${formatGs(item.price)}
+        <div class="list-actions">
+          <button class="btn ghost" type="button" data-edit-product="${item.id}">Editar</button>
+          <button class="btn ghost danger" type="button" data-delete-product="${item.id}">Eliminar</button>
+        </div>
       </div>
-    </div>
-  `);
+    `);
+  } else {
+    const { rows } = computeFinishedStockTotals();
+    renderList(productList, rows, (item) => {
+      const displays = item.canCompute ? item.produced - item.sold : null;
+      return `
+        <div class="list-item">
+          <strong>${item.name}</strong>
+          <div>Displays disponibles: ${displays !== null ? formatInteger(displays) : "N/D"}</div>
+        </div>
+      `;
+    });
+  }
 
   renderList(clientList, state.clients, (item) => `
     <div class="list-item">
@@ -1513,7 +1555,7 @@ batchForm.addEventListener("submit", async (event) => {
   }
 });
 
-productForm.addEventListener("submit", async (event) => {
+productForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const user = auth.currentUser;
   if (!user) return;
@@ -1548,22 +1590,30 @@ saleForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const user = auth.currentUser;
   if (!user) return;
-  const productId = saleForm.product.value;
-  const product = state.products.find((item) => item.id === productId);
-  if (!product) return;
+  const productKey = saleForm.product.value;
+  if (!productKey) return;
+  const productRow = saleProductIndex.get(productKey);
+  const product = state.products.find((item) => item.id === productRow?.key || item.id === productKey);
   const clientId = saleForm.client.value;
   const client = state.clients.find((item) => item.id === clientId);
   const quantity = Number(saleForm.quantity.value);
+  if (productRow?.displays !== null && productRow?.displays !== undefined) {
+    if (quantity > productRow.displays) {
+      window.alert("Stock insuficiente para completar la venta.");
+      return;
+    }
+  }
   const unitPrice = Number(saleForm.unitPrice.value);
   const payload = {
     date: saleForm.date.value,
-    productId,
-    productName: product.name,
+    productId: product?.id || "",
+    productName: product?.name || productRow?.name || "",
     clientId: client?.id || "",
     clientName: client?.name || "",
     quantity,
     unitPrice,
     total: quantity * unitPrice,
+    unit: "display",
     payment: saleForm.payment.value,
     paid: saleForm.paid.value,
     dueDate: saleForm.dueDate.value || "",
@@ -1732,6 +1782,7 @@ const startEditBatch = (item) => {
 };
 
 const startEditProduct = (item) => {
+  if (!productForm) return;
   productForm.name.value = item.name || "";
   productForm.unit.value = item.unit || "";
   productForm.price.value = item.price ?? "";
@@ -1813,6 +1864,7 @@ batchList.addEventListener("click", async (event) => {
 });
 
 productList.addEventListener("click", async (event) => {
+  if (!productForm) return;
   const editId = event.target.dataset.editProduct;
   const deleteId = event.target.dataset.deleteProduct;
   if (editId) {
@@ -1898,8 +1950,14 @@ if (batchProductSelect?.tagName === "SELECT") {
 batchForm.quantity.addEventListener("input", updateBatchCostPreview);
 
 saleForm.product.addEventListener("change", () => {
-  const product = state.products.find((item) => item.id === saleForm.product.value);
-  if (product) saleForm.unitPrice.value = product.price;
+  const productKey = saleForm.product.value;
+  const productRow = saleProductIndex.get(productKey);
+  const available = productRow?.displays;
+  if (saleProductStock) {
+    saleProductStock.textContent = productRow
+      ? `Stock disponible: ${available !== null ? formatInteger(available) : "N/D"} displays`
+      : "";
+  }
 });
 
 saleForm.paid.addEventListener("change", updateDueDateVisibility);
