@@ -347,6 +347,9 @@ select:focus {
 .list {
   display: grid;
   gap: 8px;
+}
+
+.list.scroll {
   max-height: 260px;
   overflow: auto;
   padding-right: 6px;
