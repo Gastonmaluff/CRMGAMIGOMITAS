@@ -265,7 +265,7 @@ const computeKgForDate = (dateValue) => {
 };
 
 const getActiveRecipe = () => {
-  const selectedRecipeId = stockRecipeSelect?.value;
+  const selectedRecipeId = batchForm.recipe.value || stockRecipeSelect?.value;
   if (selectedRecipeId) {
     return state.recipes.find((recipe) => recipe.id === selectedRecipeId) || null;
   }
@@ -516,10 +516,18 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
   const displaysStock = finishedTotals.totalDisplays !== null
     ? formatInteger(finishedTotals.totalDisplays)
     : "N/D";
-  const lotsPossible = metrics.maxBatches !== null && Number.isFinite(metrics.maxBatches)
-    ? formatNumber(metrics.maxBatches)
-    : "N/D";
-  const bottleneck = metrics.limitingRow ? metrics.limitingRow.name : "N/D";
+  let lotsPossible = "N/D";
+  let bottleneck = "N/D";
+  if (!activeRecipe) {
+    lotsPossible = "Seleccionar formula";
+    bottleneck = "Seleccionar formula";
+  } else if (!rows.length || rows.every((row) => row.available <= 0)) {
+    lotsPossible = "Sin stock cargado";
+    bottleneck = "Sin stock cargado";
+  } else if (metrics.maxBatches !== null && Number.isFinite(metrics.maxBatches)) {
+    lotsPossible = formatInteger(Math.floor(metrics.maxBatches));
+    bottleneck = metrics.limitingRow ? metrics.limitingRow.name : "N/D";
+  }
   metricDisplaysStock.textContent = displaysStock;
   if (metricDisplaysBreakdown) {
     if (!finishedTotals.breakdown.length) {
