@@ -423,19 +423,16 @@
                   </div>
                   <div class="error" id="quickClientNotice"></div>
                 </div>
-                <label>
-                  Producto
-                  <select name="product" required></select>
-                </label>
-                <div class="muted" id="saleProductStock"></div>
-                <label>
-                  Cantidad
-                  <input name="quantity" type="number" step="0.01" required />
-                </label>
-                <label>
-                  Precio unitario
-                  <input name="unitPrice" type="number" step="0.01" required />
-                </label>
+                <div class="sale-items">
+                  <div class="sale-items-header">
+                    <div>Producto</div>
+                    <div>Cantidad</div>
+                    <div>Precio unitario</div>
+                    <div></div>
+                  </div>
+                  <div id="saleItems"></div>
+                  <button class="btn" type="button" id="addSaleItemBtn">+ Agregar producto</button>
+                </div>
                 <label>
                   Metodo de pago
                   <select name="payment" required>

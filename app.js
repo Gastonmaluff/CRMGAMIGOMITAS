@@ -68,6 +68,8 @@ const salesMetricGoal = document.getElementById("salesMetricGoal");
 const productForm = document.getElementById("productForm");
 const clientForm = document.getElementById("clientForm");
 const saleForm = document.getElementById("saleForm");
+const saleItems = document.getElementById("saleItems");
+const addSaleItemBtn = document.getElementById("addSaleItemBtn");
 const salesGoalForm = document.getElementById("salesGoalForm");
 const salesGoalNotice = document.getElementById("salesGoalNotice");
 const addIngredientBtn = document.getElementById("addIngredientBtn");
@@ -93,7 +95,6 @@ const stockRecipeSelect = document.getElementById("stockRecipeSelect");
 const productList = document.getElementById("productList");
 const clientList = document.getElementById("clientList");
 const saleList = document.getElementById("saleList");
-const saleProductStock = document.getElementById("saleProductStock");
 const finishedStockList = document.getElementById("finishedStockList");
 
 const dueDateField = document.getElementById("dueDateField");
@@ -161,6 +162,35 @@ const formatDate = (value) => {
 const formatTime = (value) => {
   if (!value) return "";
   return new Date(value).toLocaleTimeString("es-PY", { hour: "2-digit", minute: "2-digit" });
+};
+
+const buildSaleOptionKey = ({ productId, name, productName }) => {
+  if (productId) return productId;
+  const label = name || productName || "";
+  return `name:${normalizeText(label)}`;
+};
+
+const getSaleLineItems = (sale) => {
+  if (Array.isArray(sale.items) && sale.items.length) return sale.items;
+  if (sale.productId || sale.productName) {
+    return [{
+      productId: sale.productId || "",
+      productName: sale.productName || "",
+      quantity: sale.quantity || 0,
+      unitPrice: sale.unitPrice || 0,
+      unit: sale.unit || "display"
+    }];
+  }
+  return [];
+};
+
+const computeDisplaysForSaleLine = (line) => {
+  const qty = Number(line.quantity || 0);
+  if (!qty) return 0;
+  const unit = normalizeText(line.unit || "display");
+  const converted = computeDisplaysFromUnit(qty, unit);
+  if (converted !== null) return converted;
+  return qty;
 };
 
 const getStockStatus = ({ available, minStock, requiredPerBatch }) => {
@@ -378,12 +408,19 @@ const computeDisplaysFromSales = (sales, startDate, endDate) => {
   let hasDisplayUnit = false;
   sales.forEach((sale) => {
     if (!isDateInRange(sale.date, startDate, endDate)) return;
-    const product = state.products.find((item) => item.id === sale.productId);
-    const unit = normalizeText(product?.unit || "");
-    if (unit.includes("display")) {
-      total += Number(sale.quantity || 0);
-      hasDisplayUnit = true;
-    }
+    getSaleLineItems(sale).forEach((line) => {
+      const unit = normalizeText(line.unit || "display");
+      if (unit.includes("display")) {
+        total += Number(line.quantity || 0);
+        hasDisplayUnit = true;
+      } else {
+        const converted = computeDisplaysFromUnit(Number(line.quantity || 0), unit);
+        if (converted !== null) {
+          total += converted;
+          hasDisplayUnit = true;
+        }
+      }
+    });
   });
   return hasDisplayUnit ? total : null;
 };
@@ -393,12 +430,19 @@ const computeDisplaysForDate = (sales, dateValue) => {
   let hasDisplayUnit = false;
   sales.forEach((sale) => {
     if (sale.date !== dateValue) return;
-    const product = state.products.find((item) => item.id === sale.productId);
-    const unit = normalizeText(product?.unit || "");
-    if (unit.includes("display")) {
-      total += Number(sale.quantity || 0);
-      hasDisplayUnit = true;
-    }
+    getSaleLineItems(sale).forEach((line) => {
+      const unit = normalizeText(line.unit || "display");
+      if (unit.includes("display")) {
+        total += Number(line.quantity || 0);
+        hasDisplayUnit = true;
+      } else {
+        const converted = computeDisplaysFromUnit(Number(line.quantity || 0), unit);
+        if (converted !== null) {
+          total += converted;
+          hasDisplayUnit = true;
+        }
+      }
+    });
   });
   return hasDisplayUnit ? total : null;
 };
@@ -429,39 +473,33 @@ const computeDisplaysFromBatch = (batch, recipe) => {
   return null;
 };
 
-const computeDisplaysFromSale = (sale, product, recipe) => {
-  const qty = Number(sale.quantity || 0);
-  if (!qty) return 0;
-  const unit = normalizeText(product?.unit || sale.unit || "");
-  if (unit) {
-    const converted = computeDisplaysFromUnit(qty, unit);
-    if (converted !== null) return converted;
-  }
-  if (!product && !unit) {
-    return qty;
-  }
-  if (recipe) {
-    const recipeUnit = normalizeText(recipe.yieldUnit || "");
-    if (recipeUnit === "kg" || recipeUnit === "g") {
-      if (unit === recipeUnit) {
-        return computeDisplaysFromUnit(qty, recipeUnit);
-      }
+const computeDisplaysFromSale = (sale) => {
+  let total = 0;
+  let canCompute = false;
+  getSaleLineItems(sale).forEach((line) => {
+    const displays = computeDisplaysForSaleLine(line);
+    if (displays !== null) {
+      total += displays;
+      canCompute = true;
     }
-  }
-  return null;
+  });
+  return canCompute ? total : null;
 };
 
 const buildFinishedStockRows = () => {
   const map = {};
-  const ensureEntry = (key, name) => {
+  const ensureEntry = (key, name, productId = "") => {
     if (!map[key]) {
       map[key] = {
         key,
         name,
+        productId,
         produced: 0,
         sold: 0,
         canCompute: true
       };
+    } else if (productId && !map[key].productId) {
+      map[key].productId = productId;
     }
     return map[key];
   };
@@ -470,7 +508,7 @@ const buildFinishedStockRows = () => {
     const productId = batch.productId || "";
     const name = batch.productName || batch.recipeName || "Producto";
     const key = productId || normalizeText(name);
-    const entry = ensureEntry(key, name);
+    const entry = ensureEntry(key, name, productId);
     const product = state.products.find((item) => item.id === productId);
     const recipe = product ? findRecipeForProduct(product) : null;
     const displays = computeDisplaysFromBatch(batch, recipe);
@@ -482,42 +520,137 @@ const buildFinishedStockRows = () => {
   });
 
   state.sales.forEach((sale) => {
-    const productId = sale.productId || "";
-    const name = sale.productName || "Producto";
-    const key = productId || normalizeText(name);
-    const entry = ensureEntry(key, name);
-    const product = state.products.find((item) => item.id === productId);
-    const recipe = product ? findRecipeForProduct(product) : null;
-    const displays = computeDisplaysFromSale(sale, product, recipe);
-    if (displays === null) {
-      entry.canCompute = false;
-    } else {
-      entry.sold += displays;
-    }
+    getSaleLineItems(sale).forEach((line) => {
+      const productId = line.productId || sale.productId || "";
+      const name = line.productName || sale.productName || "Producto";
+      const key = productId || normalizeText(name);
+      const entry = ensureEntry(key, name, productId);
+      const displays = computeDisplaysForSaleLine(line);
+      if (displays === null) {
+        entry.canCompute = false;
+      } else {
+        entry.sold += displays;
+      }
+    });
   });
 
   return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
 };
 
+const updateSaleItemStock = (row) => {
+  if (!row) return;
+  const select = row.querySelector(".sale-item-product");
+  const qtyInput = row.querySelector(".sale-item-qty");
+  const stockLabel = row.querySelector(".sale-item-stock");
+  if (!select || !stockLabel) return;
+  stockLabel.classList.remove("warning");
+  const productRow = saleProductIndex.get(select.value);
+  if (!productRow) {
+    stockLabel.textContent = "";
+    return;
+  }
+  const available = productRow.displays;
+  const qty = Number(qtyInput?.value || 0);
+  stockLabel.textContent = `Stock disponible: ${available !== null ? formatInteger(available) : "N/D"} displays`;
+  if (available !== null && available !== undefined && qty > available) {
+    stockLabel.classList.add("warning");
+    stockLabel.textContent = `Stock disponible: ${formatInteger(available)} displays. Excede por ${formatInteger(qty - available)}.`;
+  }
+};
+
+const createSaleItemRow = (item = {}) => {
+  if (!saleItems) return null;
+  const row = document.createElement("div");
+  row.className = "sale-item";
+  row.innerHTML = `
+    <select class="sale-item-product" aria-label="Producto"></select>
+    <input class="sale-item-qty" type="number" min="0" step="1" placeholder="0" aria-label="Cantidad" value="${item.quantity ?? ""}">
+    <input class="sale-item-price" type="number" min="0" step="1" placeholder="0" aria-label="Precio unitario" value="${item.unitPrice ?? ""}">
+    <button class="btn ghost danger sale-item-remove" type="button">Eliminar</button>
+  `;
+  const stock = document.createElement("div");
+  stock.className = "sale-item-stock";
+  row.appendChild(stock);
+  saleItems.appendChild(row);
+
+  const select = row.querySelector(".sale-item-product");
+  const qtyInput = row.querySelector(".sale-item-qty");
+  if (select) {
+    if (item.productKey) {
+      select.dataset.prefillValue = item.productKey;
+    }
+    select.addEventListener("change", () => {
+      if (select.value) {
+        const duplicate = Array.from(saleItems.querySelectorAll(".sale-item-product"))
+          .some((other) => other !== select && other.value === select.value);
+        if (duplicate) {
+          window.alert("Ese producto ya fue agregado. Ajusta la cantidad en la linea existente.");
+          select.value = "";
+        }
+      }
+      updateSaleItemStock(row);
+      refreshSaleProductOptions();
+    });
+  }
+  qtyInput?.addEventListener("input", () => {
+    updateSaleItemStock(row);
+  });
+  updateSaleItemStock(row);
+  return row;
+};
+
+const resetSaleItems = (items = []) => {
+  if (!saleItems) return;
+  saleItems.innerHTML = "";
+  if (items.length) {
+    items.forEach((item) => createSaleItemRow(item));
+  } else {
+    createSaleItemRow();
+  }
+  refreshSaleProductOptions();
+};
+
 const refreshSaleProductOptions = () => {
-  if (!saleForm?.product) return;
+  if (!saleItems) return;
   const { rows } = computeFinishedStockTotals();
   saleProductIndex = new Map();
-  const options = ['<option value="">Seleccionar</option>'];
+  const options = [{ value: "", label: "Seleccionar", displays: null }];
   rows.forEach((row) => {
     if (!row.name) return;
     const displays = row.canCompute ? row.produced - row.sold : null;
-    const key = row.key || normalizeText(row.name);
-    const value = row.key && row.key.startsWith("name:") ? row.key : row.key;
-    const optionValue = row.key || `name:${normalizeText(row.name)}`;
+    const optionValue = row.productId ? row.productId : buildSaleOptionKey({ name: row.name });
     const label = displays !== null
       ? `${row.name} (${formatInteger(displays)} disponibles)`
       : `${row.name} (N/D)`;
-    const disabled = displays !== null && displays <= 0;
-    options.push(`<option value="${optionValue}" ${disabled ? "disabled" : ""}>${label}</option>`);
-    saleProductIndex.set(optionValue, { ...row, displays });
+    options.push({ value: optionValue, label, displays });
+    saleProductIndex.set(optionValue, { ...row, displays, optionValue });
   });
-  saleForm.product.innerHTML = options.join("");
+  const selects = Array.from(saleItems.querySelectorAll(".sale-item-product"));
+  selects.forEach((select) => {
+    const prefillValue = select.dataset.prefillValue || "";
+    const current = select.value || prefillValue;
+    const selectedByOthers = new Set(
+      selects
+        .filter((other) => other !== select)
+        .map((other) => other.value)
+        .filter(Boolean)
+    );
+    select.innerHTML = options.map((option) => {
+      const duplicateDisabled = option.value && selectedByOthers.has(option.value) && option.value !== current;
+      const stockDisabled = option.value
+        && option.displays !== null
+        && option.displays <= 0
+        && option.value !== current;
+      return `<option value="${option.value}"${duplicateDisabled || stockDisabled ? " disabled" : ""}>${option.label}</option>`;
+    }).join("");
+    if (current && saleProductIndex.has(current)) {
+      select.value = current;
+    }
+    if (prefillValue) {
+      delete select.dataset.prefillValue;
+    }
+    updateSaleItemStock(select.closest(".sale-item"));
+  });
 };
 
 const computeFinishedStockTotals = () => {
@@ -976,9 +1109,6 @@ const syncState = (key, items) => {
     }
   }
   if (key === "products") {
-    if (productForm) {
-      updateSelect(saleForm.product, items, "Seleccionar");
-    }
     updateSelect(batchProductSelect, items, "Seleccionar");
     if (batchForm.recipe.value) {
       updateBatchProductFromRecipe();
@@ -1167,18 +1297,36 @@ const renderAll = () => {
     </div>
   `);
 
-  renderList(saleList, state.sales, (item) => `
-    <div class="list-item">
-      <strong>${item.productName}</strong>
-      Fecha: ${formatDate(item.date)} | Cantidad: ${formatNumber(item.quantity)}
-      <div>Cliente: ${item.clientName || "Sin cliente"} | Total: Gs ${formatGs(item.total)}</div>
-      <div>Pago: ${item.payment} | ${item.paid === "si" ? "Pagado" : `Credito hasta ${formatDate(item.dueDate)}`}</div>
-      <div class="list-actions">
-        <button class="btn ghost" type="button" data-edit-sale="${item.id}">Editar</button>
-        <button class="btn ghost danger" type="button" data-delete-sale="${item.id}">Eliminar</button>
+  renderList(saleList, state.sales, (item) => {
+    const lines = getSaleLineItems(item);
+    const saleTotal = Number.isFinite(Number(item.total))
+      ? Number(item.total)
+      : lines.reduce((sum, line) => sum + Number(line.total || (line.quantity || 0) * (line.unitPrice || 0)), 0);
+    const title = lines.length === 1
+      ? lines[0].productName || item.productName || "Venta"
+      : `Venta con ${lines.length} productos`;
+    const lineRows = lines.length
+      ? lines.map((line) => `
+        <div class="sale-line">
+          <span>${line.productName || "Producto"}</span>
+          <strong>${formatInteger(line.quantity)} disp</strong>
+        </div>
+      `).join("")
+      : '<div class="muted">Sin productos</div>';
+    return `
+      <div class="list-item">
+        <strong>${title}</strong>
+        <div>Fecha: ${formatDate(item.date)}</div>
+        <div class="sale-lines">${lineRows}</div>
+        <div>Cliente: ${item.clientName || "Sin cliente"} | Total: Gs ${formatGs(saleTotal)}</div>
+        <div>Pago: ${item.payment} | ${item.paid === "si" ? "Pagado" : `Credito hasta ${formatDate(item.dueDate)}`}</div>
+        <div class="list-actions">
+          <button class="btn ghost" type="button" data-edit-sale="${item.id}">Editar</button>
+          <button class="btn ghost danger" type="button" data-delete-sale="${item.id}">Eliminar</button>
+        </div>
       </div>
-    </div>
-  `);
+    `;
+  });
 
   requestAnimationFrame(refreshCollapseHeights);
   refreshIcons();
@@ -1590,29 +1738,99 @@ saleForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const user = auth.currentUser;
   if (!user) return;
-  const productKey = saleForm.product.value;
-  if (!productKey) return;
-  const productRow = saleProductIndex.get(productKey);
-  const product = state.products.find((item) => item.id === productRow?.key || item.id === productKey);
-  const clientId = saleForm.client.value;
-  const client = state.clients.find((item) => item.id === clientId);
-  const quantity = Number(saleForm.quantity.value);
-  if (productRow?.displays !== null && productRow?.displays !== undefined) {
-    if (quantity > productRow.displays) {
-      window.alert("Stock insuficiente para completar la venta.");
+  const rows = Array.from(saleItems?.querySelectorAll(".sale-item") || []);
+  const draftItems = [];
+  let hasError = false;
+  rows.forEach((row) => {
+    const productKey = row.querySelector(".sale-item-product")?.value || "";
+    const quantityValue = row.querySelector(".sale-item-qty")?.value;
+    const unitPriceValue = row.querySelector(".sale-item-price")?.value;
+    const quantity = Number(quantityValue);
+    const unitPrice = Number(unitPriceValue);
+    if (!productKey && !quantityValue && !unitPriceValue) return;
+    if (!productKey || !quantity || quantity <= 0) {
+      hasError = true;
       return;
     }
+    draftItems.push({
+      productKey,
+      quantity,
+      unitPrice: Number.isNaN(unitPrice) ? 0 : unitPrice
+    });
+  });
+  if (!draftItems.length) {
+    window.alert("Agrega al menos un producto a la venta.");
+    return;
   }
-  const unitPrice = Number(saleForm.unitPrice.value);
+  if (hasError) {
+    window.alert("Completa producto y cantidad en cada linea.");
+    return;
+  }
+
+  const duplicateKeys = new Set();
+  const seenKeys = new Set();
+  draftItems.forEach((item) => {
+    if (seenKeys.has(item.productKey)) duplicateKeys.add(item.productKey);
+    seenKeys.add(item.productKey);
+  });
+  if (duplicateKeys.size) {
+    window.alert("No repitas productos. Ajusta la cantidad en una sola linea.");
+    return;
+  }
+
+  const editId = saleForm.dataset.editId;
+  const adjustmentByKey = new Map();
+  if (editId) {
+    const existing = state.sales.find((sale) => sale.id === editId);
+    if (existing) {
+      getSaleLineItems(existing).forEach((line) => {
+        const key = buildSaleOptionKey({
+          productId: line.productId,
+          productName: line.productName
+        });
+        const qty = Number(line.quantity || 0);
+        adjustmentByKey.set(key, (adjustmentByKey.get(key) || 0) + qty);
+      });
+    }
+  }
+
+  for (const item of draftItems) {
+    const productRow = saleProductIndex.get(item.productKey);
+    const available = productRow?.displays;
+    if (available !== null && available !== undefined) {
+      const allowed = available + (adjustmentByKey.get(item.productKey) || 0);
+      if (item.quantity > allowed) {
+        window.alert("Stock insuficiente para completar la venta.");
+        return;
+      }
+    }
+  }
+
+  const clientId = saleForm.client.value;
+  const client = state.clients.find((item) => item.id === clientId);
+  const itemsPayload = draftItems.map((item) => {
+    const productRow = saleProductIndex.get(item.productKey);
+    return {
+      productId: productRow?.productId || "",
+      productName: productRow?.name || "",
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      total: item.quantity * item.unitPrice,
+      unit: "display"
+    };
+  });
+  const total = itemsPayload.reduce((sum, item) => sum + Number(item.total || 0), 0);
+  const summary = itemsPayload[0] || {};
   const payload = {
     date: saleForm.date.value,
-    productId: product?.id || "",
-    productName: product?.name || productRow?.name || "",
+    productId: summary.productId || "",
+    productName: summary.productName || "",
     clientId: client?.id || "",
     clientName: client?.name || "",
-    quantity,
-    unitPrice,
-    total: quantity * unitPrice,
+    items: itemsPayload,
+    quantity: summary.quantity || 0,
+    unitPrice: summary.unitPrice || 0,
+    total,
     unit: "display",
     payment: saleForm.payment.value,
     paid: saleForm.paid.value,
@@ -1622,6 +1840,7 @@ saleForm.addEventListener("submit", async (event) => {
   };
   await saveDoc("sales", saleForm, payload);
   resetForm(saleForm);
+  resetSaleItems();
   updateDueDateVisibility();
 });
 
@@ -1802,9 +2021,12 @@ const startEditClient = (item) => {
 const startEditSale = (item) => {
   saleForm.date.value = item.date || "";
   saleForm.client.value = item.clientId || "";
-  saleForm.product.value = item.productId || "";
-  saleForm.quantity.value = item.quantity ?? "";
-  saleForm.unitPrice.value = item.unitPrice ?? "";
+  const mappedItems = getSaleLineItems(item).map((line) => ({
+    productKey: buildSaleOptionKey({ productId: line.productId, productName: line.productName }),
+    quantity: line.quantity ?? "",
+    unitPrice: line.unitPrice ?? ""
+  }));
+  resetSaleItems(mappedItems);
   saleForm.payment.value = item.payment || "Efectivo";
   saleForm.paid.value = item.paid || "si";
   saleForm.dueDate.value = item.dueDate || "";
@@ -1949,19 +2171,24 @@ if (batchProductSelect?.tagName === "SELECT") {
 
 batchForm.quantity.addEventListener("input", updateBatchCostPreview);
 
-saleForm.product.addEventListener("change", () => {
-  const productKey = saleForm.product.value;
-  const productRow = saleProductIndex.get(productKey);
-  const available = productRow?.displays;
-  if (saleProductStock) {
-    saleProductStock.textContent = productRow
-      ? `Stock disponible: ${available !== null ? formatInteger(available) : "N/D"} displays`
-      : "";
-  }
-});
-
 saleForm.paid.addEventListener("change", updateDueDateVisibility);
 saleForm.payment.addEventListener("change", updateDueDateVisibility);
+
+addSaleItemBtn?.addEventListener("click", () => {
+  createSaleItemRow();
+  refreshSaleProductOptions();
+});
+
+saleItems?.addEventListener("click", (event) => {
+  const removeBtn = event.target.closest(".sale-item-remove");
+  if (!removeBtn) return;
+  const row = removeBtn.closest(".sale-item");
+  if (row) row.remove();
+  if (!saleItems.querySelector(".sale-item")) {
+    createSaleItemRow();
+  }
+  refreshSaleProductOptions();
+});
 
 setupTabs();
 setDefaultDates();
@@ -1969,6 +2196,7 @@ updateDueDateVisibility();
 renderRecipeDraft();
 updateRecipeIngredientFields();
 updateBatchCostPreview();
+resetSaleItems();
 unitGroups.forEach((group) => {
   const input = document.getElementById(group.dataset.target);
   if (input && input.value) {

@@ -236,6 +236,56 @@ body {
   gap: 10px;
 }
 
+.sale-items {
+  display: grid;
+  gap: 10px;
+}
+
+.sale-items-header {
+  display: grid;
+  grid-template-columns: 1.4fr 0.8fr 0.9fr 0.3fr;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sale-item {
+  display: grid;
+  grid-template-columns: 1.4fr 0.8fr 0.9fr 0.3fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.sale-item-stock {
+  font-size: 0.75rem;
+  color: var(--muted);
+  grid-column: 1 / -1;
+}
+
+.sale-item-stock.warning {
+  color: #b62d1f;
+  font-weight: 600;
+}
+
+.sale-item-remove {
+  justify-self: end;
+}
+
+.sale-lines {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0 2px;
+}
+
+.sale-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.9rem;
+}
+
 .form-grid label {
   display: grid;
   gap: 6px;
