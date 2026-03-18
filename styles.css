@@ -237,13 +237,29 @@ body {
 }
 
 .sale-items {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
+  width: 100%;
+  height: auto;
+  min-width: 0;
+}
+
+#saleItems {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  height: auto;
+  max-height: 340px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+  padding-right: 4px;
 }
 
 .sale-items-header {
-  display: grid;
-  grid-template-columns: 1.4fr 0.8fr 0.9fr 0.3fr;
+  display: flex;
   gap: 8px;
   font-size: 0.78rem;
   color: var(--muted);
@@ -251,17 +267,64 @@ body {
   letter-spacing: 0.04em;
 }
 
+.sale-items-header > div {
+  min-width: 0;
+}
+
+.sale-items-header > div:nth-child(1) {
+  flex: 1.6 1 180px;
+}
+
+.sale-items-header > div:nth-child(2) {
+  flex: 0.8 1 110px;
+}
+
+.sale-items-header > div:nth-child(3) {
+  flex: 0.9 1 130px;
+}
+
+.sale-items-header > div:nth-child(4) {
+  flex: 0 0 auto;
+  width: 88px;
+}
+
 .sale-item {
-  display: grid;
-  grid-template-columns: 1.4fr 0.8fr 0.9fr 0.3fr;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  align-items: center;
+  align-items: flex-start;
+  width: 100%;
+  height: auto;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.sale-item-product {
+  flex: 1.6 1 180px;
+  min-width: 0;
+}
+
+.sale-item-qty {
+  flex: 0.8 1 110px;
+  min-width: 0;
+}
+
+.sale-item-price {
+  flex: 0.9 1 130px;
+  min-width: 0;
+}
+
+.sale-item .sale-item-product,
+.sale-item .sale-item-qty,
+.sale-item .sale-item-price {
+  width: 100%;
 }
 
 .sale-item-stock {
   font-size: 0.75rem;
   color: var(--muted);
-  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
 }
 
 .sale-item-stock.warning {
@@ -270,7 +333,13 @@ body {
 }
 
 .sale-item-remove {
-  justify-self: end;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.sale-items > #addSaleItemBtn {
+  align-self: flex-start;
+  margin-top: 2px;
 }
 
 .sale-lines {
@@ -761,6 +830,34 @@ select:focus {
     font-size: 0.7rem;
     color: var(--muted);
     margin-bottom: 2px;
+  }
+
+  .sale-items-header {
+    display: none;
+  }
+
+  #saleItems {
+    max-height: 420px;
+  }
+
+  .sale-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sale-item-product,
+  .sale-item-qty,
+  .sale-item-price {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .sale-item-remove {
+    width: 100%;
+  }
+
+  .sale-items > #addSaleItemBtn {
+    width: 100%;
   }
 }
 

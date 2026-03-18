@@ -590,10 +590,12 @@ const createSaleItemRow = (item = {}) => {
       }
       updateSaleItemStock(row);
       refreshSaleProductOptions();
+      requestAnimationFrame(refreshCollapseHeights);
     });
   }
   qtyInput?.addEventListener("input", () => {
     updateSaleItemStock(row);
+    requestAnimationFrame(refreshCollapseHeights);
   });
   updateSaleItemStock(row);
   return row;
@@ -2177,6 +2179,7 @@ saleForm.payment.addEventListener("change", updateDueDateVisibility);
 addSaleItemBtn?.addEventListener("click", () => {
   createSaleItemRow();
   refreshSaleProductOptions();
+  requestAnimationFrame(refreshCollapseHeights);
 });
 
 saleItems?.addEventListener("click", (event) => {
@@ -2188,6 +2191,7 @@ saleItems?.addEventListener("click", (event) => {
     createSaleItemRow();
   }
   refreshSaleProductOptions();
+  requestAnimationFrame(refreshCollapseHeights);
 });
 
 setupTabs();
