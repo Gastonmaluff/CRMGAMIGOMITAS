@@ -166,6 +166,19 @@ const formatTime = (value) => {
   return new Date(value).toLocaleTimeString("es-PY", { hour: "2-digit", minute: "2-digit" });
 };
 
+const getAuthMessage = (error) => {
+  const code = String(error?.code || "");
+  if (code === "auth/invalid-email") return "Correo invalido.";
+  if (code === "auth/user-not-found") return "No existe una cuenta con ese correo.";
+  if (code === "auth/wrong-password") return "Contrasena incorrecta.";
+  if (code === "auth/invalid-credential") return "Correo o contrasena incorrectos.";
+  if (code === "auth/too-many-requests") return "Demasiados intentos. Espera un momento y vuelve a intentar.";
+  if (code === "auth/network-request-failed") return "Sin conexion a internet. Revisa tu red.";
+  if (code === "auth/email-already-in-use") return "Ese correo ya esta registrado.";
+  if (code === "auth/weak-password") return "La contrasena es demasiado debil (usa al menos 6 caracteres).";
+  return error?.message || "No se pudo completar la autenticacion.";
+};
+
 const buildSaleOptionKey = ({ productId, name, productName }) => {
   if (productId) return productId;
   const label = name || productName || "";
@@ -1398,6 +1411,7 @@ const setupTabs = () => {
 };
 
 const updateDueDateVisibility = () => {
+  if (!saleForm || !dueDateField) return;
   const isCredit = Boolean(saleCreditCheckbox?.checked);
   dueDateField.classList.remove("hidden");
   dueDateField.classList.toggle("open", isCredit);
@@ -1419,7 +1433,7 @@ loginForm.addEventListener("submit", async (event) => {
   try {
     await signInWithEmailAndPassword(auth, email, password);
   } catch (error) {
-    authError.textContent = error.message;
+    authError.textContent = getAuthMessage(error);
   }
 });
 
@@ -1434,7 +1448,7 @@ registerBtn.addEventListener("click", async () => {
   try {
     await createUserWithEmailAndPassword(auth, email, password);
   } catch (error) {
-    authError.textContent = error.message;
+    authError.textContent = getAuthMessage(error);
   }
 });
 
