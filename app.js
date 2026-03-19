@@ -123,6 +123,14 @@ const recipeDraft = {
 };
 let saleProductIndex = new Map();
 const SALES_DASHBOARD_DEBUG = false;
+const COMPANY_INFO = {
+  name: "MiMar Alimentos",
+  phone: "",
+  address: "",
+  email: ""
+};
+const COMPANY_LOGO_SRC = "IMG_8867.PNG";
+let companyLogoDataUrlPromise = null;
 
 const showAuth = () => {
   authSection.style.display = "grid";
@@ -230,6 +238,202 @@ const getSaleLineItems = (sale) => {
     }];
   }
   return [];
+};
+
+const isCreditSaleRecord = (sale) => sale.isCredit === true
+  || sale.paid === "no"
+  || normalizeText(sale.payment) === "credito";
+
+const getSaleTotalAmount = (sale) => {
+  const storedTotal = Number(sale?.total);
+  if (Number.isFinite(storedTotal)) return storedTotal;
+  return getSaleLineItems(sale).reduce((sum, line) => {
+    const lineTotal = Number(line.total);
+    if (Number.isFinite(lineTotal)) return sum + lineTotal;
+    return sum + (Number(line.quantity || 0) * Number(line.unitPrice || 0));
+  }, 0);
+};
+
+const getSaleClientDetails = (sale) => {
+  const linkedClient = state.clients.find((client) => client.id === sale.clientId);
+  return {
+    name: sale.clientName || linkedClient?.name || "Sin cliente",
+    ruc: linkedClient?.ruc || "",
+    phone: linkedClient?.phone || "",
+    address: linkedClient?.address || ""
+  };
+};
+
+const slugifyFilePart = (value) => String(value || "")
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, "-")
+  .replace(/^-+|-+$/g, "")
+  .slice(0, 50);
+
+const formatDateForPdf = (value) => {
+  const iso = normalizeDateValue(value);
+  if (!iso) return "Sin fecha";
+  const [year, month, day] = iso.split("-");
+  if (!year || !month || !day) return "Sin fecha";
+  return `${day}/${month}/${year}`;
+};
+
+const buildSalePdfFilename = (sale) => {
+  const saleDateIso = normalizeDateValue(getSaleDateValue(sale)) || toDateInputValue(new Date()) || "venta";
+  const clientLabel = slugifyFilePart(getSaleClientDetails(sale).name) || "cliente";
+  return `venta-${saleDateIso}-${clientLabel}.pdf`;
+};
+
+const getCompanyLogoDataUrl = async () => {
+  if (companyLogoDataUrlPromise) return companyLogoDataUrlPromise;
+  companyLogoDataUrlPromise = new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve("");
+          return;
+        }
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL("image/png"));
+      } catch (error) {
+        console.error("[sales-pdf] No se pudo procesar el logo.", error);
+        resolve("");
+      }
+    };
+    img.onerror = () => resolve("");
+    img.src = COMPANY_LOGO_SRC;
+  });
+  return companyLogoDataUrlPromise;
+};
+
+const shareSaleAsPdf = async (sale) => {
+  const JsPdf = window.jspdf?.jsPDF;
+  if (!JsPdf) {
+    window.alert("No se pudo generar el PDF. Recarga la pagina e intenta nuevamente.");
+    return;
+  }
+  const lines = getSaleLineItems(sale);
+  const totalAmount = getSaleTotalAmount(sale);
+  const saleDateLabel = formatDateForPdf(getSaleDateValue(sale));
+  const saleCode = (sale.id || "venta").slice(0, 8).toUpperCase();
+  const client = getSaleClientDetails(sale);
+  const isCredit = isCreditSaleRecord(sale);
+  const paymentMethod = sale.payment || "No especificado";
+  const typeLabel = isCredit ? "Credito" : "Contado";
+
+  const doc = new JsPdf({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  let y = 14;
+
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(10, 10, pageWidth - 20, 277, 2, 2);
+
+  const logoDataUrl = await getCompanyLogoDataUrl();
+  if (logoDataUrl) {
+    doc.addImage(logoDataUrl, "PNG", 15, y, 28, 18);
+  }
+
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(17, 24, 39);
+  doc.setFontSize(18);
+  doc.text("RECIBO / PEDIDO", pageWidth - 15, y + 6, { align: "right" });
+  doc.setFontSize(10);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Etiqueta de despacho #${saleCode}`, pageWidth - 15, y + 12, { align: "right" });
+  y += 26;
+
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(15, y, 85, 34, 2, 2);
+  doc.roundedRect(105, y, 90, 34, 2, 2);
+
+  doc.setFontSize(9);
+  doc.setTextColor(100, 116, 139);
+  doc.text("Empresa", 18, y + 6);
+  doc.text("Cliente", 108, y + 6);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text(COMPANY_INFO.name, 18, y + 13);
+  doc.text(client.name, 108, y + 13);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.text(`Tel: ${COMPANY_INFO.phone || "-"}`, 18, y + 19);
+  doc.text(`Dir: ${COMPANY_INFO.address || "-"}`, 18, y + 24);
+  doc.text(`Email: ${COMPANY_INFO.email || "-"}`, 18, y + 29);
+
+  doc.text(`RUC: ${client.ruc || "-"}`, 108, y + 19);
+  doc.text(`Tel: ${client.phone || "-"}`, 108, y + 24);
+  const addressLines = doc.splitTextToSize(`Dir: ${client.address || "-"}`, 84);
+  doc.text(addressLines.slice(0, 2), 108, y + 29);
+  y += 42;
+
+  doc.roundedRect(15, y, 180, 24, 2, 2);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(100, 116, 139);
+  doc.text("Resumen de venta", 18, y + 6);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Fecha: ${saleDateLabel}`, 18, y + 13);
+  doc.text(`Metodo de pago: ${paymentMethod}`, 18, y + 19);
+  doc.text(`Tipo: ${typeLabel}${isCredit && sale.dueDate ? ` (Cobro: ${formatDateForPdf(sale.dueDate)})` : ""}`, 108, y + 13);
+  y += 32;
+
+  doc.roundedRect(15, y, 180, 145, 2, 2);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(100, 116, 139);
+  doc.text("Detalle de productos", 18, y + 6);
+  y += 12;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(17, 24, 39);
+  if (!lines.length) {
+    doc.text("Sin productos registrados.", 18, y);
+    y += 7;
+  } else {
+    lines.forEach((line) => {
+      const qtyLabel = formatInteger(line.quantity || 0);
+      const nameLabel = line.productName || "Producto";
+      const lineLabel = `${qtyLabel}x ${nameLabel}`;
+      const detailLines = doc.splitTextToSize(lineLabel, 126);
+      const lineTotal = Number.isFinite(Number(line.total))
+        ? Number(line.total)
+        : Number(line.quantity || 0) * Number(line.unitPrice || 0);
+      doc.text(detailLines, 18, y);
+      doc.text(`Gs ${formatGs(lineTotal)}`, 192, y, { align: "right" });
+      y += (detailLines.length * 5) + 2;
+    });
+  }
+
+  y = Math.max(y + 6, 238);
+  doc.setFillColor(17, 24, 39);
+  doc.roundedRect(15, y, 180, 14, 2, 2, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(255, 255, 255);
+  doc.text("TOTAL", 18, y + 9);
+  doc.text(`Gs ${formatGs(totalAmount)}`, 192, y + 9, { align: "right" });
+  y += 24;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(71, 85, 105);
+  doc.text("Pedido preparado. Gracias por su compra.", 105, y, { align: "center" });
+
+  doc.save(buildSalePdfFilename(sale));
 };
 
 const computeDisplaysForSaleLine = (line) => {
@@ -1513,12 +1717,8 @@ const renderAll = () => {
 
   renderList(saleList, state.sales, (item) => {
     const lines = getSaleLineItems(item);
-    const saleTotal = Number.isFinite(Number(item.total))
-      ? Number(item.total)
-      : lines.reduce((sum, line) => sum + Number(line.total || (line.quantity || 0) * (line.unitPrice || 0)), 0);
-    const isCreditSale = item.isCredit === true
-      || item.paid === "no"
-      || normalizeText(item.payment) === "credito";
+    const saleTotal = getSaleTotalAmount(item);
+    const isCreditSale = isCreditSaleRecord(item);
     const lineRows = lines.length
       ? lines.map((line) => `
         <div class="sale-line">
@@ -1537,6 +1737,7 @@ const renderAll = () => {
         <div class="sale-lines">${lineRows}</div>
         <div>Pago: ${item.payment} | ${isCreditSale ? `A credito hasta ${formatDate(item.dueDate)}` : "Contado"}</div>
         <div class="list-actions">
+          <button class="btn ghost" type="button" data-share-sale="${item.id}">Compartir</button>
           <button class="btn ghost" type="button" data-edit-sale="${item.id}">Editar</button>
           <button class="btn ghost danger" type="button" data-delete-sale="${item.id}">Eliminar</button>
         </div>
@@ -2390,8 +2591,13 @@ clientList.addEventListener("click", async (event) => {
 });
 
 saleList.addEventListener("click", async (event) => {
-  const editId = event.target.dataset.editSale;
-  const deleteId = event.target.dataset.deleteSale;
+  const shareId = event.target.closest("[data-share-sale]")?.dataset.shareSale;
+  const editId = event.target.closest("[data-edit-sale]")?.dataset.editSale;
+  const deleteId = event.target.closest("[data-delete-sale]")?.dataset.deleteSale;
+  if (shareId) {
+    const item = state.sales.find((m) => m.id === shareId);
+    if (item) await shareSaleAsPdf(item);
+  }
   if (editId) {
     const item = state.sales.find((m) => m.id === editId);
     if (item) startEditSale(item);
