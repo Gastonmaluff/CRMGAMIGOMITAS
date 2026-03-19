@@ -1055,6 +1055,21 @@ const updateBatchCostPreview = () => {
 
 const normalizeText = (value) => (value || "").trim().toLowerCase();
 const digitsOnly = (value) => String(value || "").replace(/\D+/g, "");
+const formatClientName = (value) => {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  return normalized
+    .split(" ")
+    .map((word) => word
+      .split("-")
+      .map((part) => part
+        ? part.charAt(0).toLocaleUpperCase("es-PY") + part.slice(1).toLocaleLowerCase("es-PY")
+        : ""
+      )
+      .join("-")
+    )
+    .join(" ");
+};
 
 const splitRuc = (value) => {
   const raw = String(value || "").trim();
@@ -1873,6 +1888,12 @@ clientForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const user = auth.currentUser;
   if (!user) return;
+  const name = formatClientName(clientForm.name.value);
+  if (!name) {
+    window.alert("Completa el nombre del cliente.");
+    return;
+  }
+  clientForm.name.value = name;
   const rucMain = clientForm.rucMain?.value || "";
   const rucDv = clientForm.rucDv?.value || "";
   const ruc = buildRuc(rucMain, rucDv);
@@ -1881,7 +1902,7 @@ clientForm.addEventListener("submit", async (event) => {
     return;
   }
   const payload = {
-    name: clientForm.name.value.trim(),
+    name,
     ruc,
     phone: clientForm.phone.value.trim(),
     address: clientForm.address.value.trim(),
@@ -2028,7 +2049,7 @@ quickClientCancel?.addEventListener("click", () => {
 quickClientSave?.addEventListener("click", async () => {
   const user = auth.currentUser;
   if (!user) return;
-  const name = quickClientName?.value.trim() || "";
+  const name = formatClientName(quickClientName?.value);
   const ruc = buildRuc(quickClientRucMain?.value, quickClientRucDv?.value);
   const phone = quickClientPhone?.value.trim() || "";
   const address = quickClientAddress?.value.trim() || "";
@@ -2036,6 +2057,7 @@ quickClientSave?.addEventListener("click", async () => {
     if (quickClientNotice) quickClientNotice.textContent = "Completa el nombre del cliente.";
     return;
   }
+  if (quickClientName) quickClientName.value = name;
   if (ruc === null) {
     if (quickClientNotice) quickClientNotice.textContent = "Completa ambos campos del RUC o dejalos vacios.";
     return;
@@ -2376,6 +2398,13 @@ saleItems?.addEventListener("click", (event) => {
   if (!input) return;
   input.addEventListener("input", () => {
     input.value = digitsOnly(input.value).slice(0, max);
+  });
+});
+
+[clientForm?.name, quickClientName].forEach((input) => {
+  if (!input) return;
+  input.addEventListener("blur", () => {
+    input.value = formatClientName(input.value);
   });
 });
 
