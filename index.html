@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CRM Gami Gomitas</title>
-  <link rel="stylesheet" href="styles.css?v=20260319-1" />
+  <link rel="stylesheet" href="styles.css?v=20260319-2" />
 </head>
 <body>
   <div class="app">
@@ -23,7 +23,7 @@
         <div class="card auth-card">
           <h1>Ingresar</h1>
           <p class="muted">Accede con tu usuario y contrasena.</p>
-          <form id="loginForm" class="form-grid">
+          <form id="loginForm" class="form-grid" novalidate>
             <label>
               Correo
               <input type="email" name="email" required autocomplete="email" />
@@ -32,10 +32,10 @@
               contrasena
               <input type="password" name="password" required autocomplete="current-password" />
             </label>
-            <button class="btn primary" type="submit">Ingresar</button>
+            <button class="btn primary" id="loginSubmitBtn" type="submit">Ingresar</button>
             <button class="btn" type="button" id="registerBtn">Crear cuenta</button>
           </form>
-          <div class="error" id="authError"></div>
+          <div class="error" id="authError" role="alert" aria-live="polite"></div>
         </div>
       </section>
 
@@ -472,7 +472,7 @@
   </div>
 
   <script src="https://unpkg.com/lucide@latest"></script>
-  <script type="module" src="app.js?v=20260319-1"></script>
+  <script type="module" src="app.js?v=20260319-2"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

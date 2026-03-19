@@ -460,6 +460,14 @@ select:focus {
   min-height: 18px;
 }
 
+.error.info {
+  color: var(--muted);
+}
+
+.error.success {
+  color: #166534;
+}
+
 .dashboard {
   display: none;
   animation: fadeIn 0.4s ease;

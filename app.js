@@ -41,6 +41,7 @@ const userEmail = document.getElementById("userEmail");
 const authError = document.getElementById("authError");
 
 const loginForm = document.getElementById("loginForm");
+const loginSubmitBtn = document.getElementById("loginSubmitBtn");
 const registerBtn = document.getElementById("registerBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 
@@ -177,6 +178,34 @@ const getAuthMessage = (error) => {
   if (code === "auth/email-already-in-use") return "Ese correo ya esta registrado.";
   if (code === "auth/weak-password") return "La contrasena es demasiado debil (usa al menos 6 caracteres).";
   return error?.message || "No se pudo completar la autenticacion.";
+};
+
+const setAuthFeedback = (message, type = "error") => {
+  if (!authError) return;
+  authError.classList.remove("info", "success");
+  if (type === "info" || type === "success") {
+    authError.classList.add(type);
+  }
+  authError.textContent = message || "";
+};
+
+const setAuthBusy = (busy) => {
+  if (loginSubmitBtn) {
+    if (!loginSubmitBtn.dataset.defaultText) {
+      loginSubmitBtn.dataset.defaultText = loginSubmitBtn.textContent || "Ingresar";
+    }
+    loginSubmitBtn.disabled = busy;
+    loginSubmitBtn.textContent = busy ? "Ingresando..." : loginSubmitBtn.dataset.defaultText;
+  }
+  if (registerBtn) registerBtn.disabled = busy;
+};
+
+const getLoginCredentials = () => {
+  const emailInput = loginForm?.elements?.namedItem("email") || loginForm?.querySelector('input[name="email"]');
+  const passwordInput = loginForm?.elements?.namedItem("password") || loginForm?.querySelector('input[name="password"]');
+  const email = String(emailInput?.value || "").trim();
+  const password = String(passwordInput?.value || "").trim();
+  return { email, password };
 };
 
 const buildSaleOptionKey = ({ productId, name, productName }) => {
@@ -1429,34 +1458,63 @@ const setDefaultDates = () => {
   });
 };
 
-loginForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  authError.textContent = "";
-  const email = loginForm.email.value.trim();
-  const password = loginForm.password.value.trim();
-  try {
-    await signInWithEmailAndPassword(auth, email, password);
-  } catch (error) {
-    authError.textContent = getAuthMessage(error);
-  }
-});
-
-registerBtn.addEventListener("click", async () => {
-  authError.textContent = "";
-  const email = loginForm.email.value.trim();
-  const password = loginForm.password.value.trim();
+const handleLoginSubmit = async (event) => {
+  event?.preventDefault();
+  if (!loginForm) return;
+  const { email, password } = getLoginCredentials();
   if (!email || !password) {
-    authError.textContent = "Completa correo y contrasena para crear la cuenta.";
+    setAuthFeedback("Completa correo y contrasena.");
+    return;
+  }
+  const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  if (!looksLikeEmail) {
+    setAuthFeedback("Ingresa un correo valido.");
     return;
   }
   try {
-    await createUserWithEmailAndPassword(auth, email, password);
+    console.log("[auth] submit login", email);
+    setAuthBusy(true);
+    setAuthFeedback("Ingresando...", "info");
+    await signInWithEmailAndPassword(auth, email, password);
+    setAuthFeedback("Ingreso correcto. Cargando...", "success");
   } catch (error) {
-    authError.textContent = getAuthMessage(error);
+    console.error("[auth] login error", error);
+    setAuthFeedback(getAuthMessage(error), "error");
+  } finally {
+    setAuthBusy(false);
+  }
+};
+
+if (loginForm) {
+  loginForm.addEventListener("submit", handleLoginSubmit);
+}
+
+loginSubmitBtn?.addEventListener("click", () => {
+  console.log("[auth] click ingresar");
+});
+
+registerBtn?.addEventListener("click", async () => {
+  if (!loginForm) return;
+  const { email, password } = getLoginCredentials();
+  if (!email || !password) {
+    setAuthFeedback("Completa correo y contrasena para crear la cuenta.");
+    return;
+  }
+  try {
+    console.log("[auth] create account", email);
+    setAuthBusy(true);
+    setAuthFeedback("Creando cuenta...", "info");
+    await createUserWithEmailAndPassword(auth, email, password);
+    setAuthFeedback("Cuenta creada. Cargando...", "success");
+  } catch (error) {
+    console.error("[auth] register error", error);
+    setAuthFeedback(getAuthMessage(error), "error");
+  } finally {
+    setAuthBusy(false);
   }
 });
 
-logoutBtn.addEventListener("click", async () => {
+logoutBtn?.addEventListener("click", async () => {
   await signOut(auth);
 });
 
@@ -2337,12 +2395,14 @@ const refreshCollapseHeights = () => {
 window.addEventListener("resize", refreshCollapseHeights);
 
 onAuthStateChanged(auth, (user) => {
+  console.log("[auth] state changed", user ? user.uid : "signed-out");
   unsubscribers.forEach((unsubscribe) => unsubscribe());
   unsubscribers = [];
   if (!user) {
     showAuth();
     return;
   }
+  setAuthFeedback("");
   showDashboard(user);
   listenCollection("raw_materials", "rawMaterials", user.uid);
   listenCollection("raw_purchases", "purchases", user.uid);
@@ -2352,6 +2412,9 @@ onAuthStateChanged(auth, (user) => {
   listenCollection("clients", "clients", user.uid);
   listenCollection("sales", "sales", user.uid);
   listenCollection("sales_goals", "salesGoals", user.uid);
+}, (error) => {
+  console.error("[auth] observer error", error);
+  setAuthFeedback(getAuthMessage(error), "error");
 });
 
 
