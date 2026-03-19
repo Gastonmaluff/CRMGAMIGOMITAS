@@ -69,6 +69,7 @@ const productForm = document.getElementById("productForm");
 const clientForm = document.getElementById("clientForm");
 const saleForm = document.getElementById("saleForm");
 const saleItems = document.getElementById("saleItems");
+const saleGrandTotal = document.getElementById("saleGrandTotal");
 const addSaleItemBtn = document.getElementById("addSaleItemBtn");
 const salesGoalForm = document.getElementById("salesGoalForm");
 const salesGoalNotice = document.getElementById("salesGoalNotice");
@@ -537,6 +538,26 @@ const buildFinishedStockRows = () => {
   return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
 };
 
+const updateSaleItemSubtotal = (row) => {
+  if (!row) return 0;
+  const qty = Number(row.querySelector(".sale-item-qty")?.value || 0);
+  const unitPrice = Number(row.querySelector(".sale-item-price")?.value || 0);
+  const subtotal = (Number.isFinite(qty) ? qty : 0) * (Number.isFinite(unitPrice) ? unitPrice : 0);
+  row.dataset.subtotal = String(subtotal);
+  const subtotalLabel = row.querySelector(".sale-item-subtotal");
+  if (subtotalLabel) {
+    subtotalLabel.textContent = `Gs ${formatGs(subtotal)}`;
+  }
+  return subtotal;
+};
+
+const refreshSaleGrandTotal = () => {
+  if (!saleItems || !saleGrandTotal) return;
+  const total = Array.from(saleItems.querySelectorAll(".sale-item"))
+    .reduce((sum, row) => sum + updateSaleItemSubtotal(row), 0);
+  saleGrandTotal.textContent = `Gs ${formatGs(total)}`;
+};
+
 const updateSaleItemStock = (row) => {
   if (!row) return;
   const select = row.querySelector(".sale-item-product");
@@ -560,21 +581,31 @@ const updateSaleItemStock = (row) => {
 
 const createSaleItemRow = (item = {}) => {
   if (!saleItems) return null;
-  const row = document.createElement("div");
+  const row = document.createElement("tr");
   row.className = "sale-item";
   row.innerHTML = `
-    <select class="sale-item-product" aria-label="Producto"></select>
-    <input class="sale-item-qty" type="number" min="0" step="1" placeholder="0" aria-label="Cantidad" value="${item.quantity ?? ""}">
-    <input class="sale-item-price" type="number" min="0" step="1" placeholder="0" aria-label="Precio unitario" value="${item.unitPrice ?? ""}">
-    <button class="btn ghost danger sale-item-remove" type="button">Eliminar</button>
+    <td class="sale-cell-product" data-label="Producto">
+      <select class="sale-item-product" aria-label="Producto"></select>
+      <div class="sale-item-stock"></div>
+    </td>
+    <td data-label="Cantidad">
+      <input class="sale-item-qty" type="number" min="0" step="1" placeholder="0" aria-label="Cantidad" value="${item.quantity ?? ""}">
+    </td>
+    <td data-label="Precio unitario">
+      <input class="sale-item-price" type="number" min="0" step="1" placeholder="0" aria-label="Precio unitario" value="${item.unitPrice ?? ""}">
+    </td>
+    <td data-label="Subtotal">
+      <div class="sale-item-subtotal">Gs 0</div>
+    </td>
+    <td class="sale-cell-action" data-label="Accion">
+      <button class="btn ghost danger sale-item-remove" type="button">Eliminar</button>
+    </td>
   `;
-  const stock = document.createElement("div");
-  stock.className = "sale-item-stock";
-  row.appendChild(stock);
   saleItems.appendChild(row);
 
   const select = row.querySelector(".sale-item-product");
   const qtyInput = row.querySelector(".sale-item-qty");
+  const priceInput = row.querySelector(".sale-item-price");
   if (select) {
     if (item.productKey) {
       select.dataset.prefillValue = item.productKey;
@@ -589,15 +620,26 @@ const createSaleItemRow = (item = {}) => {
         }
       }
       updateSaleItemStock(row);
+      updateSaleItemSubtotal(row);
+      refreshSaleGrandTotal();
       refreshSaleProductOptions();
       requestAnimationFrame(refreshCollapseHeights);
     });
   }
   qtyInput?.addEventListener("input", () => {
     updateSaleItemStock(row);
+    updateSaleItemSubtotal(row);
+    refreshSaleGrandTotal();
+    requestAnimationFrame(refreshCollapseHeights);
+  });
+  priceInput?.addEventListener("input", () => {
+    updateSaleItemSubtotal(row);
+    refreshSaleGrandTotal();
     requestAnimationFrame(refreshCollapseHeights);
   });
   updateSaleItemStock(row);
+  updateSaleItemSubtotal(row);
+  refreshSaleGrandTotal();
   return row;
 };
 
@@ -610,6 +652,7 @@ const resetSaleItems = (items = []) => {
     createSaleItemRow();
   }
   refreshSaleProductOptions();
+  refreshSaleGrandTotal();
 };
 
 const refreshSaleProductOptions = () => {
@@ -653,6 +696,7 @@ const refreshSaleProductOptions = () => {
     }
     updateSaleItemStock(select.closest(".sale-item"));
   });
+  refreshSaleGrandTotal();
 };
 
 const computeFinishedStockTotals = () => {

@@ -424,13 +424,24 @@
                   <div class="error" id="quickClientNotice"></div>
                 </div>
                 <div class="sale-items">
-                  <div class="sale-items-header">
-                    <div>Producto</div>
-                    <div>Cantidad</div>
-                    <div>Precio unitario</div>
-                    <div></div>
+                  <div class="sale-items-table-wrap">
+                    <table class="sale-items-table">
+                      <thead>
+                        <tr>
+                          <th>Producto</th>
+                          <th>Cantidad</th>
+                          <th>Precio unitario</th>
+                          <th>Subtotal</th>
+                          <th>Accion</th>
+                        </tr>
+                      </thead>
+                      <tbody id="saleItems"></tbody>
+                    </table>
                   </div>
-                  <div id="saleItems"></div>
+                  <div class="sale-total">
+                    <span>TOTAL</span>
+                    <strong id="saleGrandTotal">Gs 0</strong>
+                  </div>
                   <button class="btn" type="button" id="addSaleItemBtn">+ Agregar producto</button>
                 </div>
                 <label>

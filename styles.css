@@ -237,94 +237,66 @@ body {
 }
 
 .sale-items {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: grid;
+  gap: 12px;
   width: 100%;
-  height: auto;
   min-width: 0;
 }
 
-#saleItems {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.sale-items-table-wrap {
   width: 100%;
-  height: auto;
-  max-height: 340px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  min-width: 0;
-  padding-right: 4px;
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
 }
 
-.sale-items-header {
-  display: flex;
-  gap: 8px;
-  font-size: 0.78rem;
+.sale-items-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.sale-items-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f9fafb;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  font-size: 0.76rem;
+  text-align: left;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
 }
 
-.sale-items-header > div {
-  min-width: 0;
+.sale-items-table tbody td {
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
 }
 
-.sale-items-header > div:nth-child(1) {
-  flex: 1.6 1 180px;
+.sale-items-table tbody tr:first-child td {
+  border-top: none;
 }
 
-.sale-items-header > div:nth-child(2) {
-  flex: 0.8 1 110px;
+.sale-cell-product {
+  min-width: 260px;
 }
 
-.sale-items-header > div:nth-child(3) {
-  flex: 0.9 1 130px;
-}
-
-.sale-items-header > div:nth-child(4) {
-  flex: 0 0 auto;
-  width: 88px;
-}
-
-.sale-item {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: flex-start;
-  width: 100%;
-  height: auto;
-  min-width: 0;
-  box-sizing: border-box;
-}
-
-.sale-item-product {
-  flex: 1.6 1 180px;
-  min-width: 0;
-}
-
-.sale-item-qty {
-  flex: 0.8 1 110px;
-  min-width: 0;
-}
-
+.sale-item-product,
+.sale-item-qty,
 .sale-item-price {
-  flex: 0.9 1 130px;
-  min-width: 0;
-}
-
-.sale-item .sale-item-product,
-.sale-item .sale-item-qty,
-.sale-item .sale-item-price {
   width: 100%;
 }
 
 .sale-item-stock {
   font-size: 0.75rem;
   color: var(--muted);
-  width: 100%;
-  min-width: 0;
+  margin-top: 6px;
 }
 
 .sale-item-stock.warning {
@@ -332,9 +304,42 @@ body {
   font-weight: 600;
 }
 
-.sale-item-remove {
-  flex: 0 0 auto;
+.sale-item-subtotal {
+  font-weight: 700;
+  color: var(--ink);
   white-space: nowrap;
+  font-size: 0.95rem;
+}
+
+.sale-cell-action {
+  width: 110px;
+}
+
+.sale-item-remove {
+  width: 100%;
+}
+
+.sale-total {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  background: #f9fafb;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.sale-total span {
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.sale-total strong {
+  font-size: 1.15rem;
+  color: var(--ink);
 }
 
 .sale-items > #addSaleItemBtn {
@@ -832,28 +837,68 @@ select:focus {
     margin-bottom: 2px;
   }
 
-  .sale-items-header {
+  .sale-items-table-wrap {
+    max-height: none;
+    overflow: visible;
+    border: none;
+    background: transparent;
+  }
+
+  .sale-items-table {
+    min-width: 0;
+  }
+
+  .sale-items-table thead {
     display: none;
   }
 
-  #saleItems {
-    max-height: 420px;
-  }
-
-  .sale-item {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .sale-item-product,
-  .sale-item-qty,
-  .sale-item-price {
-    flex: 1 1 auto;
+  .sale-items-table,
+  .sale-items-table tbody,
+  .sale-items-table tr,
+  .sale-items-table td {
+    display: block;
     width: 100%;
   }
 
-  .sale-item-remove {
-    width: 100%;
+  .sale-items-table tbody {
+    display: grid;
+    gap: 10px;
+  }
+
+  .sale-items-table tbody tr.sale-item {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: var(--shadow);
+  }
+
+  .sale-items-table tbody td {
+    border: none;
+    padding: 0;
+    margin-bottom: 10px;
+  }
+
+  .sale-items-table tbody td:last-child {
+    margin-bottom: 0;
+  }
+
+  .sale-items-table tbody td::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+  }
+
+  .sale-cell-product {
+    min-width: 0;
+  }
+
+  .sale-total {
+    justify-content: space-between;
   }
 
   .sale-items > #addSaleItemBtn {
