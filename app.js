@@ -122,6 +122,7 @@ const recipeDraft = {
   ingredients: []
 };
 let saleProductIndex = new Map();
+const SALES_DASHBOARD_DEBUG = false;
 
 const showAuth = () => {
   authSection.style.display = "grid";
@@ -384,18 +385,66 @@ const getSalesPeriodRange = (goal) => {
   return getCurrentMonthRange();
 };
 
-const getSaleDateValue = (sale) => {
-  const dateValue = String(sale?.date || "").trim();
-  if (dateValue) return dateValue;
-  const createdAt = sale?.createdAt;
-  if (!createdAt) return "";
-  if (typeof createdAt.toDate === "function") {
-    return toDateInputValue(createdAt.toDate());
+const normalizeDateValue = (value) => {
+  if (!value) return "";
+  if (value instanceof Date) return toDateInputValue(value);
+  if (typeof value?.toDate === "function") return toDateInputValue(value.toDate());
+  if (typeof value === "number") return toDateInputValue(new Date(value));
+  if (typeof value === "object") {
+    if (typeof value.seconds === "number") return toDateInputValue(new Date(value.seconds * 1000));
+    if (typeof value._seconds === "number") return toDateInputValue(new Date(value._seconds * 1000));
   }
-  if (createdAt.seconds) {
-    return toDateInputValue(new Date(createdAt.seconds * 1000));
+  const raw = String(value).trim();
+  if (!raw) return "";
+  const isoStrict = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoStrict) return `${isoStrict[1]}-${isoStrict[2]}-${isoStrict[3]}`;
+  const isoLoose = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (isoLoose) {
+    const year = isoLoose[1];
+    const month = isoLoose[2].padStart(2, "0");
+    const day = isoLoose[3].padStart(2, "0");
+    return `${year}-${month}-${day}`;
   }
+  const latam = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+  if (latam) {
+    const day = latam[1].padStart(2, "0");
+    const month = latam[2].padStart(2, "0");
+    const year = latam[3];
+    return `${year}-${month}-${day}`;
+  }
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) return toDateInputValue(parsed);
   return "";
+};
+
+const getSaleDateValue = (sale) => {
+  const fromSaleDate = normalizeDateValue(sale?.date);
+  if (fromSaleDate) return fromSaleDate;
+  const fromCreatedAt = normalizeDateValue(sale?.createdAt);
+  if (fromCreatedAt) return fromCreatedAt;
+  return normalizeDateValue(sale?.updatedAt);
+};
+
+const debugSalesDateComparison = ({ todayValue, yesterdayValue, monthStart, monthEnd }) => {
+  if (!SALES_DASHBOARD_DEBUG || !Array.isArray(state.sales)) return;
+  console.groupCollapsed("[SalesDashboard] Debug fechas");
+  console.log("hoy:", todayValue);
+  console.log("ayer:", yesterdayValue);
+  console.log("mes actual:", `${monthStart} -> ${monthEnd}`);
+  state.sales.forEach((sale) => {
+    const saleDate = getSaleDateValue(sale);
+    const displays = Number(computeDisplaysFromSale(sale) || 0);
+    console.log({
+      saleId: sale.id,
+      originalDate: sale.date ?? null,
+      normalizedDate: saleDate || "(sin fecha)",
+      displays,
+      isToday: saleDate === todayValue,
+      isYesterday: saleDate === yesterdayValue,
+      inCurrentMonth: isDateInRange(saleDate, monthStart, monthEnd)
+    });
+  });
+  console.groupEnd();
 };
 
 const computeKgForDate = (dateValue) => {
@@ -889,6 +938,7 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
   const displaysYesterday = computeDisplaysForDate(state.sales, yesterdayValue);
   const { startDate: goalStartDate, endDate: goalEndDate } = getSalesPeriodRange(goal);
   const displaysInGoalPeriod = computeDisplaysFromSales(state.sales, goalStartDate, goalEndDate);
+  debugSalesDateComparison({ todayValue, yesterdayValue, monthStart, monthEnd });
 
   const finishedTotals = computeFinishedStockTotals();
   const availableDisplays = finishedTotals.totalDisplays !== null
