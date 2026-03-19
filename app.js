@@ -68,6 +68,7 @@ const salesMetricGoal = document.getElementById("salesMetricGoal");
 const productForm = document.getElementById("productForm");
 const clientForm = document.getElementById("clientForm");
 const saleForm = document.getElementById("saleForm");
+const saleCreditCheckbox = document.getElementById("saleCredit");
 const saleItems = document.getElementById("saleItems");
 const saleGrandTotal = document.getElementById("saleGrandTotal");
 const addSaleItemBtn = document.getElementById("addSaleItemBtn");
@@ -1348,6 +1349,9 @@ const renderAll = () => {
     const saleTotal = Number.isFinite(Number(item.total))
       ? Number(item.total)
       : lines.reduce((sum, line) => sum + Number(line.total || (line.quantity || 0) * (line.unitPrice || 0)), 0);
+    const isCreditSale = item.isCredit === true
+      || item.paid === "no"
+      || normalizeText(item.payment) === "credito";
     const title = lines.length === 1
       ? lines[0].productName || item.productName || "Venta"
       : `Venta con ${lines.length} productos`;
@@ -1365,7 +1369,7 @@ const renderAll = () => {
         <div>Fecha: ${formatDate(item.date)}</div>
         <div class="sale-lines">${lineRows}</div>
         <div>Cliente: ${item.clientName || "Sin cliente"} | Total: Gs ${formatGs(saleTotal)}</div>
-        <div>Pago: ${item.payment} | ${item.paid === "si" ? "Pagado" : `Credito hasta ${formatDate(item.dueDate)}`}</div>
+        <div>Pago: ${item.payment} | ${isCreditSale ? `A credito hasta ${formatDate(item.dueDate)}` : "Contado"}</div>
         <div class="list-actions">
           <button class="btn ghost" type="button" data-edit-sale="${item.id}">Editar</button>
           <button class="btn ghost danger" type="button" data-delete-sale="${item.id}">Eliminar</button>
@@ -1394,14 +1398,11 @@ const setupTabs = () => {
 };
 
 const updateDueDateVisibility = () => {
-  const paid = saleForm.paid.value;
-  const payment = saleForm.payment.value;
-  if (paid === "no" || payment === "Credito") {
-    dueDateField.classList.remove("hidden");
-  } else {
-    dueDateField.classList.add("hidden");
-    saleForm.dueDate.value = "";
-  }
+  const isCredit = Boolean(saleCreditCheckbox?.checked);
+  dueDateField.classList.remove("hidden");
+  dueDateField.classList.toggle("open", isCredit);
+  if (!isCredit) saleForm.dueDate.value = "";
+  requestAnimationFrame(refreshCollapseHeights);
 };
 
 const setDefaultDates = () => {
@@ -1867,6 +1868,11 @@ saleForm.addEventListener("submit", async (event) => {
   });
   const total = itemsPayload.reduce((sum, item) => sum + Number(item.total || 0), 0);
   const summary = itemsPayload[0] || {};
+  const isCredit = Boolean(saleCreditCheckbox?.checked);
+  if (isCredit && !saleForm.dueDate.value) {
+    window.alert("Completa la fecha de cobro para ventas a credito.");
+    return;
+  }
   const payload = {
     date: saleForm.date.value,
     productId: summary.productId || "",
@@ -1879,14 +1885,16 @@ saleForm.addEventListener("submit", async (event) => {
     total,
     unit: "display",
     payment: saleForm.payment.value,
-    paid: saleForm.paid.value,
-    dueDate: saleForm.dueDate.value || "",
+    isCredit,
+    paid: isCredit ? "no" : "si",
+    dueDate: isCredit ? saleForm.dueDate.value : "",
     userId: user.uid,
     createdAt: serverTimestamp()
   };
   await saveDoc("sales", saleForm, payload);
   resetForm(saleForm);
   resetSaleItems();
+  if (saleCreditCheckbox) saleCreditCheckbox.checked = false;
   updateDueDateVisibility();
 });
 
@@ -2073,8 +2081,12 @@ const startEditSale = (item) => {
     unitPrice: line.unitPrice ?? ""
   }));
   resetSaleItems(mappedItems);
-  saleForm.payment.value = item.payment || "Efectivo";
-  saleForm.paid.value = item.paid || "si";
+  const paymentOptions = Array.from(saleForm.payment.options).map((opt) => opt.value);
+  saleForm.payment.value = paymentOptions.includes(item.payment) ? item.payment : "Efectivo";
+  const isCreditSale = item.isCredit === true
+    || item.paid === "no"
+    || normalizeText(item.payment) === "credito";
+  if (saleCreditCheckbox) saleCreditCheckbox.checked = isCreditSale;
   saleForm.dueDate.value = item.dueDate || "";
   saleForm.dataset.editId = item.id;
   setSubmitLabel(saleForm, "Actualizar venta");
@@ -2217,8 +2229,7 @@ if (batchProductSelect?.tagName === "SELECT") {
 
 batchForm.quantity.addEventListener("input", updateBatchCostPreview);
 
-saleForm.paid.addEventListener("change", updateDueDateVisibility);
-saleForm.payment.addEventListener("change", updateDueDateVisibility);
+saleCreditCheckbox?.addEventListener("change", updateDueDateVisibility);
 
 addSaleItemBtn?.addEventListener("click", () => {
   createSaleItemRow();

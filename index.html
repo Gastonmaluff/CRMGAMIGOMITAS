@@ -450,17 +450,13 @@
                     <option value="Efectivo">Efectivo</option>
                     <option value="Transferencia">Transferencia</option>
                     <option value="Tarjeta">Tarjeta</option>
-                    <option value="Credito">Credito</option>
                   </select>
                 </label>
-                <label>
-                  Pagado?
-                  <select name="paid" required>
-                    <option value="si">Si</option>
-                    <option value="no">No</option>
-                  </select>
+                <label class="payment-credit-toggle">
+                  <input type="checkbox" id="saleCredit" name="isCredit" />
+                  <span>Venta a credito</span>
                 </label>
-                <label class="due-date hidden" id="dueDateField">
+                <label class="due-date" id="dueDateField">
                   Fecha de cobro
                   <input name="dueDate" type="date" />
                 </label>
