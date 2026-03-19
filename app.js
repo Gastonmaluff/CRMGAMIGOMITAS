@@ -62,8 +62,10 @@ const metricLotsPossible = document.getElementById("metricLotsPossible");
 const metricBottleneck = document.getElementById("metricBottleneck");
 const productionDashboard = document.getElementById("overviewDashboard");
 const salesDashboard = document.getElementById("salesDashboard");
+const salesMetricToday = document.getElementById("salesMetricToday");
 const salesMetricMonth = document.getElementById("salesMetricMonth");
 const salesMetricYesterday = document.getElementById("salesMetricYesterday");
+const salesMetricLastMonth = document.getElementById("salesMetricLastMonth");
 const salesMetricAvailable = document.getElementById("salesMetricAvailable");
 const salesMetricGoal = document.getElementById("salesMetricGoal");
 const productForm = document.getElementById("productForm");
@@ -354,6 +356,16 @@ const getCurrentMonthRange = () => {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return {
+    startDate: toDateInputValue(start),
+    endDate: toDateInputValue(end)
+  };
+};
+
+const getPreviousMonthRange = () => {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const end = new Date(now.getFullYear(), now.getMonth(), 0);
   return {
     startDate: toDateInputValue(start),
     endDate: toDateInputValue(end)
@@ -863,29 +875,37 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
 };
 
 const refreshSalesDashboard = ({ rows, availabilityMap }) => {
-  if (!salesMetricMonth) return;
+  if (!salesMetricMonth || !salesMetricToday || !salesMetricLastMonth) return;
   const goal = state.salesGoals[0];
-  const { startDate, endDate } = getSalesPeriodRange(goal);
-  const displaysInPeriod = computeDisplaysFromSales(state.sales, startDate, endDate);
+  const { startDate: monthStart, endDate: monthEnd } = getCurrentMonthRange();
+  const displaysCurrentMonth = computeDisplaysFromSales(state.sales, monthStart, monthEnd);
+  const { startDate: previousMonthStart, endDate: previousMonthEnd } = getPreviousMonthRange();
+  const displaysPreviousMonth = computeDisplaysFromSales(state.sales, previousMonthStart, previousMonthEnd);
+  const todayValue = toDateInputValue(new Date());
+  const displaysToday = computeDisplaysForDate(state.sales, todayValue);
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayValue = toDateInputValue(yesterday);
   const displaysYesterday = computeDisplaysForDate(state.sales, yesterdayValue);
+  const { startDate: goalStartDate, endDate: goalEndDate } = getSalesPeriodRange(goal);
+  const displaysInGoalPeriod = computeDisplaysFromSales(state.sales, goalStartDate, goalEndDate);
 
   const finishedTotals = computeFinishedStockTotals();
   const availableDisplays = finishedTotals.totalDisplays !== null
     ? formatInteger(finishedTotals.totalDisplays)
     : "N/D";
 
-  salesMetricMonth.textContent = formatNumber(displaysInPeriod);
-  salesMetricYesterday.textContent = formatNumber(displaysYesterday);
+  salesMetricToday.textContent = formatInteger(displaysToday);
+  salesMetricYesterday.textContent = formatInteger(displaysYesterday);
+  salesMetricMonth.textContent = formatInteger(displaysCurrentMonth);
+  salesMetricLastMonth.textContent = formatInteger(displaysPreviousMonth);
   salesMetricAvailable.textContent = availableDisplays;
 
   const targetDisplays = Number(goal?.targetDisplays || 0);
   if (targetDisplays <= 0) {
     salesMetricGoal.textContent = "Sin objetivo";
   } else {
-    const percent = (displaysInPeriod / targetDisplays) * 100;
+    const percent = (displaysInGoalPeriod / targetDisplays) * 100;
     salesMetricGoal.textContent = `${formatNumber(percent)}%`;
   }
 };

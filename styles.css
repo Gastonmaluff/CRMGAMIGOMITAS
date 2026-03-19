@@ -595,6 +595,25 @@ select:focus {
   color: var(--muted);
 }
 
+.overview-metric-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.overview-metric-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+.overview-metric-line strong {
+  font-size: 1.25rem;
+  line-height: 1.1;
+}
+
 .overview-breakdown {
   display: grid;
   gap: 6px;

@@ -69,14 +69,27 @@
         </div>
         <div class="overview-grid hidden" id="salesDashboard">
           <div class="overview-card">
-            <div class="overview-label">Displays mes</div>
-            <div class="overview-value" id="salesMetricMonth">N/D</div>
-            <div class="overview-sub">periodo objetivo</div>
+            <div class="overview-label">Resumen operativo</div>
+            <div class="overview-metric-stack">
+              <div class="overview-metric-line">
+                <span>Hoy</span>
+                <strong id="salesMetricToday">0</strong>
+              </div>
+              <div class="overview-metric-line">
+                <span>Ayer</span>
+                <strong id="salesMetricYesterday">0</strong>
+              </div>
+              <div class="overview-metric-line">
+                <span>Mes actual</span>
+                <strong id="salesMetricMonth">0</strong>
+              </div>
+            </div>
+            <div class="overview-sub">displays vendidos</div>
           </div>
           <div class="overview-card">
-            <div class="overview-label">Displays ayer</div>
-            <div class="overview-value" id="salesMetricYesterday">N/D</div>
-            <div class="overview-sub">ventas del dia anterior</div>
+            <div class="overview-label">Displays mes pasado</div>
+            <div class="overview-value" id="salesMetricLastMonth">0</div>
+            <div class="overview-sub">mes calendario anterior</div>
           </div>
           <div class="overview-card">
             <div class="overview-label">Displays disponibles</div>
