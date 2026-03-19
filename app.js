@@ -345,8 +345,45 @@ const computeStockTotals = () => {
 };
 
 const toDateInputValue = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
   const tzOffset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - tzOffset).toISOString().slice(0, 10);
+};
+
+const getCurrentMonthRange = () => {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return {
+    startDate: toDateInputValue(start),
+    endDate: toDateInputValue(end)
+  };
+};
+
+const getSalesPeriodRange = (goal) => {
+  const goalStart = String(goal?.startDate || "").trim();
+  const goalEnd = String(goal?.endDate || "").trim();
+  if (goalStart && goalEnd && goalStart <= goalEnd) {
+    return {
+      startDate: goalStart,
+      endDate: goalEnd
+    };
+  }
+  return getCurrentMonthRange();
+};
+
+const getSaleDateValue = (sale) => {
+  const dateValue = String(sale?.date || "").trim();
+  if (dateValue) return dateValue;
+  const createdAt = sale?.createdAt;
+  if (!createdAt) return "";
+  if (typeof createdAt.toDate === "function") {
+    return toDateInputValue(createdAt.toDate());
+  }
+  if (createdAt.seconds) {
+    return toDateInputValue(new Date(createdAt.seconds * 1000));
+  }
+  return "";
 };
 
 const computeKgForDate = (dateValue) => {
@@ -450,46 +487,24 @@ const isDateInRange = (dateValue, startDate, endDate) => {
 
 const computeDisplaysFromSales = (sales, startDate, endDate) => {
   let total = 0;
-  let hasDisplayUnit = false;
+  if (!startDate || !endDate) return 0;
   sales.forEach((sale) => {
-    if (!isDateInRange(sale.date, startDate, endDate)) return;
-    getSaleLineItems(sale).forEach((line) => {
-      const unit = normalizeText(line.unit || "display");
-      if (unit.includes("display")) {
-        total += Number(line.quantity || 0);
-        hasDisplayUnit = true;
-      } else {
-        const converted = computeDisplaysFromUnit(Number(line.quantity || 0), unit);
-        if (converted !== null) {
-          total += converted;
-          hasDisplayUnit = true;
-        }
-      }
-    });
+    const saleDate = getSaleDateValue(sale);
+    if (!isDateInRange(saleDate, startDate, endDate)) return;
+    total += Number(computeDisplaysFromSale(sale) || 0);
   });
-  return hasDisplayUnit ? total : null;
+  return total;
 };
 
 const computeDisplaysForDate = (sales, dateValue) => {
   let total = 0;
-  let hasDisplayUnit = false;
+  if (!dateValue) return 0;
   sales.forEach((sale) => {
-    if (sale.date !== dateValue) return;
-    getSaleLineItems(sale).forEach((line) => {
-      const unit = normalizeText(line.unit || "display");
-      if (unit.includes("display")) {
-        total += Number(line.quantity || 0);
-        hasDisplayUnit = true;
-      } else {
-        const converted = computeDisplaysFromUnit(Number(line.quantity || 0), unit);
-        if (converted !== null) {
-          total += converted;
-          hasDisplayUnit = true;
-        }
-      }
-    });
+    const saleDate = getSaleDateValue(sale);
+    if (saleDate !== dateValue) return;
+    total += Number(computeDisplaysFromSale(sale) || 0);
   });
-  return hasDisplayUnit ? total : null;
+  return total;
 };
 
 const computeDisplaysFromUnit = (quantity, unit) => {
@@ -850,9 +865,8 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
 const refreshSalesDashboard = ({ rows, availabilityMap }) => {
   if (!salesMetricMonth) return;
   const goal = state.salesGoals[0];
-  const startDate = goal?.startDate || "";
-  const endDate = goal?.endDate || "";
-  const displaysInPeriod = goal ? computeDisplaysFromSales(state.sales, startDate, endDate) : null;
+  const { startDate, endDate } = getSalesPeriodRange(goal);
+  const displaysInPeriod = computeDisplaysFromSales(state.sales, startDate, endDate);
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayValue = toDateInputValue(yesterday);
@@ -863,18 +877,15 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
     ? formatInteger(finishedTotals.totalDisplays)
     : "N/D";
 
-  salesMetricMonth.textContent = displaysInPeriod !== null ? formatNumber(displaysInPeriod) : "N/D";
-  salesMetricYesterday.textContent = displaysYesterday !== null ? formatNumber(displaysYesterday) : "N/D";
+  salesMetricMonth.textContent = formatNumber(displaysInPeriod);
+  salesMetricYesterday.textContent = formatNumber(displaysYesterday);
   salesMetricAvailable.textContent = availableDisplays;
 
-  if (!goal || !goal.targetDisplays) {
+  const targetDisplays = Number(goal?.targetDisplays || 0);
+  if (targetDisplays <= 0) {
     salesMetricGoal.textContent = "Sin objetivo";
-  } else if (displaysInPeriod === null) {
-    salesMetricGoal.textContent = "N/D";
   } else {
-    const percent = goal.targetDisplays > 0
-      ? (displaysInPeriod / goal.targetDisplays) * 100
-      : 0;
+    const percent = (displaysInPeriod / targetDisplays) * 100;
     salesMetricGoal.textContent = `${formatNumber(percent)}%`;
   }
 };
