@@ -1416,7 +1416,11 @@ const updateDueDateVisibility = () => {
   dueDateField.classList.remove("hidden");
   dueDateField.classList.toggle("open", isCredit);
   if (!isCredit) saleForm.dueDate.value = "";
-  requestAnimationFrame(refreshCollapseHeights);
+  requestAnimationFrame(() => {
+    document.querySelectorAll(".collapse-body.open").forEach((body) => {
+      body.style.setProperty("--collapse-max", `${body.scrollHeight}px`);
+    });
+  });
 };
 
 const setDefaultDates = () => {
