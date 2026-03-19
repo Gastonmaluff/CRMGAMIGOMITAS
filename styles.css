@@ -390,14 +390,23 @@ body {
 
 .sale-summary-primary {
   display: grid;
-  gap: 4px;
+  gap: 6px;
   padding-bottom: 8px;
   margin-bottom: 8px;
   border-bottom: 1px solid var(--border);
 }
 
+.sale-summary-primary > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  line-height: 1.25;
+}
+
 .sale-summary-primary strong {
+  display: inline;
   font-weight: 700;
+  margin: 0;
 }
 
 .form-grid label {
