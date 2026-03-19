@@ -236,6 +236,34 @@ body {
   gap: 10px;
 }
 
+.ruc-field {
+  display: grid;
+  gap: 6px;
+}
+
+.ruc-split {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.ruc-split input:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ruc-split input:last-child {
+  width: 84px;
+  flex: 0 0 84px;
+  text-align: center;
+}
+
+.ruc-dash {
+  color: var(--muted);
+  font-weight: 700;
+}
+
 .sale-items {
   display: grid;
   gap: 12px;
@@ -358,6 +386,18 @@ body {
   justify-content: space-between;
   gap: 12px;
   font-size: 0.9rem;
+}
+
+.sale-summary-primary {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sale-summary-primary strong {
+  font-weight: 700;
 }
 
 .form-grid label {

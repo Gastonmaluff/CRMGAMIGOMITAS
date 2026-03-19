@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CRM Gami Gomitas</title>
-  <link rel="stylesheet" href="styles.css?v=20260319-2" />
+  <link rel="stylesheet" href="styles.css?v=20260319-3" />
 </head>
 <body>
   <div class="app">
@@ -329,61 +329,6 @@
         <section class="tab-panel" id="sales">
           <div class="grid">
             <div class="card">
-              <h2 class="section-title"><span class="section-title-text"><i data-lucide="target"></i><span class="section-title-label">Objetivo del mes</span></span> <button class="collapse-toggle" type="button" data-collapse="salesGoalSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
-              <div class="collapse-body" id="salesGoalSection">
-                <form id="salesGoalForm" class="form-grid">
-                <label>
-                  Inicio del periodo
-                  <input name="startDate" type="date" required />
-                </label>
-                <label>
-                  Fin del periodo
-                  <input name="endDate" type="date" required />
-                </label>
-                <label>
-                  Objetivo de displays
-                  <input name="targetDisplays" type="number" step="1" min="1" required />
-                </label>
-                <button class="btn primary" type="submit">Guardar objetivo</button>
-                </form>
-                <div class="error" id="salesGoalNotice"></div>
-              </div>
-            </div>
-
-            <div class="card">
-              <h2 class="section-title"><span class="section-title-text"><i data-lucide="package"></i><span class="section-title-label">Productos disponibles</span></span> <button class="collapse-toggle" type="button" data-collapse="productsSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
-              <div class="collapse-body" id="productsSection">
-                <div class="list scroll" id="productList"></div>
-              </div>
-            </div>
-
-            <div class="card">
-              <h2 class="section-title"><span class="section-title-text"><i data-lucide="users"></i><span class="section-title-label">Clientes</span></span> <button class="collapse-toggle" type="button" data-collapse="clientsSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
-              <div class="collapse-body" id="clientsSection">
-                <form id="clientForm" class="form-grid">
-                <label>
-                  Nombre
-                  <input name="name" required />
-                </label>
-                <label>
-                  RUC
-                  <input name="ruc" />
-                </label>
-                <label>
-                  Telefono
-                  <input name="phone" />
-                </label>
-                <label>
-                  Direccion
-                  <input name="address" />
-                </label>
-                <button class="btn primary" type="submit">Guardar cliente</button>
-                </form>
-                <div class="list scroll" id="clientList"></div>
-              </div>
-            </div>
-
-            <div class="card">
               <h2 class="section-title"><span class="section-title-text"><i data-lucide="shopping-cart"></i><span class="section-title-label">Ventas</span></span> <button class="collapse-toggle" type="button" data-collapse="salesSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="salesSection">
                 <form id="saleForm" class="form-grid">
@@ -404,9 +349,13 @@
                       Nombre
                       <input id="quickClientName" type="text" />
                     </label>
-                    <label>
-                      RUC
-                      <input id="quickClientRuc" type="text" />
+                    <label class="ruc-field">
+                      <span>RUC</span>
+                      <div class="ruc-split">
+                        <input id="quickClientRucMain" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="12" placeholder="4344562" />
+                        <span class="ruc-dash">-</span>
+                        <input id="quickClientRucDv" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" placeholder="4" />
+                      </div>
                     </label>
                     <label>
                       Telefono
@@ -465,6 +414,65 @@
                 <div class="list scroll" id="saleList"></div>
               </div>
             </div>
+
+            <div class="card">
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="users"></i><span class="section-title-label">Clientes</span></span> <button class="collapse-toggle" type="button" data-collapse="clientsSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
+              <div class="collapse-body" id="clientsSection">
+                <form id="clientForm" class="form-grid">
+                <label>
+                  Nombre
+                  <input name="name" required />
+                </label>
+                <label class="ruc-field">
+                  <span>RUC</span>
+                  <div class="ruc-split">
+                    <input name="rucMain" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="12" placeholder="4344562" />
+                    <span class="ruc-dash">-</span>
+                    <input name="rucDv" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" placeholder="4" />
+                  </div>
+                </label>
+                <label>
+                  Telefono
+                  <input name="phone" />
+                </label>
+                <label>
+                  Direccion
+                  <input name="address" />
+                </label>
+                <button class="btn primary" type="submit">Guardar cliente</button>
+                </form>
+                <div class="list scroll" id="clientList"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="package"></i><span class="section-title-label">Productos disponibles</span></span> <button class="collapse-toggle" type="button" data-collapse="productsSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
+              <div class="collapse-body" id="productsSection">
+                <div class="list scroll" id="productList"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="target"></i><span class="section-title-label">Objetivo del mes</span></span> <button class="collapse-toggle" type="button" data-collapse="salesGoalSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
+              <div class="collapse-body" id="salesGoalSection">
+                <form id="salesGoalForm" class="form-grid">
+                <label>
+                  Inicio del periodo
+                  <input name="startDate" type="date" required />
+                </label>
+                <label>
+                  Fin del periodo
+                  <input name="endDate" type="date" required />
+                </label>
+                <label>
+                  Objetivo de displays
+                  <input name="targetDisplays" type="number" step="1" min="1" required />
+                </label>
+                <button class="btn primary" type="submit">Guardar objetivo</button>
+                </form>
+                <div class="error" id="salesGoalNotice"></div>
+              </div>
+            </div>
           </div>
         </section>
       </section>
@@ -472,7 +480,7 @@
   </div>
 
   <script src="https://unpkg.com/lucide@latest"></script>
-  <script type="module" src="app.js?v=20260319-2"></script>
+  <script type="module" src="app.js?v=20260319-3"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

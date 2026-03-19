@@ -79,7 +79,8 @@ const addIngredientBtn = document.getElementById("addIngredientBtn");
 const quickClientToggle = document.getElementById("quickClientToggle");
 const quickClientPanel = document.getElementById("quickClientPanel");
 const quickClientName = document.getElementById("quickClientName");
-const quickClientRuc = document.getElementById("quickClientRuc");
+const quickClientRucMain = document.getElementById("quickClientRucMain");
+const quickClientRucDv = document.getElementById("quickClientRucDv");
 const quickClientPhone = document.getElementById("quickClientPhone");
 const quickClientAddress = document.getElementById("quickClientAddress");
 const quickClientSave = document.getElementById("quickClientSave");
@@ -1053,6 +1054,34 @@ const updateBatchCostPreview = () => {
 };
 
 const normalizeText = (value) => (value || "").trim().toLowerCase();
+const digitsOnly = (value) => String(value || "").replace(/\D+/g, "");
+
+const splitRuc = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return { main: "", dv: "" };
+  const [mainRaw, dvRaw] = raw.split("-");
+  if (dvRaw !== undefined) {
+    return {
+      main: digitsOnly(mainRaw),
+      dv: digitsOnly(dvRaw).slice(0, 3)
+    };
+  }
+  const digits = digitsOnly(raw);
+  if (!digits) return { main: "", dv: "" };
+  if (digits.length === 1) return { main: digits, dv: "" };
+  return {
+    main: digits.slice(0, -1),
+    dv: digits.slice(-1)
+  };
+};
+
+const buildRuc = (mainValue, dvValue) => {
+  const main = digitsOnly(mainValue);
+  const dv = digitsOnly(dvValue);
+  if (!main && !dv) return "";
+  if (!main || !dv) return null;
+  return `${main}-${dv}`;
+};
 
 const findRecipeForProduct = (product) => {
   if (!product) return null;
@@ -1394,9 +1423,6 @@ const renderAll = () => {
     const isCreditSale = item.isCredit === true
       || item.paid === "no"
       || normalizeText(item.payment) === "credito";
-    const title = lines.length === 1
-      ? lines[0].productName || item.productName || "Venta"
-      : `Venta con ${lines.length} productos`;
     const lineRows = lines.length
       ? lines.map((line) => `
         <div class="sale-line">
@@ -1407,10 +1433,12 @@ const renderAll = () => {
       : '<div class="muted">Sin productos</div>';
     return `
       <div class="list-item">
-        <strong>${title}</strong>
-        <div>Fecha: ${formatDate(item.date)}</div>
+        <div class="sale-summary-primary">
+          <div>Cliente: <strong>${item.clientName || "Sin cliente"}</strong></div>
+          <div>Monto: <strong>Gs ${formatGs(saleTotal)}</strong></div>
+          <div>Fecha: <strong>${formatDate(item.date)}</strong></div>
+        </div>
         <div class="sale-lines">${lineRows}</div>
-        <div>Cliente: ${item.clientName || "Sin cliente"} | Total: Gs ${formatGs(saleTotal)}</div>
         <div>Pago: ${item.payment} | ${isCreditSale ? `A credito hasta ${formatDate(item.dueDate)}` : "Contado"}</div>
         <div class="list-actions">
           <button class="btn ghost" type="button" data-edit-sale="${item.id}">Editar</button>
@@ -1845,9 +1873,16 @@ clientForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const user = auth.currentUser;
   if (!user) return;
+  const rucMain = clientForm.rucMain?.value || "";
+  const rucDv = clientForm.rucDv?.value || "";
+  const ruc = buildRuc(rucMain, rucDv);
+  if (ruc === null) {
+    window.alert("Completa ambos campos del RUC o dejalos vacios.");
+    return;
+  }
   const payload = {
     name: clientForm.name.value.trim(),
-    ruc: clientForm.ruc.value.trim(),
+    ruc,
     phone: clientForm.phone.value.trim(),
     address: clientForm.address.value.trim(),
     userId: user.uid,
@@ -1994,11 +2029,15 @@ quickClientSave?.addEventListener("click", async () => {
   const user = auth.currentUser;
   if (!user) return;
   const name = quickClientName?.value.trim() || "";
-  const ruc = quickClientRuc?.value.trim() || "";
+  const ruc = buildRuc(quickClientRucMain?.value, quickClientRucDv?.value);
   const phone = quickClientPhone?.value.trim() || "";
   const address = quickClientAddress?.value.trim() || "";
   if (!name) {
     if (quickClientNotice) quickClientNotice.textContent = "Completa el nombre del cliente.";
+    return;
+  }
+  if (ruc === null) {
+    if (quickClientNotice) quickClientNotice.textContent = "Completa ambos campos del RUC o dejalos vacios.";
     return;
   }
   const payload = {
@@ -2021,7 +2060,8 @@ quickClientSave?.addEventListener("click", async () => {
     saleForm.client.value = docRef.id;
   }
   if (quickClientName) quickClientName.value = "";
-  if (quickClientRuc) quickClientRuc.value = "";
+  if (quickClientRucMain) quickClientRucMain.value = "";
+  if (quickClientRucDv) quickClientRucDv.value = "";
   if (quickClientPhone) quickClientPhone.value = "";
   if (quickClientAddress) quickClientAddress.value = "";
   if (quickClientNotice) quickClientNotice.textContent = "";
@@ -2141,7 +2181,9 @@ const startEditProduct = (item) => {
 
 const startEditClient = (item) => {
   clientForm.name.value = item.name || "";
-  clientForm.ruc.value = item.ruc || "";
+  const rucParts = splitRuc(item.ruc);
+  if (clientForm.rucMain) clientForm.rucMain.value = rucParts.main;
+  if (clientForm.rucDv) clientForm.rucDv.value = rucParts.dv;
   clientForm.phone.value = item.phone || "";
   clientForm.address.value = item.address || "";
   clientForm.dataset.editId = item.id;
@@ -2323,6 +2365,18 @@ saleItems?.addEventListener("click", (event) => {
   }
   refreshSaleProductOptions();
   requestAnimationFrame(refreshCollapseHeights);
+});
+
+[
+  { input: clientForm?.rucMain, max: 12 },
+  { input: clientForm?.rucDv, max: 3 },
+  { input: quickClientRucMain, max: 12 },
+  { input: quickClientRucDv, max: 3 }
+].forEach(({ input, max }) => {
+  if (!input) return;
+  input.addEventListener("input", () => {
+    input.value = digitsOnly(input.value).slice(0, max);
+  });
 });
 
 setupTabs();
