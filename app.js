@@ -108,6 +108,8 @@ const saleList = document.getElementById("saleList");
 const finishedStockList = document.getElementById("finishedStockList");
 
 const dueDateField = document.getElementById("dueDateField");
+const saleObservationToggle = document.getElementById("saleObservationToggle");
+const saleObservationField = document.getElementById("saleObservationField");
 const unitGroups = Array.from(document.querySelectorAll(".unit-group[data-target]"));
 
 const state = {
@@ -331,6 +333,7 @@ const shareSaleAsPdf = async (sale) => {
   const isCredit = isCreditSaleRecord(sale);
   const paymentMethod = sale.payment || "No especificado";
   const typeLabel = isCredit ? "Credito" : "Contado";
+  const observation = String(sale.observation || "").trim();
 
   const doc = new JsPdf({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -393,6 +396,21 @@ const shareSaleAsPdf = async (sale) => {
   doc.text(`Metodo de pago: ${paymentMethod}`, 18, y + 19);
   doc.text(`Tipo: ${typeLabel}${isCredit && sale.dueDate ? ` (Cobro: ${formatDateForPdf(sale.dueDate)})` : ""}`, 108, y + 13);
   y += 32;
+
+  if (observation) {
+    const observationLines = doc.splitTextToSize(observation, 172);
+    const noteHeight = Math.min(44, 12 + (observationLines.length * 5));
+    doc.roundedRect(15, y, 180, noteHeight, 2, 2);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text("Observacion", 18, y + 6);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text(observationLines.slice(0, 5), 18, y + 12);
+    y += noteHeight + 8;
+  }
 
   doc.roundedRect(15, y, 180, 145, 2, 2);
   doc.setFont("helvetica", "bold");
@@ -1795,6 +1813,7 @@ const renderAll = () => {
         </div>
         <div class="sale-lines">${lineRows}</div>
         <div>Pago: ${item.payment} | ${isCreditSale ? `A credito hasta ${formatDate(item.dueDate)}` : "Contado"}</div>
+        ${item.observation ? `<div class="muted">Observacion: ${item.observation}</div>` : ""}
         <div class="list-actions">
           <button class="btn ghost" type="button" data-share-sale="${item.id}">Compartir</button>
           <button class="btn ghost" type="button" data-edit-sale="${item.id}">Editar</button>
@@ -1829,6 +1848,25 @@ const updateDueDateVisibility = () => {
   dueDateField.classList.remove("hidden");
   dueDateField.classList.toggle("open", isCredit);
   if (!isCredit) saleForm.dueDate.value = "";
+  requestAnimationFrame(() => {
+    document.querySelectorAll(".collapse-body.open").forEach((body) => {
+      body.style.setProperty("--collapse-max", `${body.scrollHeight}px`);
+    });
+  });
+};
+
+const updateSaleObservationVisibility = (forceOpen = null) => {
+  if (!saleForm || !saleObservationField) return;
+  const currentValue = String(saleForm.observation?.value || "").trim();
+  const shouldOpen = forceOpen === null ? Boolean(currentValue) : Boolean(forceOpen);
+  saleObservationField.classList.remove("hidden");
+  saleObservationField.classList.toggle("open", shouldOpen);
+  if (saleObservationToggle) {
+    saleObservationToggle.textContent = shouldOpen ? "Ocultar observacion" : "Agregar observacion";
+  }
+  if (!shouldOpen && saleForm.observation) {
+    saleForm.observation.value = "";
+  }
   requestAnimationFrame(() => {
     document.querySelectorAll(".collapse-body.open").forEach((body) => {
       body.style.setProperty("--collapse-max", `${body.scrollHeight}px`);
@@ -2342,6 +2380,7 @@ saleForm.addEventListener("submit", async (event) => {
   const total = itemsPayload.reduce((sum, item) => sum + Number(item.total || 0), 0);
   const summary = itemsPayload[0] || {};
   const isCredit = Boolean(saleCreditCheckbox?.checked);
+  const observation = String(saleForm.observation?.value || "").trim();
   if (isCredit && !saleForm.dueDate.value) {
     window.alert("Completa la fecha de cobro para ventas a credito.");
     return;
@@ -2361,6 +2400,7 @@ saleForm.addEventListener("submit", async (event) => {
     isCredit,
     paid: isCredit ? "no" : "si",
     dueDate: isCredit ? saleForm.dueDate.value : "",
+    observation,
     userId: user.uid,
     createdAt: serverTimestamp()
   };
@@ -2369,6 +2409,7 @@ saleForm.addEventListener("submit", async (event) => {
   resetSaleItems();
   if (saleCreditCheckbox) saleCreditCheckbox.checked = false;
   updateDueDateVisibility();
+  updateSaleObservationVisibility(false);
 });
 
 const toggleQuickClient = (show) => {
@@ -2569,9 +2610,11 @@ const startEditSale = (item) => {
     || normalizeText(item.payment) === "credito";
   if (saleCreditCheckbox) saleCreditCheckbox.checked = isCreditSale;
   saleForm.dueDate.value = item.dueDate || "";
+  if (saleForm.observation) saleForm.observation.value = item.observation || "";
   saleForm.dataset.editId = item.id;
   setSubmitLabel(saleForm, "Actualizar venta");
   updateDueDateVisibility();
+  updateSaleObservationVisibility(Boolean(item.observation));
 };
 
 const confirmDelete = (label) => window.confirm(`Eliminar ${label}?`);
@@ -2716,6 +2759,13 @@ if (batchProductSelect?.tagName === "SELECT") {
 batchForm.quantity.addEventListener("input", updateBatchCostPreview);
 
 saleCreditCheckbox?.addEventListener("change", updateDueDateVisibility);
+saleObservationToggle?.addEventListener("click", () => {
+  const nextState = !saleObservationField?.classList.contains("open");
+  updateSaleObservationVisibility(nextState);
+  if (nextState && saleForm?.observation) {
+    saleForm.observation.focus();
+  }
+});
 
 addSaleItemBtn?.addEventListener("click", () => {
   createSaleItemRow();
@@ -2757,6 +2807,7 @@ saleItems?.addEventListener("click", (event) => {
 setupTabs();
 setDefaultDates();
 updateDueDateVisibility();
+updateSaleObservationVisibility(false);
 renderRecipeDraft();
 updateRecipeIngredientFields();
 updateBatchCostPreview();

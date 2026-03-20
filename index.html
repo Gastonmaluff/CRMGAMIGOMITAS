@@ -423,6 +423,13 @@
                   Fecha de cobro
                   <input name="dueDate" type="date" />
                 </label>
+                <div class="inline-actions">
+                  <button class="btn ghost" type="button" id="saleObservationToggle">Agregar observacion</button>
+                </div>
+                <label class="sale-observation" id="saleObservationField">
+                  Observacion
+                  <textarea name="observation" rows="3" maxlength="280" placeholder="Ej: Entregar en porteria / Llamar antes de llegar"></textarea>
+                </label>
                 <button class="btn primary" type="submit">Registrar venta</button>
                 </form>
                 <div class="list scroll" id="saleList"></div>
@@ -495,7 +502,7 @@
 
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260320-2"></script>
+  <script type="module" src="app.js?v=20260320-3"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

@@ -447,14 +447,36 @@ body {
   padding-top: 2px;
 }
 
+.sale-observation {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  transition: max-height 0.25s ease, opacity 0.25s ease, margin 0.25s ease, padding 0.25s ease;
+}
+
+.sale-observation.open {
+  max-height: 170px;
+  opacity: 1;
+  margin-top: 2px;
+  padding-top: 2px;
+}
+
 input,
-select {
+select,
+textarea {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 10px 12px;
   font-size: 0.95rem;
   background: #fff;
   font-family: inherit;
+}
+
+textarea {
+  min-height: 86px;
+  resize: vertical;
 }
 
 input[readonly],
