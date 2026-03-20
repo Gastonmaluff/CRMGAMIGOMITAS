@@ -128,10 +128,10 @@ const recipeDraft = {
 let saleProductIndex = new Map();
 const SALES_DASHBOARD_DEBUG = false;
 const COMPANY_INFO = {
-  name: "MiMar Alimentos",
-  phone: "",
-  address: "",
-  email: ""
+  name: "Mimar Alimentos",
+  phone: "0983417650",
+  address: "KM12 Acaray - Ciudad del Este",
+  email: "contacto@mimar.com.py"
 };
 const COMPANY_LOGO_SRC = "IMG_8867.PNG";
 let companyLogoDataUrlPromise = null;
