@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CRM Gami Gomitas</title>
-  <link rel="stylesheet" href="styles.css?v=20260319-4" />
+  <link rel="stylesheet" href="styles.css?v=20260319-5" />
 </head>
 <body>
   <div class="app">
@@ -44,27 +44,28 @@
           <button class="tab active" data-tab="production">Produccion</button>
           <button class="tab" data-tab="sales">Ventas</button>
         </div>
-        <div class="overview-grid" id="overviewDashboard">
-          <div class="overview-card">
+        <div class="overview-grid production-overview" id="overviewDashboard">
+          <div class="overview-card production-card production-card-kg" id="metricKgCard">
             <div class="overview-label">Kg ayer</div>
             <div class="overview-value" id="metricKgYesterday">0 kg</div>
             <div class="overview-sub">produccion del dia anterior</div>
           </div>
-          <div class="overview-card">
+          <div class="overview-card production-card production-card-stock" id="metricStockCard">
             <div class="overview-label">Displays en stock</div>
             <div class="overview-value" id="metricDisplaysStock">N/D</div>
             <div class="overview-sub">segun stock actual</div>
             <div class="overview-breakdown" id="metricDisplaysBreakdown"></div>
           </div>
-          <div class="overview-card">
+          <div class="overview-card production-card production-card-lots" id="metricLotsCard">
             <div class="overview-label">Lotes posibles</div>
             <div class="overview-value" id="metricLotsPossible">N/D</div>
-            <div class="overview-sub">materia prima actual</div>
+            <div class="overview-sub" id="metricLotsSub">materia prima actual</div>
+            <div class="overview-progress" aria-hidden="true"><span id="metricLotsProgress"></span></div>
           </div>
-          <div class="overview-card">
+          <div class="overview-card production-card production-card-bottleneck" id="metricBottleneckCard">
             <div class="overview-label">Se acaba primero</div>
             <div class="overview-value" id="metricBottleneck">N/D</div>
-            <div class="overview-sub">cuello de botella</div>
+            <div class="overview-sub" id="metricBottleneckSub">cuello de botella</div>
           </div>
         </div>
         <div class="overview-grid hidden" id="salesDashboard">
@@ -494,7 +495,7 @@
 
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260319-5"></script>
+  <script type="module" src="app.js?v=20260319-6"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

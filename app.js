@@ -59,7 +59,11 @@ const metricKgYesterday = document.getElementById("metricKgYesterday");
 const metricDisplaysStock = document.getElementById("metricDisplaysStock");
 const metricDisplaysBreakdown = document.getElementById("metricDisplaysBreakdown");
 const metricLotsPossible = document.getElementById("metricLotsPossible");
+const metricLotsProgress = document.getElementById("metricLotsProgress");
+const metricLotsSub = document.getElementById("metricLotsSub");
 const metricBottleneck = document.getElementById("metricBottleneck");
+const metricBottleneckCard = document.getElementById("metricBottleneckCard");
+const metricBottleneckSub = document.getElementById("metricBottleneckSub");
 const productionDashboard = document.getElementById("overviewDashboard");
 const salesDashboard = document.getElementById("salesDashboard");
 const salesMetricToday = document.getElementById("salesMetricToday");
@@ -1087,7 +1091,7 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayValue = toDateInputValue(yesterday);
   const kgYesterday = computeKgForDate(yesterdayValue);
-  metricKgYesterday.textContent = `${formatNumber(kgYesterday)} kg`;
+  metricKgYesterday.innerHTML = `<span class="overview-number-main">${formatNumber(kgYesterday)}</span><span class="overview-number-unit">kg</span>`;
 
   const activeRecipe = getActiveRecipe();
   const metrics = computeRecipeStockMetrics(activeRecipe, availabilityMap);
@@ -1096,6 +1100,7 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
     ? formatInteger(finishedTotals.totalDisplays)
     : "N/D";
   let lotsPossible = "N/D";
+  let lotsProgress = 0;
   let bottleneck = "N/D";
   if (!activeRecipe) {
     lotsPossible = state.recipes.length ? "Sin formula base" : "Sin formulas";
@@ -1104,7 +1109,9 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
     lotsPossible = "Sin stock cargado";
     bottleneck = "Sin stock cargado";
   } else if (metrics.maxBatches !== null && Number.isFinite(metrics.maxBatches)) {
-    lotsPossible = formatInteger(Math.floor(metrics.maxBatches));
+    const lotsFloor = Math.floor(metrics.maxBatches);
+    lotsPossible = formatInteger(lotsFloor);
+    lotsProgress = Math.max(0, Math.min(100, Math.round((lotsFloor / 8) * 100)));
     bottleneck = metrics.limitingRow ? metrics.limitingRow.name : "N/D";
   }
   metricDisplaysStock.textContent = displaysStock;
@@ -1116,7 +1123,7 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
         .sort((a, b) => b.displays - a.displays)
         .map((item) => `
           <div class="overview-row">
-            <span>${item.name}</span>
+            <span class="overview-row-name"><i class="overview-row-dot" aria-hidden="true"></i>${item.name}</span>
             <strong>${formatInteger(item.displays)}</strong>
           </div>
         `)
@@ -1124,7 +1131,27 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
     }
   }
   metricLotsPossible.textContent = lotsPossible;
+  if (metricLotsProgress) {
+    metricLotsProgress.style.width = `${lotsProgress}%`;
+  }
+  if (metricLotsSub) {
+    metricLotsSub.textContent = lotsProgress > 0 ? "basado en materia prima actual" : "materia prima actual";
+  }
   metricBottleneck.textContent = bottleneck;
+  const bottleneckLabel = normalizeText(bottleneck);
+  const hasAlert = Boolean(
+    bottleneckLabel
+    && bottleneckLabel !== "n/d"
+    && !bottleneckLabel.startsWith("sin ")
+  );
+  if (metricBottleneckCard) {
+    metricBottleneckCard.classList.toggle("alert", hasAlert);
+  }
+  if (metricBottleneckSub) {
+    metricBottleneckSub.textContent = hasAlert
+      ? "nivel critico detectado en suministro"
+      : "cuello de botella";
+  }
 };
 
 const refreshSalesDashboard = ({ rows, availabilityMap }) => {
