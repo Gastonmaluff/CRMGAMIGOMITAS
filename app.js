@@ -336,21 +336,20 @@ const shareSaleAsPdf = async (sale) => {
   const observation = String(sale.observation || "").trim();
   const palette = {
     black: [0, 0, 0],
-    dark: [28, 28, 28],
-    text: [42, 42, 42],
-    muted: [96, 96, 96],
-    border: [204, 204, 204],
-    block: [236, 236, 236],
+    dark: [24, 24, 24],
+    text: [40, 40, 40],
+    muted: [92, 92, 92],
+    border: [202, 202, 202],
+    block: [232, 232, 232],
     soft: [246, 246, 246],
     white: [255, 255, 255]
   };
 
   const doc = new JsPdf({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
+  const left = 15;
+  const contentWidth = pageWidth - 30;
   let y = 14;
-
-  doc.setDrawColor(...palette.border);
-  doc.roundedRect(10, 10, pageWidth - 20, 277, 2, 2);
 
   const logoDataUrl = await getCompanyLogoDataUrl();
   if (logoDataUrl) {
@@ -359,119 +358,165 @@ const shareSaleAsPdf = async (sale) => {
 
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...palette.black);
-  doc.setFontSize(20);
-  doc.text("RECIBO / PEDIDO", pageWidth - 15, y + 6, { align: "right" });
-  doc.setFontSize(11);
+  doc.setFontSize(18);
+  doc.text("RECIBO / PEDIDO", pageWidth - 15, y + 7, { align: "right" });
+  doc.setFontSize(12);
   doc.setTextColor(...palette.muted);
-  doc.text(`Etiqueta de despacho #${saleCode}`, pageWidth - 15, y + 12, { align: "right" });
-  y += 26;
+  doc.text(`Etiqueta #${saleCode}`, pageWidth - 15, y + 13, { align: "right" });
+  y += 24;
+
+  const leftBlockWidth = 122;
+  const rightBlockWidth = contentWidth - leftBlockWidth - 6;
+  const rightX = left + leftBlockWidth + 6;
+  const topBlockHeight = 58;
 
   doc.setDrawColor(...palette.border);
   doc.setFillColor(...palette.soft);
-  doc.roundedRect(15, y, 85, 34, 2, 2, "FD");
-  doc.roundedRect(105, y, 90, 34, 2, 2, "FD");
-
-  doc.setFontSize(9.5);
-  doc.setTextColor(...palette.muted);
-  doc.text("Empresa", 18, y + 6);
-  doc.text("Cliente", 108, y + 6);
+  doc.roundedRect(left, y, leftBlockWidth, topBlockHeight, 2, 2, "FD");
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(12.5);
+  doc.setFontSize(9.5);
+  doc.setTextColor(...palette.muted);
+  doc.text("Datos de empresa", left + 3, y + 6);
+  doc.setFontSize(9.3);
+  doc.text("Datos de cliente", left + 3, y + 31);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11.2);
   doc.setTextColor(...palette.dark);
-  doc.text(COMPANY_INFO.name, 18, y + 13);
-  doc.text(client.name, 108, y + 13);
+  doc.text(COMPANY_INFO.name, left + 3, y + 12.5);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(9.8);
-  doc.setTextColor(...palette.text);
-  doc.text(`Tel: ${COMPANY_INFO.phone || "-"}`, 18, y + 19);
-  doc.text(`Dir: ${COMPANY_INFO.address || "-"}`, 18, y + 24);
-  doc.text(`Email: ${COMPANY_INFO.email || "-"}`, 18, y + 29);
-
-  doc.text(`RUC: ${client.ruc || "-"}`, 108, y + 19);
-  doc.text(`Tel: ${client.phone || "-"}`, 108, y + 24);
-  const addressLines = doc.splitTextToSize(`Dir: ${client.address || "-"}`, 84);
-  doc.text(addressLines.slice(0, 2), 108, y + 29);
-  y += 42;
-
-  doc.setFillColor(...palette.soft);
-  doc.roundedRect(15, y, 180, 24, 2, 2, "FD");
-  doc.setFont("helvetica", "bold");
   doc.setFontSize(9.5);
-  doc.setTextColor(...palette.muted);
-  doc.text("Resumen de venta", 18, y + 6);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10.8);
   doc.setTextColor(...palette.text);
-  doc.text(`Fecha: ${saleDateLabel}`, 18, y + 13);
-  doc.text(`Metodo de pago: ${paymentMethod}`, 18, y + 19);
-  doc.text(`Tipo: ${typeLabel}${isCredit && sale.dueDate ? ` (Cobro: ${formatDateForPdf(sale.dueDate)})` : ""}`, 108, y + 13);
-  y += 32;
+  doc.text(`Tel: ${COMPANY_INFO.phone || "-"}`, left + 3, y + 18);
+  doc.text(`Dir: ${COMPANY_INFO.address || "-"}`, left + 3, y + 23);
+  doc.text(`Email: ${COMPANY_INFO.email || "-"}`, left + 3, y + 28);
 
-  if (observation) {
-    const observationLines = doc.splitTextToSize(observation, 172);
-    const noteHeight = Math.min(44, 12 + (observationLines.length * 5));
+  doc.setDrawColor(...palette.border);
+  doc.line(left + 3, y + 30, left + leftBlockWidth - 3, y + 30);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10.8);
+  doc.setTextColor(...palette.dark);
+  doc.text(client.name || "Sin cliente", left + 3, y + 38);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.3);
+  doc.setTextColor(...palette.text);
+  doc.text(`RUC: ${client.ruc || "-"}`, left + 3, y + 44);
+  doc.text(`Tel: ${client.phone || "-"}`, left + 3, y + 49);
+  const clientAddressLines = doc.splitTextToSize(`Dir: ${client.address || "-"}`, leftBlockWidth - 8);
+  doc.text(clientAddressLines.slice(0, 2), left + 3, y + 54);
+
+  const infoCardHeight = 18;
+  const cardGap = 2;
+  const drawInfoCard = (offsetY, label, value, subValue = "") => {
     doc.setDrawColor(...palette.border);
     doc.setFillColor(...palette.soft);
-    doc.roundedRect(15, y, 180, noteHeight, 2, 2, "FD");
+    doc.roundedRect(rightX, y + offsetY, rightBlockWidth, infoCardHeight, 1.8, 1.8, "FD");
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(9.5);
+    doc.setFontSize(8.4);
     doc.setTextColor(...palette.muted);
-    doc.text("Observacion", 18, y + 6);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10.2);
-    doc.setTextColor(...palette.text);
-    doc.text(observationLines.slice(0, 5), 18, y + 12);
-    y += noteHeight + 8;
-  }
+    doc.text(label, rightX + 3, y + offsetY + 5);
+    doc.setFontSize(11);
+    doc.setTextColor(...palette.dark);
+    doc.text(value, rightX + 3, y + offsetY + 11.6);
+    if (subValue) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.8);
+      doc.setTextColor(...palette.muted);
+      doc.text(subValue, rightX + 3, y + offsetY + 16);
+    }
+  };
+  drawInfoCard(0, "Fecha", saleDateLabel);
+  drawInfoCard(infoCardHeight + cardGap, "Tipo", typeLabel, isCredit && sale.dueDate ? `Cobro ${formatDateForPdf(sale.dueDate)}` : "");
+  drawInfoCard((infoCardHeight + cardGap) * 2, "Metodo de pago", paymentMethod);
 
-  doc.setDrawColor(...palette.border);
-  doc.roundedRect(15, y, 180, 145, 2, 2);
-  doc.setFillColor(...palette.block);
-  doc.rect(16, y + 2, 178, 9, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.5);
-  doc.setTextColor(...palette.dark);
-  doc.text("Detalle de productos", 18, y + 8);
-  y += 16;
+  y += topBlockHeight + 10;
+
+  const tableX = left;
+  const tableWidth = contentWidth;
+  const colDesc = 96;
+  const colQty = 22;
+  const colUnit = 31;
+  const colTotal = tableWidth - colDesc - colQty - colUnit;
+  const drawTableHeader = () => {
+    doc.setFillColor(...palette.dark);
+    doc.rect(tableX, y, tableWidth, 9, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(...palette.white);
+    doc.text("DESCRIPCION", tableX + 3, y + 5.9);
+    doc.text("CANTIDAD", tableX + colDesc + (colQty / 2), y + 5.9, { align: "center" });
+    doc.text("PRECIO UNITARIO", tableX + colDesc + colQty + (colUnit / 2), y + 5.9, { align: "center" });
+    doc.text("TOTAL", tableX + tableWidth - 3, y + 5.9, { align: "right" });
+    y += 9;
+  };
+  drawTableHeader();
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(11);
   doc.setTextColor(...palette.dark);
   if (!lines.length) {
-    doc.text("Sin productos registrados.", 18, y);
-    y += 7;
+    doc.setFontSize(10.8);
+    doc.text("Sin productos registrados.", tableX + 3, y + 7);
+    y += 10;
   } else {
     lines.forEach((line) => {
-      const qtyLabel = formatInteger(line.quantity || 0);
-      const nameLabel = line.productName || "Producto";
-      const lineLabel = `${qtyLabel}x ${nameLabel}`;
-      const detailLines = doc.splitTextToSize(lineLabel, 126);
+      const descLines = doc.splitTextToSize(line.productName || "Producto", colDesc - 6).slice(0, 2);
+      const rowHeight = Math.max(11, (descLines.length * 5.2) + 3.5);
+      doc.setDrawColor(...palette.border);
+      doc.line(tableX, y + rowHeight, tableX + tableWidth, y + rowHeight);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.4);
+      doc.text(descLines, tableX + 3, y + 4.7);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10.6);
+      doc.text(formatInteger(line.quantity || 0), tableX + colDesc + (colQty / 2), y + (rowHeight / 2) + 1, { align: "center" });
+      const unitPrice = Number(line.unitPrice || 0);
+      const unitLabel = unitPrice > 0 ? `Gs ${formatGs(unitPrice)}` : "-";
+      doc.text(unitLabel, tableX + colDesc + colQty + (colUnit / 2), y + (rowHeight / 2) + 1, { align: "center" });
       const lineTotal = Number.isFinite(Number(line.total))
         ? Number(line.total)
         : Number(line.quantity || 0) * Number(line.unitPrice || 0);
-      doc.text(detailLines, 18, y);
-      doc.text(`Gs ${formatGs(lineTotal)}`, 192, y, { align: "right" });
-      y += (detailLines.length * 6) + 1.5;
+      doc.setFont("helvetica", "bold");
+      doc.text(`Gs ${formatGs(lineTotal)}`, tableX + tableWidth - 3, y + (rowHeight / 2) + 1, { align: "right" });
+      y += rowHeight;
     });
   }
 
-  y = Math.max(y + 7, 238);
+  y += 7;
+  if (observation) {
+    const observationLines = doc.splitTextToSize(observation, tableWidth - 6);
+    const noteHeight = Math.min(30, 9 + (observationLines.length * 4.8));
+    doc.setDrawColor(...palette.border);
+    doc.setFillColor(...palette.soft);
+    doc.roundedRect(left, y, tableWidth, noteHeight, 2, 2, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.2);
+    doc.setTextColor(...palette.muted);
+    doc.text("Observacion", left + 3, y + 5.5);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10.2);
+    doc.setTextColor(...palette.text);
+    doc.text(observationLines.slice(0, 4), left + 3, y + 10.2);
+    y += noteHeight + 7;
+  }
+
+  y = Math.max(y, 238);
   doc.setFillColor(...palette.black);
-  doc.roundedRect(15, y, 180, 14, 2, 2, "F");
+  doc.roundedRect(left, y, tableWidth, 16, 2, 2, "F");
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(12.8);
+  doc.setFontSize(12);
   doc.setTextColor(...palette.white);
-  doc.text("TOTAL", 18, y + 9);
-  doc.text(`Gs ${formatGs(totalAmount)}`, 192, y + 9, { align: "right" });
-  y += 24;
+  doc.text("TOTAL", left + 4, y + 10);
+  doc.setFontSize(16);
+  doc.text(`Gs ${formatGs(totalAmount)}`, left + tableWidth - 4, y + 10.3, { align: "right" });
+  y += 25;
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10.5);
+  doc.setFontSize(10.6);
   doc.setTextColor(...palette.muted);
-  doc.text("Pedido preparado. Gracias por su compra.", 105, y, { align: "center" });
+  doc.text("Pedido preparado. Gracias por su compra.", pageWidth / 2, y, { align: "center" });
 
   doc.save(buildSalePdfFilename(sale));
 };
