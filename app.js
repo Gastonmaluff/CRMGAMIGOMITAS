@@ -1085,6 +1085,35 @@ const updateSalesGoalForm = (goal) => {
   if (salesGoalNotice) salesGoalNotice.textContent = "";
 };
 
+const getStockDotClass = (productName) => {
+  const label = normalizeText(productName);
+  if (label.includes("rojo")) return "dot-red";
+  if (label.includes("verde")) return "dot-green";
+  return "dot-neutral";
+};
+
+const getLotsRiskColor = (lotsCount) => {
+  const qty = Number(lotsCount || 0);
+  if (!Number.isFinite(qty) || qty <= 5) return "#ef4444";
+  if (qty <= 10) return "#f97316";
+  if (qty <= 15) return "#eab308";
+  if (qty <= 22) return "#a3e635";
+  if (qty <= 30) return "#65a30d";
+  return "#16a34a";
+};
+
+const isBottleneckInCriticalLevel = (limitingRow) => {
+  if (!limitingRow?.materialId) return false;
+  const rawMaterial = state.rawMaterials.find((item) => item.id === limitingRow.materialId);
+  const minStockRaw = rawMaterial?.minStock;
+  const hasMinStock = minStockRaw !== null && minStockRaw !== undefined && minStockRaw !== "";
+  if (!hasMinStock) return false;
+  const minStock = Number(minStockRaw);
+  const available = Number(limitingRow.available || 0);
+  if (!Number.isFinite(minStock) || !Number.isFinite(available)) return false;
+  return available <= minStock;
+};
+
 const refreshDashboard = ({ rows, availabilityMap }) => {
   if (!metricKgYesterday) return;
   const yesterday = new Date();
@@ -1100,8 +1129,11 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
     ? formatInteger(finishedTotals.totalDisplays)
     : "N/D";
   let lotsPossible = "N/D";
+  let lotsCount = 0;
   let lotsProgress = 0;
   let bottleneck = "N/D";
+  let limitingRow = null;
+  let isBottleneckCritical = false;
   if (!activeRecipe) {
     lotsPossible = state.recipes.length ? "Sin formula base" : "Sin formulas";
     bottleneck = state.recipes.length ? "Sin formula base" : "Sin formulas";
@@ -1109,10 +1141,12 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
     lotsPossible = "Sin stock cargado";
     bottleneck = "Sin stock cargado";
   } else if (metrics.maxBatches !== null && Number.isFinite(metrics.maxBatches)) {
-    const lotsFloor = Math.floor(metrics.maxBatches);
-    lotsPossible = formatInteger(lotsFloor);
-    lotsProgress = Math.max(0, Math.min(100, Math.round((lotsFloor / 8) * 100)));
-    bottleneck = metrics.limitingRow ? metrics.limitingRow.name : "N/D";
+    lotsCount = Math.max(0, Math.floor(metrics.maxBatches));
+    lotsPossible = formatInteger(lotsCount);
+    lotsProgress = Math.max(0, Math.min(100, Math.round((lotsCount / 30) * 100)));
+    limitingRow = metrics.limitingRow || null;
+    bottleneck = limitingRow ? limitingRow.name : "N/D";
+    isBottleneckCritical = isBottleneckInCriticalLevel(limitingRow);
   }
   metricDisplaysStock.textContent = displaysStock;
   if (metricDisplaysBreakdown) {
@@ -1123,7 +1157,7 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
         .sort((a, b) => b.displays - a.displays)
         .map((item) => `
           <div class="overview-row">
-            <span class="overview-row-name"><i class="overview-row-dot" aria-hidden="true"></i>${item.name}</span>
+            <span class="overview-row-name"><i class="overview-row-dot ${getStockDotClass(item.name)}" aria-hidden="true"></i>${item.name}</span>
             <strong>${formatInteger(item.displays)}</strong>
           </div>
         `)
@@ -1133,24 +1167,22 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
   metricLotsPossible.textContent = lotsPossible;
   if (metricLotsProgress) {
     metricLotsProgress.style.width = `${lotsProgress}%`;
+    metricLotsProgress.style.background = getLotsRiskColor(lotsCount);
   }
   if (metricLotsSub) {
     metricLotsSub.textContent = lotsProgress > 0 ? "basado en materia prima actual" : "materia prima actual";
   }
   metricBottleneck.textContent = bottleneck;
-  const bottleneckLabel = normalizeText(bottleneck);
-  const hasAlert = Boolean(
-    bottleneckLabel
-    && bottleneckLabel !== "n/d"
-    && !bottleneckLabel.startsWith("sin ")
-  );
+  const hasAlert = isBottleneckCritical;
   if (metricBottleneckCard) {
     metricBottleneckCard.classList.toggle("alert", hasAlert);
   }
   if (metricBottleneckSub) {
     metricBottleneckSub.textContent = hasAlert
       ? "nivel critico detectado en suministro"
-      : "cuello de botella";
+      : (bottleneck !== "N/D" && !normalizeText(bottleneck).startsWith("sin ")
+        ? "se agotara primero segun stock actual"
+        : "cuello de botella");
   }
 };
 

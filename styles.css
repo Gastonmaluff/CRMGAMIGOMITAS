@@ -710,15 +710,19 @@ select:focus {
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: #16a34a;
+  background: #64748b;
   flex: 0 0 8px;
 }
 
-.production-overview .overview-row:nth-child(2) .overview-row-dot {
-  background: #0ea5e9;
+.production-overview .overview-row-dot.dot-red {
+  background: #dc2626;
 }
 
-.production-overview .overview-row:nth-child(3) .overview-row-dot {
+.production-overview .overview-row-dot.dot-green {
+  background: #16a34a;
+}
+
+.production-overview .overview-row-dot.dot-neutral {
   background: #64748b;
 }
 
@@ -759,7 +763,7 @@ select:focus {
   width: 0%;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #020617, #2563eb);
+  background: #2563eb;
   transition: width 0.28s ease;
 }
 
