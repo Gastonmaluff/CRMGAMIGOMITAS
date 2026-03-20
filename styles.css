@@ -1096,25 +1096,34 @@ select:focus {
   }
 
   .production-overview {
-    grid-template-columns: 1fr;
-    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
   }
 
   .production-overview .overview-card {
-    min-height: 164px;
-    padding: 18px;
+    min-height: 154px;
+    padding: 14px 12px;
   }
 
   .production-overview .overview-value {
-    font-size: 2.6rem;
+    font-size: 2.2rem;
   }
 
   .production-card-kg .overview-number-main {
-    font-size: 2.8rem;
+    font-size: 2.35rem;
   }
 
   .production-card-kg .overview-number-unit {
-    font-size: 1.4rem;
+    font-size: 1.1rem;
+  }
+
+  .production-overview .overview-label {
+    font-size: 0.64rem;
+    letter-spacing: 0.08em;
+  }
+
+  .production-overview .overview-sub {
+    font-size: 0.76rem;
   }
 
   .materials-row.header {
