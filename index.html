@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CRM Gami Gomitas</title>
-  <link rel="stylesheet" href="styles.css?v=20260321-3" />
+  <link rel="stylesheet" href="styles.css?v=20260321-4" />
 </head>
 <body>
   <div class="app">
@@ -44,6 +44,9 @@
           <button class="tab active" data-tab="production">Produccion</button>
           <button class="tab" data-tab="sales">Ventas</button>
         </div>
+        <div class="dashboard-overview-viewport" id="dashboardOverviewViewport">
+          <div class="dashboard-overview-track" id="dashboardOverviewTrack">
+            <div class="dashboard-overview-slide">
         <div class="overview-grid production-overview" id="overviewDashboard">
           <div class="overview-card production-card production-card-kg" id="metricKgCard">
             <div class="overview-label">Kg ayer</div>
@@ -68,7 +71,9 @@
             <div class="overview-sub" id="metricBottleneckSub">cuello de botella</div>
           </div>
         </div>
-        <div class="overview-grid hidden production-overview sales-overview" id="salesDashboard">
+            </div>
+            <div class="dashboard-overview-slide">
+        <div class="overview-grid production-overview sales-overview" id="salesDashboard">
           <div class="overview-card sales-card sales-card-summary">
             <div class="overview-label">Resumen operativo</div>
             <div class="overview-metric-stack">
@@ -125,7 +130,12 @@
             <div class="sales-goal-message" id="salesGoalMessage">Configura un objetivo mensual para ver avance.</div>
           </div>
         </div>
+            </div>
+          </div>
+        </div>
 
+        <div class="dashboard-panels-viewport" id="dashboardPanelsViewport">
+          <div class="dashboard-panels-track" id="dashboardPanelsTrack">
         <section class="tab-panel active" id="production">
           <div class="grid">
             <div class="card">
@@ -518,13 +528,15 @@
             </div>
           </div>
         </section>
+          </div>
+        </div>
       </section>
     </main>
   </div>
 
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260321-3"></script>
+  <script type="module" src="app.js?v=20260321-4"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

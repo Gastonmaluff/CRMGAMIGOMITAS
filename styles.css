@@ -579,6 +579,45 @@ select:focus {
   display: block;
 }
 
+.dashboard-overview-viewport,
+.dashboard-panels-viewport {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+}
+
+.dashboard-overview-viewport {
+  transition: height 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dashboard-panels-viewport {
+  transition: height 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dashboard-overview-track,
+.dashboard-panels-track {
+  display: flex;
+  width: 100%;
+  transform: translateX(0%);
+  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.dashboard-overview-slide,
+.dashboard-panels-track > .tab-panel {
+  flex: 0 0 100%;
+  min-width: 100%;
+  width: 100%;
+}
+
+.dashboard-panels-track {
+  align-items: flex-start;
+}
+
+.dashboard-panels-track > .tab-panel {
+  display: block;
+}
+
 .overview-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1240,6 +1279,15 @@ select:focus {
 
 .hidden {
   display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-overview-viewport,
+  .dashboard-panels-viewport,
+  .dashboard-overview-track,
+  .dashboard-panels-track {
+    transition: none !important;
+  }
 }
 
 @keyframes fadeIn {

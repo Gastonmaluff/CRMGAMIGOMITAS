@@ -64,8 +64,10 @@ const metricLotsSub = document.getElementById("metricLotsSub");
 const metricBottleneck = document.getElementById("metricBottleneck");
 const metricBottleneckCard = document.getElementById("metricBottleneckCard");
 const metricBottleneckSub = document.getElementById("metricBottleneckSub");
-const productionDashboard = document.getElementById("overviewDashboard");
-const salesDashboard = document.getElementById("salesDashboard");
+const dashboardOverviewViewport = document.getElementById("dashboardOverviewViewport");
+const dashboardOverviewTrack = document.getElementById("dashboardOverviewTrack");
+const dashboardPanelsViewport = document.getElementById("dashboardPanelsViewport");
+const dashboardPanelsTrack = document.getElementById("dashboardPanelsTrack");
 const salesMetricToday = document.getElementById("salesMetricToday");
 const salesMetricMonth = document.getElementById("salesMetricMonth");
 const salesMetricYesterday = document.getElementById("salesMetricYesterday");
@@ -158,6 +160,9 @@ const showDashboard = (user) => {
   dashboardSection.style.display = "block";
   userArea.style.display = "flex";
   userEmail.textContent = user.email || "";
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+  });
 };
 
 const formatNumber = (value) => {
@@ -1110,15 +1115,40 @@ const refreshFinishedStock = () => {
   }).join("");
 };
 
-const updateDashboardVisibility = (activeTab) => {
-  if (!productionDashboard || !salesDashboard) return;
-  if (activeTab === "sales") {
-    productionDashboard.classList.add("hidden");
-    salesDashboard.classList.remove("hidden");
-  } else {
-    productionDashboard.classList.remove("hidden");
-    salesDashboard.classList.add("hidden");
+const syncDashboardSlideHeights = (activeTab) => {
+  const safeTab = activeTab === "sales" ? "sales" : "production";
+  if (dashboardOverviewViewport && dashboardOverviewTrack) {
+    const overviewIndex = safeTab === "sales" ? 1 : 0;
+    const overviewSlide = dashboardOverviewTrack.children[overviewIndex];
+    if (overviewSlide) {
+      dashboardOverviewViewport.style.height = `${overviewSlide.scrollHeight}px`;
+    }
   }
+  if (dashboardPanelsViewport && dashboardPanelsTrack) {
+    const panelSlide = Array.from(dashboardPanelsTrack.children)
+      .find((node) => node.id === safeTab);
+    if (panelSlide) {
+      dashboardPanelsViewport.style.height = `${panelSlide.scrollHeight}px`;
+    }
+  }
+};
+
+const updateDashboardVisibility = (activeTab) => {
+  const safeTab = activeTab === "sales" ? "sales" : "production";
+  const offset = safeTab === "sales" ? "-100%" : "0%";
+  if (dashboardSection) {
+    dashboardSection.dataset.view = safeTab;
+  }
+  if (dashboardOverviewTrack) {
+    dashboardOverviewTrack.style.transform = `translateX(${offset})`;
+  }
+  if (dashboardPanelsTrack) {
+    dashboardPanelsTrack.style.transform = `translateX(${offset})`;
+  }
+  panels.forEach((panel) => {
+    panel.setAttribute("aria-hidden", panel.id === safeTab ? "false" : "true");
+  });
+  requestAnimationFrame(() => syncDashboardSlideHeights(safeTab));
 };
 
 const updateSalesGoalForm = (goal) => {
@@ -1957,15 +1987,15 @@ const renderAll = () => {
 const setupTabs = () => {
   tabs.forEach((tab) => {
     tab.addEventListener("click", () => {
+      const targetTab = tab.dataset.tab || "production";
       tabs.forEach((t) => t.classList.remove("active"));
-      panels.forEach((p) => p.classList.remove("active"));
       tab.classList.add("active");
-      const target = document.getElementById(tab.dataset.tab);
-      if (target) target.classList.add("active");
-      updateDashboardVisibility(tab.dataset.tab);
+      panels.forEach((p) => p.classList.toggle("active", p.id === targetTab));
+      updateDashboardVisibility(targetTab);
     });
   });
   const initialTab = document.querySelector(".tab.active")?.dataset.tab || "production";
+  panels.forEach((p) => p.classList.toggle("active", p.id === initialTab));
   updateDashboardVisibility(initialTab);
 };
 
@@ -1976,9 +2006,7 @@ const updateDueDateVisibility = () => {
   dueDateField.classList.toggle("open", isCredit);
   if (!isCredit) saleForm.dueDate.value = "";
   requestAnimationFrame(() => {
-    document.querySelectorAll(".collapse-body.open").forEach((body) => {
-      body.style.setProperty("--collapse-max", `${body.scrollHeight}px`);
-    });
+    refreshCollapseHeights();
   });
 };
 
@@ -1995,9 +2023,7 @@ const updateSaleObservationVisibility = (forceOpen = null) => {
     saleForm.observation.value = "";
   }
   requestAnimationFrame(() => {
-    document.querySelectorAll(".collapse-body.open").forEach((body) => {
-      body.style.setProperty("--collapse-max", `${body.scrollHeight}px`);
-    });
+    refreshCollapseHeights();
   });
 };
 
@@ -2991,15 +3017,26 @@ document.addEventListener("click", (event) => {
   } else {
     openSection(toggle, body);
   }
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+  });
 });
 
 const refreshCollapseHeights = () => {
   document.querySelectorAll(".collapse-body.open").forEach((body) => {
     setCollapseMax(body);
   });
+  const currentTab = document.querySelector(".tab.active")?.dataset.tab || "production";
+  syncDashboardSlideHeights(currentTab);
 };
 
-window.addEventListener("resize", refreshCollapseHeights);
+window.addEventListener("resize", () => {
+  refreshCollapseHeights();
+});
+
+requestAnimationFrame(() => {
+  refreshCollapseHeights();
+});
 
 onAuthStateChanged(auth, (user) => {
   console.log("[auth] state changed", user ? user.uid : "signed-out");
