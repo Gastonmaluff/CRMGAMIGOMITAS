@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CRM Gami Gomitas</title>
-  <link rel="stylesheet" href="styles.css?v=20260321-2" />
+  <link rel="stylesheet" href="styles.css?v=20260321-3" />
 </head>
 <body>
   <div class="app">
@@ -116,7 +116,10 @@
               </div>
               <div class="sales-goal-stat">
                 <span>Ritmo</span>
-                <strong id="salesGoalPace">-</strong>
+                <div class="sales-goal-pace">
+                  <strong id="salesGoalPaceCurrent">-</strong>
+                  <small id="salesGoalPaceNeeded">-</small>
+                </div>
               </div>
             </div>
             <div class="sales-goal-message" id="salesGoalMessage">Configura un objetivo mensual para ver avance.</div>
@@ -521,7 +524,7 @@
 
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260321-2"></script>
+  <script type="module" src="app.js?v=20260321-3"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

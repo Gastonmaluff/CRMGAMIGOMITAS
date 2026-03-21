@@ -926,30 +926,59 @@ select:focus {
   line-height: 1.2;
 }
 
+.sales-goal-pace {
+  display: grid;
+  gap: 2px;
+}
+
+.sales-goal-pace strong {
+  font-size: 0.92rem;
+}
+
+.sales-goal-pace small {
+  font-size: 0.8rem;
+  color: #64748b;
+  font-weight: 700;
+}
+
 .sales-goal-message {
   font-size: 0.86rem;
   font-weight: 700;
   color: #334155;
 }
 
-.sales-card-goal[data-tone="low"] .sales-goal-message,
 .sales-card-goal[data-tone="low"] .sales-goal-percent {
   color: #b91c1c;
 }
 
-.sales-card-goal[data-tone="mid"] .sales-goal-message,
 .sales-card-goal[data-tone="mid"] .sales-goal-percent {
   color: #92400e;
 }
 
-.sales-card-goal[data-tone="good"] .sales-goal-message,
 .sales-card-goal[data-tone="good"] .sales-goal-percent {
   color: #166534;
 }
 
-.sales-card-goal[data-tone="over"] .sales-goal-message,
 .sales-card-goal[data-tone="over"] .sales-goal-percent {
   color: #14532d;
+}
+
+.sales-card-goal[data-pace="low"] .sales-goal-message,
+.sales-card-goal[data-pace="low"] .sales-goal-pace strong,
+.sales-card-goal[data-pace="low"] .sales-goal-pace small {
+  color: #b91c1c;
+}
+
+.sales-card-goal[data-pace="mid"] .sales-goal-message,
+.sales-card-goal[data-pace="mid"] .sales-goal-pace strong,
+.sales-card-goal[data-pace="mid"] .sales-goal-pace small {
+  color: #92400e;
+}
+
+.sales-card-goal[data-pace="high"] .sales-goal-message,
+.sales-card-goal[data-pace="high"] .sales-goal-pace strong,
+.sales-card-goal[data-pace="high"] .sales-goal-pace small {
+  color: #166534;
 }
 
 .grid {

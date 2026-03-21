@@ -78,7 +78,8 @@ const salesGoalSummary = document.getElementById("salesGoalSummary");
 const salesGoalProgressBar = document.getElementById("salesGoalProgressBar");
 const salesGoalTarget = document.getElementById("salesGoalTarget");
 const salesGoalRemaining = document.getElementById("salesGoalRemaining");
-const salesGoalPace = document.getElementById("salesGoalPace");
+const salesGoalPaceCurrent = document.getElementById("salesGoalPaceCurrent");
+const salesGoalPaceNeeded = document.getElementById("salesGoalPaceNeeded");
 const salesGoalMessage = document.getElementById("salesGoalMessage");
 const productForm = document.getElementById("productForm");
 const clientForm = document.getElementById("clientForm");
@@ -1275,31 +1276,50 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
 
   const targetDisplays = Number(goal?.targetDisplays || 0);
   const now = new Date();
-  const daysElapsed = Math.max(1, now.getDate());
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const currentPace = displaysCurrentMonth / daysElapsed;
+  const todayIso = toDateInputValue(now);
+  const toDayNumber = (isoValue) => {
+    const [year, month, day] = String(isoValue || "").split("-").map(Number);
+    if (!year || !month || !day) return null;
+    return Math.floor(Date.UTC(year, month - 1, day) / 86400000);
+  };
+  const startDay = toDayNumber(goalStartDate);
+  const endDay = toDayNumber(goalEndDate);
+  const todayDay = toDayNumber(todayIso);
+
+  const daysElapsed = startDay !== null && todayDay !== null
+    ? Math.max(0, todayDay - startDay + 1)
+    : Math.max(1, now.getDate());
+  const daysRemaining = endDay !== null && todayDay !== null
+    ? Math.max(0, endDay - todayDay + 1)
+    : 0;
+  const soldForGoal = displaysInGoalPeriod;
+  const currentPace = daysElapsed > 0 ? (soldForGoal / daysElapsed) : 0;
 
   if (targetDisplays <= 0) {
     salesMetricGoal.textContent = "Sin objetivo";
     if (salesGoalSummary) salesGoalSummary.textContent = "Sin objetivo configurado";
     if (salesGoalTarget) salesGoalTarget.textContent = "-";
     if (salesGoalRemaining) salesGoalRemaining.textContent = "-";
-    if (salesGoalPace) salesGoalPace.textContent = "-";
+    if (salesGoalPaceCurrent) salesGoalPaceCurrent.textContent = "-";
+    if (salesGoalPaceNeeded) salesGoalPaceNeeded.textContent = "";
     if (salesGoalMessage) salesGoalMessage.textContent = "Configura un objetivo mensual para ver avance.";
     if (salesGoalProgressBar) {
       salesGoalProgressBar.style.width = "0%";
       salesGoalProgressBar.style.background = "#94a3b8";
     }
     if (salesGoalCard) salesGoalCard.dataset.tone = "none";
+    if (salesGoalCard) salesGoalCard.dataset.pace = "none";
     return;
   }
 
-  const soldForGoal = displaysInGoalPeriod;
   const percent = targetDisplays > 0 ? (soldForGoal / targetDisplays) * 100 : 0;
   const percentRounded = Math.round(percent);
   const remainingDisplays = Math.max(targetDisplays - soldForGoal, 0);
-  const requiredPace = targetDisplays / daysInMonth;
-  const paceLabel = `${currentPace.toLocaleString("es-PY", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} / dia`;
+  const paceCurrentLabel = `${currentPace.toLocaleString("es-PY", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} / dia (actual)`;
+  const neededPace = daysRemaining > 0 ? (remainingDisplays / daysRemaining) : null;
+  const paceNeededLabel = neededPace !== null
+    ? `${neededPace.toLocaleString("es-PY", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} / dia (necesario)`
+    : "";
 
   let tone = "good";
   let progressColor = "#22c55e";
@@ -1317,11 +1337,17 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
     progressColor = "#15803d";
   }
 
-  let message = "Vas en buen camino";
-  if (currentPace < requiredPace * 0.95) {
-    message = "Vas por debajo del ritmo necesario";
-  } else if (currentPace > requiredPace * 1.1) {
-    message = "Vas adelantado al objetivo";
+  let paceStatus = "mid";
+  let message = "Vas justo";
+  if (neededPace === null) {
+    paceStatus = "none";
+    message = "El periodo del objetivo ya finalizo";
+  } else if (currentPace < neededPace * 0.95) {
+    paceStatus = "low";
+    message = "Tenes que acelerar";
+  } else if (currentPace > neededPace * 1.05) {
+    paceStatus = "high";
+    message = "Vas adelantado";
   }
 
   salesMetricGoal.textContent = `${formatInteger(percentRounded)}%`;
@@ -1330,7 +1356,8 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
   }
   if (salesGoalTarget) salesGoalTarget.textContent = `${formatInteger(targetDisplays)} displays`;
   if (salesGoalRemaining) salesGoalRemaining.textContent = `${formatInteger(remainingDisplays)} displays`;
-  if (salesGoalPace) salesGoalPace.textContent = paceLabel;
+  if (salesGoalPaceCurrent) salesGoalPaceCurrent.textContent = paceCurrentLabel;
+  if (salesGoalPaceNeeded) salesGoalPaceNeeded.textContent = paceNeededLabel;
   if (salesGoalMessage) salesGoalMessage.textContent = message;
   if (salesGoalProgressBar) {
     const clampedProgress = Math.max(0, Math.min(percent, 100));
@@ -1338,6 +1365,7 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
     salesGoalProgressBar.style.background = progressColor;
   }
   if (salesGoalCard) salesGoalCard.dataset.tone = tone;
+  if (salesGoalCard) salesGoalCard.dataset.pace = paceStatus;
 };
 
 const refreshStockSummary = () => {
