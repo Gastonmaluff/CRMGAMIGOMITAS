@@ -864,6 +864,94 @@ select:focus {
   margin-top: 8px;
 }
 
+.sales-overview .sales-card-goal {
+  gap: 10px;
+}
+
+.sales-goal-summary {
+  font-size: 0.9rem;
+  color: #475569;
+  font-weight: 600;
+}
+
+.sales-goal-percent {
+  font-size: 3rem;
+  line-height: 0.95;
+}
+
+.sales-goal-progress {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: #dbe6f5;
+  overflow: hidden;
+}
+
+.sales-goal-progress span {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: #94a3b8;
+  transition: width 0.35s ease, background-color 0.25s ease;
+}
+
+.sales-goal-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sales-goal-stat {
+  border: 1px solid #d8e1ee;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.65);
+  padding: 8px 9px;
+  display: grid;
+  gap: 3px;
+}
+
+.sales-goal-stat span {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.sales-goal-stat strong {
+  font-size: 0.95rem;
+  color: #0f172a;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.sales-goal-message {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.sales-card-goal[data-tone="low"] .sales-goal-message,
+.sales-card-goal[data-tone="low"] .sales-goal-percent {
+  color: #b91c1c;
+}
+
+.sales-card-goal[data-tone="mid"] .sales-goal-message,
+.sales-card-goal[data-tone="mid"] .sales-goal-percent {
+  color: #92400e;
+}
+
+.sales-card-goal[data-tone="good"] .sales-goal-message,
+.sales-card-goal[data-tone="good"] .sales-goal-percent {
+  color: #166534;
+}
+
+.sales-card-goal[data-tone="over"] .sales-goal-message,
+.sales-card-goal[data-tone="over"] .sales-goal-percent {
+  color: #14532d;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -1201,6 +1289,14 @@ select:focus {
 
   .sales-overview .sales-card-goal .overview-value {
     font-size: 2rem;
+  }
+
+  .sales-goal-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sales-goal-stat:last-child {
+    grid-column: span 2;
   }
 
   .materials-row.header {

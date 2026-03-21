@@ -73,6 +73,13 @@ const salesMetricLastMonth = document.getElementById("salesMetricLastMonth");
 const salesMetricAvailable = document.getElementById("salesMetricAvailable");
 const salesMetricAvailableBreakdown = document.getElementById("salesMetricAvailableBreakdown");
 const salesMetricGoal = document.getElementById("salesMetricGoal");
+const salesGoalCard = document.querySelector(".sales-card-goal");
+const salesGoalSummary = document.getElementById("salesGoalSummary");
+const salesGoalProgressBar = document.getElementById("salesGoalProgressBar");
+const salesGoalTarget = document.getElementById("salesGoalTarget");
+const salesGoalRemaining = document.getElementById("salesGoalRemaining");
+const salesGoalPace = document.getElementById("salesGoalPace");
+const salesGoalMessage = document.getElementById("salesGoalMessage");
 const productForm = document.getElementById("productForm");
 const clientForm = document.getElementById("clientForm");
 const saleForm = document.getElementById("saleForm");
@@ -1267,12 +1274,70 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
   }
 
   const targetDisplays = Number(goal?.targetDisplays || 0);
+  const now = new Date();
+  const daysElapsed = Math.max(1, now.getDate());
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const currentPace = displaysCurrentMonth / daysElapsed;
+
   if (targetDisplays <= 0) {
     salesMetricGoal.textContent = "Sin objetivo";
-  } else {
-    const percent = (displaysInGoalPeriod / targetDisplays) * 100;
-    salesMetricGoal.textContent = `${formatNumber(percent)}%`;
+    if (salesGoalSummary) salesGoalSummary.textContent = "Sin objetivo configurado";
+    if (salesGoalTarget) salesGoalTarget.textContent = "-";
+    if (salesGoalRemaining) salesGoalRemaining.textContent = "-";
+    if (salesGoalPace) salesGoalPace.textContent = "-";
+    if (salesGoalMessage) salesGoalMessage.textContent = "Configura un objetivo mensual para ver avance.";
+    if (salesGoalProgressBar) {
+      salesGoalProgressBar.style.width = "0%";
+      salesGoalProgressBar.style.background = "#94a3b8";
+    }
+    if (salesGoalCard) salesGoalCard.dataset.tone = "none";
+    return;
   }
+
+  const soldForGoal = displaysInGoalPeriod;
+  const percent = targetDisplays > 0 ? (soldForGoal / targetDisplays) * 100 : 0;
+  const percentRounded = Math.round(percent);
+  const remainingDisplays = Math.max(targetDisplays - soldForGoal, 0);
+  const requiredPace = targetDisplays / daysInMonth;
+  const paceLabel = `${currentPace.toLocaleString("es-PY", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} / dia`;
+
+  let tone = "good";
+  let progressColor = "#22c55e";
+  if (percent <= 40) {
+    tone = "low";
+    progressColor = "#ef4444";
+  } else if (percent <= 70) {
+    tone = "mid";
+    progressColor = "#eab308";
+  } else if (percent <= 100) {
+    tone = "good";
+    progressColor = "#22c55e";
+  } else {
+    tone = "over";
+    progressColor = "#15803d";
+  }
+
+  let message = "Vas en buen camino";
+  if (currentPace < requiredPace * 0.95) {
+    message = "Vas por debajo del ritmo necesario";
+  } else if (currentPace > requiredPace * 1.1) {
+    message = "Vas adelantado al objetivo";
+  }
+
+  salesMetricGoal.textContent = `${formatInteger(percentRounded)}%`;
+  if (salesGoalSummary) {
+    salesGoalSummary.textContent = `${formatInteger(soldForGoal)} vendidos de ${formatInteger(targetDisplays)} objetivo`;
+  }
+  if (salesGoalTarget) salesGoalTarget.textContent = `${formatInteger(targetDisplays)} displays`;
+  if (salesGoalRemaining) salesGoalRemaining.textContent = `${formatInteger(remainingDisplays)} displays`;
+  if (salesGoalPace) salesGoalPace.textContent = paceLabel;
+  if (salesGoalMessage) salesGoalMessage.textContent = message;
+  if (salesGoalProgressBar) {
+    const clampedProgress = Math.max(0, Math.min(percent, 100));
+    salesGoalProgressBar.style.width = `${clampedProgress}%`;
+    salesGoalProgressBar.style.background = progressColor;
+  }
+  if (salesGoalCard) salesGoalCard.dataset.tone = tone;
 };
 
 const refreshStockSummary = () => {

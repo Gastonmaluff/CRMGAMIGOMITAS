@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CRM Gami Gomitas</title>
-  <link rel="stylesheet" href="styles.css?v=20260321-1" />
+  <link rel="stylesheet" href="styles.css?v=20260321-2" />
 </head>
 <body>
   <div class="app">
@@ -100,8 +100,26 @@
           </div>
           <div class="overview-card sales-card sales-card-goal">
             <div class="overview-label">Cumplimiento</div>
-            <div class="overview-value" id="salesMetricGoal">Sin objetivo</div>
-            <div class="overview-sub">objetivo del mes</div>
+            <div class="sales-goal-summary" id="salesGoalSummary">Sin objetivo configurado</div>
+            <div class="overview-value sales-goal-percent" id="salesMetricGoal">Sin objetivo</div>
+            <div class="sales-goal-progress" aria-hidden="true">
+              <span id="salesGoalProgressBar"></span>
+            </div>
+            <div class="sales-goal-stats">
+              <div class="sales-goal-stat">
+                <span>Objetivo</span>
+                <strong id="salesGoalTarget">-</strong>
+              </div>
+              <div class="sales-goal-stat">
+                <span>Restante</span>
+                <strong id="salesGoalRemaining">-</strong>
+              </div>
+              <div class="sales-goal-stat">
+                <span>Ritmo</span>
+                <strong id="salesGoalPace">-</strong>
+              </div>
+            </div>
+            <div class="sales-goal-message" id="salesGoalMessage">Configura un objetivo mensual para ver avance.</div>
           </div>
         </div>
 
@@ -503,7 +521,7 @@
 
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260321-1"></script>
+  <script type="module" src="app.js?v=20260321-2"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();
