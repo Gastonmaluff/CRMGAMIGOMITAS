@@ -826,6 +826,44 @@ select:focus {
   z-index: 2;
 }
 
+.sales-overview .overview-metric-stack {
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.sales-overview .overview-metric-line {
+  align-items: center;
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: #334155;
+  border-bottom: 1px solid #e6edf5;
+  padding-bottom: 6px;
+}
+
+.sales-overview .overview-metric-line:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.sales-overview .overview-metric-line strong {
+  font-size: 2rem;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: #020617;
+}
+
+.sales-overview .sales-card-summary .overview-sub {
+  margin-top: 2px;
+}
+
+.sales-overview .sales-card-goal .overview-value {
+  font-size: 2.7rem;
+}
+
+.sales-overview .overview-breakdown {
+  margin-top: 8px;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -1150,6 +1188,19 @@ select:focus {
 
   .production-overview .overview-sub {
     font-size: 0.76rem;
+  }
+
+  .sales-overview .overview-metric-line {
+    font-size: 0.84rem;
+    gap: 8px;
+  }
+
+  .sales-overview .overview-metric-line strong {
+    font-size: 1.45rem;
+  }
+
+  .sales-overview .sales-card-goal .overview-value {
+    font-size: 2rem;
   }
 
   .materials-row.header {

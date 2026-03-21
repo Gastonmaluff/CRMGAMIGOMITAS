@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CRM Gami Gomitas</title>
-  <link rel="stylesheet" href="styles.css?v=20260320-1" />
+  <link rel="stylesheet" href="styles.css?v=20260321-1" />
 </head>
 <body>
   <div class="app">
@@ -68,8 +68,8 @@
             <div class="overview-sub" id="metricBottleneckSub">cuello de botella</div>
           </div>
         </div>
-        <div class="overview-grid hidden" id="salesDashboard">
-          <div class="overview-card">
+        <div class="overview-grid hidden production-overview sales-overview" id="salesDashboard">
+          <div class="overview-card sales-card sales-card-summary">
             <div class="overview-label">Resumen operativo</div>
             <div class="overview-metric-stack">
               <div class="overview-metric-line">
@@ -87,17 +87,18 @@
             </div>
             <div class="overview-sub">displays vendidos</div>
           </div>
-          <div class="overview-card">
+          <div class="overview-card sales-card sales-card-last-month">
             <div class="overview-label">Displays mes pasado</div>
             <div class="overview-value" id="salesMetricLastMonth">0</div>
             <div class="overview-sub">mes calendario anterior</div>
           </div>
-          <div class="overview-card">
+          <div class="overview-card sales-card sales-card-available">
             <div class="overview-label">Displays disponibles</div>
             <div class="overview-value" id="salesMetricAvailable">N/D</div>
             <div class="overview-sub">segun stock actual</div>
+            <div class="overview-breakdown" id="salesMetricAvailableBreakdown"></div>
           </div>
-          <div class="overview-card">
+          <div class="overview-card sales-card sales-card-goal">
             <div class="overview-label">Cumplimiento</div>
             <div class="overview-value" id="salesMetricGoal">Sin objetivo</div>
             <div class="overview-sub">objetivo del mes</div>
@@ -502,7 +503,7 @@
 
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260320-6"></script>
+  <script type="module" src="app.js?v=20260321-1"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

@@ -71,6 +71,7 @@ const salesMetricMonth = document.getElementById("salesMetricMonth");
 const salesMetricYesterday = document.getElementById("salesMetricYesterday");
 const salesMetricLastMonth = document.getElementById("salesMetricLastMonth");
 const salesMetricAvailable = document.getElementById("salesMetricAvailable");
+const salesMetricAvailableBreakdown = document.getElementById("salesMetricAvailableBreakdown");
 const salesMetricGoal = document.getElementById("salesMetricGoal");
 const productForm = document.getElementById("productForm");
 const clientForm = document.getElementById("clientForm");
@@ -1249,6 +1250,21 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
   salesMetricMonth.textContent = formatInteger(displaysCurrentMonth);
   salesMetricLastMonth.textContent = formatInteger(displaysPreviousMonth);
   salesMetricAvailable.textContent = availableDisplays;
+  if (salesMetricAvailableBreakdown) {
+    if (!finishedTotals.breakdown.length) {
+      salesMetricAvailableBreakdown.innerHTML = "";
+    } else {
+      salesMetricAvailableBreakdown.innerHTML = finishedTotals.breakdown
+        .sort((a, b) => b.displays - a.displays)
+        .map((item) => `
+          <div class="overview-row">
+            <span class="overview-row-name"><i class="overview-row-dot ${getStockDotClass(item.name)}" aria-hidden="true"></i>${item.name}</span>
+            <strong>${formatInteger(item.displays)}</strong>
+          </div>
+        `)
+        .join("");
+    }
+  }
 
   const targetDisplays = Number(goal?.targetDisplays || 0);
   if (targetDisplays <= 0) {
