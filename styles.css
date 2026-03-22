@@ -565,12 +565,33 @@ select:focus {
   cursor: pointer;
   font-weight: 700;
   color: var(--muted);
+  transform: translateZ(0);
+  transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.16s ease;
+  will-change: transform;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .tab.active {
   border-color: var(--primary);
   color: var(--ink);
   background: #f9fafb;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tab:hover {
+    transform: translateY(-1px);
+  }
+}
+
+.tab:active {
+  transform: scale(0.985);
+  box-shadow: 0 6px 14px rgba(17, 24, 39, 0.12);
+  transition-duration: 0.12s;
+}
+
+.tab:focus-visible {
+  outline: 2px solid rgba(17, 24, 39, 0.22);
+  outline-offset: 2px;
 }
 
 .tab-panel {
@@ -1292,7 +1313,8 @@ select:focus {
   .dashboard-overview-viewport,
   .dashboard-panels-viewport,
   .dashboard-overview-track,
-  .dashboard-panels-track {
+  .dashboard-panels-track,
+  .tab {
     transition: none !important;
   }
 }
