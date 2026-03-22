@@ -596,46 +596,50 @@
                 <div class="list scroll commercial-history-search-results" id="historyCustomerResults"></div>
               </div>
               <form class="form-grid commercial-history-filters" id="historyFilters">
-                <label>
-                  Fecha desde
-                  <input id="historyDateFrom" type="date" />
-                </label>
-                <label>
-                  Fecha hasta
-                  <input id="historyDateTo" type="date" />
-                </label>
-                <label>
-                  Cliente
-                  <select id="historyClientFilter"></select>
-                </label>
-                <label>
-                  Producto
-                  <select id="historyProductFilter">
-                    <option value="">Todos</option>
-                  </select>
-                </label>
-                <label id="historyProductModeField" class="hidden">
-                  Modo de analisis
-                  <select id="historyProductMode">
-                    <option value="includes">Incluye producto</option>
-                    <option value="only">Solo este producto</option>
-                    <option value="excludes">No compro este producto</option>
-                  </select>
-                </label>
-                <label>
-                  Metodo de pago
-                  <select id="historyPaymentFilter">
-                    <option value="">Todos</option>
-                  </select>
-                </label>
-                <label>
-                  Estado de pago
-                  <select id="historyStatusFilter">
-                    <option value="">Todos</option>
-                    <option value="pagado">Pagado</option>
-                    <option value="pendiente">Pendiente</option>
-                  </select>
-                </label>
+                <div class="commercial-history-filters-row commercial-history-filters-row-primary">
+                  <label>
+                    Fecha desde
+                    <input id="historyDateFrom" type="date" />
+                  </label>
+                  <label>
+                    Fecha hasta
+                    <input id="historyDateTo" type="date" />
+                  </label>
+                  <label>
+                    Cliente
+                    <select id="historyClientFilter"></select>
+                  </label>
+                  <label>
+                    Producto
+                    <select id="historyProductFilter">
+                      <option value="">Todos</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="commercial-history-filters-row commercial-history-filters-row-secondary">
+                  <label id="historyProductModeField" class="hidden">
+                    Modo de analisis
+                    <select id="historyProductMode">
+                      <option value="includes">Incluye producto</option>
+                      <option value="only">Solo este producto</option>
+                      <option value="excludes">No compro este producto</option>
+                    </select>
+                  </label>
+                  <label>
+                    Estado de pago
+                    <select id="historyStatusFilter">
+                      <option value="">Todos</option>
+                      <option value="pagado">Pagado</option>
+                      <option value="pendiente">Pendiente</option>
+                    </select>
+                  </label>
+                  <label>
+                    Metodo de pago
+                    <select id="historyPaymentFilter">
+                      <option value="">Todos</option>
+                    </select>
+                  </label>
+                </div>
               </form>
             </div>
             <div class="commercial-history-main">
@@ -670,7 +674,7 @@
 
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260322-19"></script>
+  <script type="module" src="app.js?v=20260322-20"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

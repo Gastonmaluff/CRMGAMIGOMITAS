@@ -1154,6 +1154,10 @@ const refreshCommercialHistoryProductOptions = () => {
 const updateCommercialHistoryProductModeVisibility = () => {
   if (!historyProductMode || !historyProductModeField) return;
   const hasProduct = Boolean(String(historyProductFilter?.value || "").trim());
+  const secondaryRow = historyProductModeField.closest(".commercial-history-filters-row-secondary");
+  if (secondaryRow) {
+    secondaryRow.classList.toggle("mode-hidden", !hasProduct);
+  }
   historyProductMode.disabled = !hasProduct;
   historyProductModeField.classList.toggle("is-disabled", !hasProduct);
   historyProductModeField.classList.toggle("hidden", !hasProduct);
