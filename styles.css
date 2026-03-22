@@ -266,6 +266,35 @@ body {
   font-weight: 700;
 }
 
+.phone-field {
+  display: grid;
+  gap: 6px;
+}
+
+.phone-split {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.phone-prefix {
+  border: 1px solid var(--border);
+  border-right: 0;
+  border-radius: 12px 0 0 12px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.phone-split input {
+  border-radius: 0 12px 12px 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .sale-items {
   display: grid;
   gap: 12px;

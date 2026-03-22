@@ -195,11 +195,25 @@ const formatGsInputValue = (value) => {
   return formatGs(amount);
 };
 
+const normalizePhoneForStorage = (phone) => {
+  const cleaned = String(phone ?? "").replace(/\D+/g, "");
+  if (!cleaned) return "";
+  if (/^5959\d{8}$/.test(cleaned)) return cleaned;
+  if (/^9\d{8}$/.test(cleaned)) return `595${cleaned}`;
+  return null;
+};
+
+const getLocalPhoneInputValue = (phone) => {
+  const cleaned = String(phone ?? "").replace(/\D+/g, "");
+  if (!cleaned) return "";
+  if (/^5959\d{8}$/.test(cleaned)) return cleaned.slice(3);
+  if (/^0?9\d{8}$/.test(cleaned)) return cleaned.slice(-9);
+  return cleaned;
+};
+
 const formatPhoneForWhatsApp = (phone) => {
-  const cleaned = String(phone ?? "").replace(/[\s\-().+]/g, "");
-  if (!/^\d{9}$/.test(cleaned)) return null;
-  if (!cleaned.startsWith("9")) return null;
-  return `595${cleaned}`;
+  const normalized = normalizePhoneForStorage(phone);
+  return normalized || null;
 };
 
 const buildWhatsAppLink = (phone, customerName = "") => {
@@ -2944,10 +2958,15 @@ clientForm.addEventListener("submit", async (event) => {
     window.alert("Completa ambos campos del RUC o dejalos vacios.");
     return;
   }
+  const phone = normalizePhoneForStorage(clientForm.phone.value);
+  if (phone === null) {
+    window.alert("El telefono debe tener 9 digitos y comenzar con 9. Ejemplo: 983600200.");
+    return;
+  }
   const payload = {
     name,
     ruc,
-    phone: clientForm.phone.value.trim(),
+    phone,
     address: clientForm.address.value.trim(),
     userId: user.uid,
     createdAt: serverTimestamp()
@@ -3114,7 +3133,7 @@ quickClientSave?.addEventListener("click", async () => {
   if (!user) return;
   const name = formatClientName(quickClientName?.value);
   const ruc = buildRuc(quickClientRucMain?.value, quickClientRucDv?.value);
-  const phone = quickClientPhone?.value.trim() || "";
+  const phone = normalizePhoneForStorage(quickClientPhone?.value || "");
   const address = quickClientAddress?.value.trim() || "";
   if (!name) {
     if (quickClientNotice) quickClientNotice.textContent = "Completa el nombre del cliente.";
@@ -3123,6 +3142,10 @@ quickClientSave?.addEventListener("click", async () => {
   if (quickClientName) quickClientName.value = name;
   if (ruc === null) {
     if (quickClientNotice) quickClientNotice.textContent = "Completa ambos campos del RUC o dejalos vacios.";
+    return;
+  }
+  if (phone === null) {
+    if (quickClientNotice) quickClientNotice.textContent = "Telefono invalido. Usa 9 digitos desde 9 (ej: 983600200).";
     return;
   }
   const payload = {
@@ -3269,7 +3292,7 @@ const startEditClient = (item) => {
   const rucParts = splitRuc(item.ruc);
   if (clientForm.rucMain) clientForm.rucMain.value = rucParts.main;
   if (clientForm.rucDv) clientForm.rucDv.value = rucParts.dv;
-  clientForm.phone.value = item.phone || "";
+  clientForm.phone.value = getLocalPhoneInputValue(item.phone);
   clientForm.address.value = item.address || "";
   clientForm.dataset.editId = item.id;
   setSubmitLabel(clientForm, "Actualizar cliente");
@@ -3497,7 +3520,9 @@ saleItems?.addEventListener("click", (event) => {
   { input: clientForm?.rucMain, max: 12 },
   { input: clientForm?.rucDv, max: 3 },
   { input: quickClientRucMain, max: 12 },
-  { input: quickClientRucDv, max: 3 }
+  { input: quickClientRucDv, max: 3 },
+  { input: clientForm?.phone, max: 9 },
+  { input: quickClientPhone, max: 9 }
 ].forEach(({ input, max }) => {
   if (!input) return;
   input.addEventListener("input", () => {

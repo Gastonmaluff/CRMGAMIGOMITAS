@@ -403,9 +403,12 @@
                         <input id="quickClientRucDv" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" placeholder="Ej: 0" />
                       </div>
                     </label>
-                    <label>
-                      Telefono
-                      <input id="quickClientPhone" type="text" />
+                    <label class="phone-field">
+                      <span>Telefono</span>
+                      <div class="phone-split">
+                        <span class="phone-prefix">595</span>
+                        <input id="quickClientPhone" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="9" placeholder="983600200" />
+                      </div>
                     </label>
                     <label>
                       Direccion
@@ -503,9 +506,12 @@
                     <input name="rucDv" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" placeholder="Ej: 0" />
                   </div>
                 </label>
-                <label>
-                  Telefono
-                  <input name="phone" />
+                <label class="phone-field">
+                  <span>Telefono</span>
+                  <div class="phone-split">
+                    <span class="phone-prefix">595</span>
+                    <input name="phone" inputmode="numeric" pattern="[0-9]*" maxlength="9" placeholder="983600200" />
+                  </div>
                 </label>
                 <label>
                   Direccion
