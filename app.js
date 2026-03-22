@@ -177,6 +177,19 @@ const formatGs = (value) => {
   return num.toLocaleString("es-PY", { maximumFractionDigits: 0 });
 };
 
+const parseGsInputValue = (value) => {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  if (!digits) return 0;
+  const parsed = Number(digits);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const formatGsInputValue = (value) => {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) return "";
+  return formatGs(amount);
+};
+
 const refreshIcons = () => {
   if (window.lucide && typeof window.lucide.createIcons === "function") {
     window.lucide.createIcons();
@@ -554,11 +567,15 @@ const renderList = (container, items, renderer) => {
 
 const updateSelect = (select, items, placeholder) => {
   if (!select || select.tagName !== "SELECT") return;
+  const selectedValue = select.value || "";
   const options = [`<option value="">${placeholder}</option>`];
   items.forEach((item) => {
     options.push(`<option value="${item.id}">${item.name}</option>`);
   });
   select.innerHTML = options.join("");
+  if (selectedValue && items.some((item) => item.id === selectedValue)) {
+    select.value = selectedValue;
+  }
 };
 
 const computeStockTotals = () => {
@@ -919,7 +936,7 @@ const buildFinishedStockRows = () => {
 const updateSaleItemSubtotal = (row) => {
   if (!row) return 0;
   const qty = Number(row.querySelector(".sale-item-qty")?.value || 0);
-  const unitPrice = Number(row.querySelector(".sale-item-price")?.value || 0);
+  const unitPrice = parseGsInputValue(row.querySelector(".sale-item-price")?.value || 0);
   const subtotal = (Number.isFinite(qty) ? qty : 0) * (Number.isFinite(unitPrice) ? unitPrice : 0);
   row.dataset.subtotal = String(subtotal);
   const subtotalLabel = row.querySelector(".sale-item-subtotal");
@@ -970,7 +987,7 @@ const createSaleItemRow = (item = {}) => {
       <input class="sale-item-qty" type="number" min="0" step="1" placeholder="0" aria-label="Cantidad" value="${item.quantity ?? ""}">
     </td>
     <td data-label="Precio unitario">
-      <input class="sale-item-price" type="number" min="0" step="1" placeholder="0" aria-label="Precio unitario" value="${item.unitPrice ?? ""}">
+      <input class="sale-item-price" type="text" inputmode="numeric" pattern="[0-9.]*" placeholder="0" aria-label="Precio unitario" value="${formatGsInputValue(item.unitPrice)}">
     </td>
     <td data-label="Subtotal">
       <div class="sale-item-subtotal">Gs 0</div>
@@ -1011,9 +1028,17 @@ const createSaleItemRow = (item = {}) => {
     requestAnimationFrame(refreshCollapseHeights);
   });
   priceInput?.addEventListener("input", () => {
+    const digits = String(priceInput.value ?? "").replace(/\D/g, "");
+    priceInput.value = digits ? formatGs(Number(digits)) : "";
     updateSaleItemSubtotal(row);
     refreshSaleGrandTotal();
     requestAnimationFrame(refreshCollapseHeights);
+  });
+  priceInput?.addEventListener("blur", () => {
+    const digits = String(priceInput.value ?? "").replace(/\D/g, "");
+    priceInput.value = digits ? formatGs(Number(digits)) : "";
+    updateSaleItemSubtotal(row);
+    refreshSaleGrandTotal();
   });
   updateSaleItemStock(row);
   updateSaleItemSubtotal(row);
@@ -2487,7 +2512,7 @@ saleForm.addEventListener("submit", async (event) => {
     const quantityValue = row.querySelector(".sale-item-qty")?.value;
     const unitPriceValue = row.querySelector(".sale-item-price")?.value;
     const quantity = Number(quantityValue);
-    const unitPrice = Number(unitPriceValue);
+    const unitPrice = parseGsInputValue(unitPriceValue);
     if (!productKey && !quantityValue && !unitPriceValue) return;
     if (!productKey || !quantity || quantity <= 0) {
       hasError = true;
