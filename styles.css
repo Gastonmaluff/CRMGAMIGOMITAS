@@ -587,6 +587,7 @@ select:focus {
 }
 
 .dashboard-overview-viewport {
+  margin: 6px 0 14px;
   transition: height 0.34s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -622,7 +623,7 @@ select:focus {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
-  margin: 6px 0 28px;
+  margin: 0;
 }
 
 .overview-card {

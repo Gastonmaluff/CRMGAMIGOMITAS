@@ -1115,21 +1115,51 @@ const refreshFinishedStock = () => {
   }).join("");
 };
 
+const getLayoutHeight = (node) => {
+  if (!node) return 0;
+  const rectHeight = Number(node.getBoundingClientRect?.().height || 0);
+  if (rectHeight > 0) return Math.ceil(rectHeight);
+  return Math.ceil(Number(node.scrollHeight || 0));
+};
+
 const syncDashboardSlideHeights = (activeTab) => {
   const safeTab = activeTab === "sales" ? "sales" : "production";
   if (dashboardOverviewViewport && dashboardOverviewTrack) {
     const overviewIndex = safeTab === "sales" ? 1 : 0;
     const overviewSlide = dashboardOverviewTrack.children[overviewIndex];
     if (overviewSlide) {
-      dashboardOverviewViewport.style.height = `${overviewSlide.scrollHeight}px`;
+      dashboardOverviewViewport.style.height = `${getLayoutHeight(overviewSlide)}px`;
     }
   }
   if (dashboardPanelsViewport && dashboardPanelsTrack) {
     const panelSlide = Array.from(dashboardPanelsTrack.children)
       .find((node) => node.id === safeTab);
     if (panelSlide) {
-      dashboardPanelsViewport.style.height = `${panelSlide.scrollHeight}px`;
+      dashboardPanelsViewport.style.height = `${getLayoutHeight(panelSlide)}px`;
     }
+  }
+};
+
+let dashboardResizeObserver = null;
+
+const setupDashboardResizeObserver = () => {
+  if (typeof ResizeObserver !== "function") return;
+  if (dashboardResizeObserver) {
+    dashboardResizeObserver.disconnect();
+  }
+  dashboardResizeObserver = new ResizeObserver(() => {
+    const currentTab = document.querySelector(".tab.active")?.dataset.tab || "production";
+    syncDashboardSlideHeights(currentTab);
+  });
+  if (dashboardOverviewTrack) {
+    Array.from(dashboardOverviewTrack.children).forEach((node) => {
+      dashboardResizeObserver.observe(node);
+    });
+  }
+  if (dashboardPanelsTrack) {
+    Array.from(dashboardPanelsTrack.children).forEach((node) => {
+      dashboardResizeObserver.observe(node);
+    });
   }
 };
 
@@ -2958,6 +2988,7 @@ saleItems?.addEventListener("click", (event) => {
 });
 
 setupTabs();
+setupDashboardResizeObserver();
 setDefaultDates();
 updateDueDateVisibility();
 updateSaleObservationVisibility(false);
