@@ -190,6 +190,185 @@ const formatGsInputValue = (value) => {
   return formatGs(amount);
 };
 
+const metricAnimationState = new WeakMap();
+const metricAnimationFrames = new WeakMap();
+const dashboardMetricSnapshot = {
+  production: {
+    kgYesterday: null,
+    displaysStock: null,
+    lotsPossible: null
+  },
+  sales: {
+    today: null,
+    yesterday: null,
+    month: null,
+    lastMonth: null,
+    available: null,
+    goalPercent: null
+  }
+};
+
+const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+
+const getCountAnimationDuration = (target) => {
+  const abs = Math.abs(Number(target) || 0);
+  if (!Number.isFinite(abs)) return 800;
+  const normalized = Math.min(1, Math.log10(abs + 1) / 4);
+  return Math.round(700 + (normalized * 500));
+};
+
+const animateMetricNumber = (element, target, {
+  formatFrame,
+  formatFinal,
+  force = false
+} = {}) => {
+  if (!element || !Number.isFinite(target)) return;
+  const previous = metricAnimationState.get(element);
+  if (!force && previous?.target === target) {
+    element.textContent = (formatFinal || formatFrame || ((value) => String(value)))(target);
+    return;
+  }
+  const activeFrame = metricAnimationFrames.get(element);
+  if (activeFrame) {
+    cancelAnimationFrame(activeFrame);
+  }
+  if (prefersReducedMotion()) {
+    const finalFormatter = formatFinal || formatFrame || ((value) => String(value));
+    element.textContent = finalFormatter(target);
+    metricAnimationState.set(element, { target });
+    return;
+  }
+  const frameFormatter = formatFrame || ((value) => String(value));
+  const finalFormatter = formatFinal || frameFormatter;
+  const duration = getCountAnimationDuration(target);
+  const startValue = 0;
+  const delta = target - startValue;
+  let startTime = null;
+
+  const tick = (timestamp) => {
+    if (startTime === null) startTime = timestamp;
+    const progress = Math.min(1, (timestamp - startTime) / duration);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const currentValue = startValue + (delta * eased);
+    element.textContent = frameFormatter(currentValue);
+    if (progress < 1) {
+      metricAnimationFrames.set(element, requestAnimationFrame(tick));
+      return;
+    }
+    element.textContent = finalFormatter(target);
+    metricAnimationState.set(element, { target });
+    metricAnimationFrames.delete(element);
+  };
+
+  metricAnimationFrames.set(element, requestAnimationFrame(tick));
+};
+
+const ensureKgMetricMainNode = () => {
+  if (!metricKgYesterday) return null;
+  let mainNode = metricKgYesterday.querySelector(".overview-number-main");
+  let unitNode = metricKgYesterday.querySelector(".overview-number-unit");
+  if (!mainNode || !unitNode) {
+    metricKgYesterday.innerHTML = '<span class="overview-number-main">0,00</span><span class="overview-number-unit">kg</span>';
+    mainNode = metricKgYesterday.querySelector(".overview-number-main");
+    unitNode = metricKgYesterday.querySelector(".overview-number-unit");
+  }
+  return mainNode;
+};
+
+const animateProductionDashboardMetrics = ({ force = false } = {}) => {
+  const snapshot = dashboardMetricSnapshot.production;
+  const kgMainNode = ensureKgMetricMainNode();
+  if (kgMainNode && Number.isFinite(snapshot.kgYesterday)) {
+    animateMetricNumber(kgMainNode, snapshot.kgYesterday, {
+      force,
+      formatFrame: (value) => formatNumber(value),
+      formatFinal: (value) => formatNumber(value)
+    });
+  }
+  if (metricDisplaysStock) {
+    if (Number.isFinite(snapshot.displaysStock)) {
+      animateMetricNumber(metricDisplaysStock, snapshot.displaysStock, {
+        force,
+        formatFrame: (value) => formatInteger(value),
+        formatFinal: (value) => formatInteger(value)
+      });
+    } else {
+      metricDisplaysStock.textContent = "N/D";
+    }
+  }
+  if (metricLotsPossible) {
+    if (Number.isFinite(snapshot.lotsPossible)) {
+      animateMetricNumber(metricLotsPossible, snapshot.lotsPossible, {
+        force,
+        formatFrame: (value) => formatInteger(value),
+        formatFinal: (value) => formatInteger(value)
+      });
+    }
+  }
+};
+
+const animateSalesDashboardMetrics = ({ force = false } = {}) => {
+  const snapshot = dashboardMetricSnapshot.sales;
+  if (salesMetricToday && Number.isFinite(snapshot.today)) {
+    animateMetricNumber(salesMetricToday, snapshot.today, {
+      force,
+      formatFrame: (value) => formatInteger(value),
+      formatFinal: (value) => formatInteger(value)
+    });
+  }
+  if (salesMetricYesterday && Number.isFinite(snapshot.yesterday)) {
+    animateMetricNumber(salesMetricYesterday, snapshot.yesterday, {
+      force,
+      formatFrame: (value) => formatInteger(value),
+      formatFinal: (value) => formatInteger(value)
+    });
+  }
+  if (salesMetricMonth && Number.isFinite(snapshot.month)) {
+    animateMetricNumber(salesMetricMonth, snapshot.month, {
+      force,
+      formatFrame: (value) => formatInteger(value),
+      formatFinal: (value) => formatInteger(value)
+    });
+  }
+  if (salesMetricLastMonth && Number.isFinite(snapshot.lastMonth)) {
+    animateMetricNumber(salesMetricLastMonth, snapshot.lastMonth, {
+      force,
+      formatFrame: (value) => formatInteger(value),
+      formatFinal: (value) => formatInteger(value)
+    });
+  }
+  if (salesMetricAvailable) {
+    if (Number.isFinite(snapshot.available)) {
+      animateMetricNumber(salesMetricAvailable, snapshot.available, {
+        force,
+        formatFrame: (value) => formatInteger(value),
+        formatFinal: (value) => formatInteger(value)
+      });
+    } else {
+      salesMetricAvailable.textContent = "N/D";
+    }
+  }
+  if (salesMetricGoal) {
+    if (Number.isFinite(snapshot.goalPercent)) {
+      animateMetricNumber(salesMetricGoal, snapshot.goalPercent, {
+        force,
+        formatFrame: (value) => `${formatInteger(value)}%`,
+        formatFinal: (value) => `${formatInteger(value)}%`
+      });
+    } else {
+      salesMetricGoal.textContent = "Sin objetivo";
+    }
+  }
+};
+
+const animateDashboardMetricsByTab = (tab, { force = false } = {}) => {
+  if (tab === "sales") {
+    animateSalesDashboardMetrics({ force });
+    return;
+  }
+  animateProductionDashboardMetrics({ force });
+};
+
 const refreshIcons = () => {
   if (window.lucide && typeof window.lucide.createIcons === "function") {
     window.lucide.createIcons();
@@ -1203,7 +1382,10 @@ const updateDashboardVisibility = (activeTab) => {
   panels.forEach((panel) => {
     panel.setAttribute("aria-hidden", panel.id === safeTab ? "false" : "true");
   });
-  requestAnimationFrame(() => syncDashboardSlideHeights(safeTab));
+  requestAnimationFrame(() => {
+    syncDashboardSlideHeights(safeTab);
+    animateDashboardMetricsByTab(safeTab, { force: true });
+  });
 };
 
 const updateSalesGoalForm = (goal) => {
@@ -1250,35 +1432,44 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayValue = toDateInputValue(yesterday);
   const kgYesterday = computeKgForDate(yesterdayValue);
-  metricKgYesterday.innerHTML = `<span class="overview-number-main">${formatNumber(kgYesterday)}</span><span class="overview-number-unit">kg</span>`;
+  dashboardMetricSnapshot.production.kgYesterday = Number.isFinite(kgYesterday) ? kgYesterday : 0;
 
   const activeRecipe = getActiveRecipe();
   const metrics = computeRecipeStockMetrics(activeRecipe, availabilityMap);
   const finishedTotals = computeFinishedStockTotals();
-  const displaysStock = finishedTotals.totalDisplays !== null
-    ? formatInteger(finishedTotals.totalDisplays)
-    : "N/D";
-  let lotsPossible = "N/D";
+  const displaysStockValue = finishedTotals.totalDisplays !== null
+    ? Number(finishedTotals.totalDisplays)
+    : null;
+  let lotsPossibleLabel = "N/D";
+  let lotsPossibleValue = null;
   let lotsCount = 0;
   let lotsProgress = 0;
   let bottleneck = "N/D";
   let limitingRow = null;
   let isBottleneckCritical = false;
   if (!activeRecipe) {
-    lotsPossible = state.recipes.length ? "Sin formula base" : "Sin formulas";
+    lotsPossibleLabel = state.recipes.length ? "Sin formula base" : "Sin formulas";
     bottleneck = state.recipes.length ? "Sin formula base" : "Sin formulas";
   } else if (!rows.length || rows.every((row) => row.available <= 0)) {
-    lotsPossible = "Sin stock cargado";
+    lotsPossibleLabel = "Sin stock cargado";
     bottleneck = "Sin stock cargado";
   } else if (metrics.maxBatches !== null && Number.isFinite(metrics.maxBatches)) {
     lotsCount = Math.max(0, Math.floor(metrics.maxBatches));
-    lotsPossible = formatInteger(lotsCount);
+    lotsPossibleValue = lotsCount;
+    lotsPossibleLabel = formatInteger(lotsCount);
     lotsProgress = Math.max(0, Math.min(100, Math.round((lotsCount / 30) * 100)));
     limitingRow = metrics.limitingRow || null;
     bottleneck = limitingRow ? limitingRow.name : "N/D";
     isBottleneckCritical = isBottleneckInCriticalLevel(limitingRow);
   }
-  metricDisplaysStock.textContent = displaysStock;
+  dashboardMetricSnapshot.production.displaysStock = Number.isFinite(displaysStockValue) ? displaysStockValue : null;
+  dashboardMetricSnapshot.production.lotsPossible = Number.isFinite(lotsPossibleValue) ? lotsPossibleValue : null;
+
+  animateProductionDashboardMetrics();
+  if (!Number.isFinite(lotsPossibleValue) && metricLotsPossible) {
+    metricLotsPossible.textContent = lotsPossibleLabel;
+  }
+
   if (metricDisplaysBreakdown) {
     if (!finishedTotals.breakdown.length) {
       metricDisplaysBreakdown.innerHTML = "";
@@ -1294,7 +1485,6 @@ const refreshDashboard = ({ rows, availabilityMap }) => {
         .join("");
     }
   }
-  metricLotsPossible.textContent = lotsPossible;
   if (metricLotsProgress) {
     metricLotsProgress.style.width = `${lotsProgress}%`;
     metricLotsProgress.style.background = getLotsRiskColor(lotsCount);
@@ -1334,15 +1524,16 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
   debugSalesDateComparison({ todayValue, yesterdayValue, monthStart, monthEnd });
 
   const finishedTotals = computeFinishedStockTotals();
-  const availableDisplays = finishedTotals.totalDisplays !== null
-    ? formatInteger(finishedTotals.totalDisplays)
-    : "N/D";
+  const availableDisplaysValue = finishedTotals.totalDisplays !== null
+    ? Number(finishedTotals.totalDisplays)
+    : null;
 
-  salesMetricToday.textContent = formatInteger(displaysToday);
-  salesMetricYesterday.textContent = formatInteger(displaysYesterday);
-  salesMetricMonth.textContent = formatInteger(displaysCurrentMonth);
-  salesMetricLastMonth.textContent = formatInteger(displaysPreviousMonth);
-  salesMetricAvailable.textContent = availableDisplays;
+  dashboardMetricSnapshot.sales.today = Number(displaysToday || 0);
+  dashboardMetricSnapshot.sales.yesterday = Number(displaysYesterday || 0);
+  dashboardMetricSnapshot.sales.month = Number(displaysCurrentMonth || 0);
+  dashboardMetricSnapshot.sales.lastMonth = Number(displaysPreviousMonth || 0);
+  dashboardMetricSnapshot.sales.available = Number.isFinite(availableDisplaysValue) ? availableDisplaysValue : null;
+
   if (salesMetricAvailableBreakdown) {
     if (!finishedTotals.breakdown.length) {
       salesMetricAvailableBreakdown.innerHTML = "";
@@ -1381,7 +1572,8 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
   const currentPace = daysElapsed > 0 ? (soldForGoal / daysElapsed) : 0;
 
   if (targetDisplays <= 0) {
-    salesMetricGoal.textContent = "Sin objetivo";
+    dashboardMetricSnapshot.sales.goalPercent = null;
+    animateSalesDashboardMetrics();
     if (salesGoalSummary) salesGoalSummary.textContent = "Sin objetivo configurado";
     if (salesGoalTarget) salesGoalTarget.textContent = "-";
     if (salesGoalRemaining) salesGoalRemaining.textContent = "-";
@@ -1435,7 +1627,8 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
     message = "Vas adelantado";
   }
 
-  salesMetricGoal.textContent = `${formatInteger(percentRounded)}%`;
+  dashboardMetricSnapshot.sales.goalPercent = percentRounded;
+  animateSalesDashboardMetrics();
   if (salesGoalSummary) {
     salesGoalSummary.textContent = `${formatInteger(soldForGoal)} vendidos de ${formatInteger(targetDisplays)} objetivo`;
   }
