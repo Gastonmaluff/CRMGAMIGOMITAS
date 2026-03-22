@@ -190,6 +190,13 @@ const formatGsInputValue = (value) => {
   return formatGs(amount);
 };
 
+const formatPhoneForWhatsApp = (phone) => {
+  const cleaned = String(phone ?? "").replace(/[\s\-().+]/g, "");
+  if (!/^\d{9}$/.test(cleaned)) return null;
+  if (!cleaned.startsWith("9")) return null;
+  return `595${cleaned}`;
+};
+
 const metricAnimationState = new WeakMap();
 const metricAnimationFrames = new WeakMap();
 const dashboardMetricSnapshot = {
