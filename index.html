@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CRM Gami Gomitas</title>
-  <link rel="stylesheet" href="styles.css?v=20260322-14" />
+  <link rel="stylesheet" href="styles.css?v=20260322-15" />
 </head>
 <body>
   <div class="app">
@@ -462,6 +462,25 @@
                   Observacion
                   <textarea name="observation" rows="3" maxlength="280" placeholder="Ej: Entregar en porteria / Llamar antes de llegar"></textarea>
                 </label>
+                <div class="inline-actions">
+                  <button class="btn ghost" type="button" id="saleRepurchaseToggle">Agregar seguimiento de recompra</button>
+                </div>
+                <div class="sale-repurchase" id="saleRepurchaseField">
+                  <label class="sale-repurchase-toggle">
+                    <input type="checkbox" id="saleRepurchase" name="repurchaseActive" />
+                    <span>Activar seguimiento de recompra</span>
+                  </label>
+                  <label class="sale-repurchase-frequency" id="saleRepurchaseFrequencyField">
+                    Frecuencia de recompra
+                    <select name="repurchaseFrequency">
+                      <option value="">Seleccionar</option>
+                      <option value="15">15 dias</option>
+                      <option value="30">30 dias</option>
+                      <option value="45">45 dias</option>
+                      <option value="60">60 dias</option>
+                    </select>
+                  </label>
+                </div>
                 <button class="btn primary" type="submit">Registrar venta</button>
                 </form>
                 <div class="list scroll" id="saleList"></div>
@@ -526,6 +545,12 @@
                 <div class="error" id="salesGoalNotice"></div>
               </div>
             </div>
+            <div class="card">
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="repeat"></i><span class="section-title-label">Recompra de clientes</span></span> <button class="collapse-toggle" type="button" data-collapse="repurchaseSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
+              <div class="collapse-body" id="repurchaseSection">
+                <div class="list scroll" id="repurchaseList"></div>
+              </div>
+            </div>
           </div>
         </section>
           </div>
@@ -536,7 +561,7 @@
 
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260322-14"></script>
+  <script type="module" src="app.js?v=20260322-15"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

@@ -116,11 +116,16 @@ const stockRecipeSelect = document.getElementById("stockRecipeSelect");
 const productList = document.getElementById("productList");
 const clientList = document.getElementById("clientList");
 const saleList = document.getElementById("saleList");
+const repurchaseList = document.getElementById("repurchaseList");
 const finishedStockList = document.getElementById("finishedStockList");
 
 const dueDateField = document.getElementById("dueDateField");
 const saleObservationToggle = document.getElementById("saleObservationToggle");
 const saleObservationField = document.getElementById("saleObservationField");
+const saleRepurchaseToggle = document.getElementById("saleRepurchaseToggle");
+const saleRepurchaseField = document.getElementById("saleRepurchaseField");
+const saleRepurchaseCheckbox = document.getElementById("saleRepurchase");
+const saleRepurchaseFrequencyField = document.getElementById("saleRepurchaseFrequencyField");
 const unitGroups = Array.from(document.querySelectorAll(".unit-group[data-target]"));
 
 const state = {
@@ -920,6 +925,23 @@ const getSalesPeriodRange = (goal) => {
   return getCurrentMonthRange();
 };
 
+const toIsoDayNumber = (isoValue) => {
+  const [year, month, day] = String(isoValue || "").split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return Math.floor(Date.UTC(year, month - 1, day) / 86400000);
+};
+
+const addDaysToDateValue = (dateValue, daysToAdd) => {
+  const normalized = normalizeDateValue(dateValue);
+  const days = Number(daysToAdd);
+  if (!normalized || !Number.isFinite(days)) return "";
+  const [year, month, day] = normalized.split("-").map(Number);
+  if (!year || !month || !day) return "";
+  const result = new Date(year, month - 1, day);
+  result.setDate(result.getDate() + days);
+  return toDateInputValue(result);
+};
+
 const normalizeDateValue = (value) => {
   if (!value) return "";
   if (value instanceof Date) return toDateInputValue(value);
@@ -958,6 +980,124 @@ const getSaleDateValue = (sale) => {
   const fromCreatedAt = normalizeDateValue(sale?.createdAt);
   if (fromCreatedAt) return fromCreatedAt;
   return normalizeDateValue(sale?.updatedAt);
+};
+
+const getSaleCreatedTimestamp = (sale) => Number(
+  sale?.createdAt?.seconds
+  || sale?.createdAt?._seconds
+  || sale?.updatedAt?.seconds
+  || sale?.updatedAt?._seconds
+  || 0
+);
+
+const buildRepurchaseFollowups = () => {
+  const byClient = new Map();
+  state.sales.forEach((sale) => {
+    if (sale.repurchaseActive !== true) return;
+    const frequency = Number(sale.repurchaseFrequencyDays || 0);
+    if (![15, 30, 45, 60].includes(frequency)) return;
+    const saleDate = getSaleDateValue(sale);
+    if (!saleDate) return;
+    const nextContactDate = normalizeDateValue(sale.repurchaseNextContactDate) || addDaysToDateValue(saleDate, frequency);
+    if (!nextContactDate) return;
+    const rawClientName = String(sale.clientName || "").trim();
+    const clientName = rawClientName || "Sin cliente";
+    const dedupeKey = sale.clientId
+      ? `id:${sale.clientId}`
+      : `name:${normalizeText(rawClientName)}`;
+    if (!dedupeKey || dedupeKey === "name:") return;
+    const linkedClient = sale.clientId
+      ? state.clients.find((client) => client.id === sale.clientId)
+      : null;
+    const candidate = {
+      clientId: sale.clientId || "",
+      clientName,
+      phone: linkedClient?.phone || sale.clientPhone || "",
+      saleDate,
+      frequency,
+      nextContactDate,
+      sortDay: toIsoDayNumber(saleDate) ?? -1,
+      sortCreatedAt: getSaleCreatedTimestamp(sale)
+    };
+    const existing = byClient.get(dedupeKey);
+    if (!existing) {
+      byClient.set(dedupeKey, candidate);
+      return;
+    }
+    if (candidate.sortDay > existing.sortDay
+      || (candidate.sortDay === existing.sortDay && candidate.sortCreatedAt > existing.sortCreatedAt)) {
+      byClient.set(dedupeKey, candidate);
+    }
+  });
+
+  const todayIso = toDateInputValue(new Date());
+  const todayDay = toIsoDayNumber(todayIso) ?? 0;
+
+  return Array.from(byClient.values())
+    .map((entry) => {
+      const nextDay = toIsoDayNumber(entry.nextContactDate);
+      if (nextDay === null) return null;
+      const dayDelta = todayDay - nextDay;
+      let status = "proximo";
+      let statusClass = "upcoming";
+      let statusOrder = 2;
+      if (dayDelta > 0) {
+        status = "vencido";
+        statusClass = "overdue";
+        statusOrder = 0;
+      } else if (dayDelta === 0) {
+        status = "vence hoy";
+        statusClass = "today";
+        statusOrder = 1;
+      }
+      return {
+        ...entry,
+        status,
+        statusClass,
+        statusOrder,
+        overdueDays: Math.max(dayDelta, 0),
+        daysUntil: Math.max(-dayDelta, 0)
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      if (a.statusOrder !== b.statusOrder) return a.statusOrder - b.statusOrder;
+      if (a.statusOrder === 0) return b.overdueDays - a.overdueDays;
+      if (a.statusOrder === 1) return a.clientName.localeCompare(b.clientName);
+      if (a.daysUntil !== b.daysUntil) return a.daysUntil - b.daysUntil;
+      return a.clientName.localeCompare(b.clientName);
+    });
+};
+
+const renderRepurchaseList = () => {
+  if (!repurchaseList) return;
+  const followups = buildRepurchaseFollowups();
+  if (!followups.length) {
+    repurchaseList.innerHTML = '<div class="list-item muted">Sin clientes con seguimiento activo.</div>';
+    return;
+  }
+  repurchaseList.innerHTML = followups.map((entry) => {
+    const whatsappLink = buildWhatsAppLink(entry.phone, entry.clientName);
+    return `
+      <div class="list-item repurchase-item ${entry.statusClass === "overdue" ? "overdue" : ""}">
+        <div class="repurchase-item-header">
+          <strong>${entry.clientName}</strong>
+          <span class="repurchase-status ${entry.statusClass}">${entry.status}</span>
+        </div>
+        <div class="repurchase-item-meta">
+          <div>Telefono: ${entry.phone || "Sin telefono"}</div>
+          <div>Ultima compra: ${formatDateForPdf(entry.saleDate)}</div>
+          <div>Frecuencia: cada ${entry.frequency} dias</div>
+          <div>Proximo contacto: ${formatDateForPdf(entry.nextContactDate)}</div>
+        </div>
+        <div class="list-actions">
+          ${whatsappLink
+    ? `<a class="btn ghost" href="${whatsappLink}" target="_blank" rel="noopener noreferrer">WhatsApp</a>`
+    : '<button class="btn ghost" type="button" disabled>WhatsApp</button>'}
+        </div>
+      </div>
+    `;
+  }).join("");
 };
 
 const debugSalesDateComparison = ({ todayValue, yesterdayValue, monthStart, monthEnd }) => {
@@ -2320,6 +2460,8 @@ const renderAll = () => {
     `;
   });
 
+  renderRepurchaseList();
+
   requestAnimationFrame(refreshCollapseHeights);
   refreshIcons();
 };
@@ -2362,6 +2504,35 @@ const updateSaleObservationVisibility = (forceOpen = null) => {
   if (!shouldOpen && saleForm.observation) {
     saleForm.observation.value = "";
   }
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+  });
+};
+
+const updateSaleRepurchaseFrequencyVisibility = () => {
+  if (!saleRepurchaseFrequencyField) return;
+  const isActive = Boolean(saleRepurchaseCheckbox?.checked);
+  const isOpen = Boolean(saleRepurchaseField?.classList.contains("open"));
+  saleRepurchaseFrequencyField.classList.toggle("open", isOpen && isActive);
+  if (!isActive && saleForm?.repurchaseFrequency) {
+    saleForm.repurchaseFrequency.value = "";
+  }
+};
+
+const updateSaleRepurchaseVisibility = (forceOpen = null) => {
+  if (!saleRepurchaseField) return;
+  const shouldOpen = forceOpen === null ? !saleRepurchaseField.classList.contains("open") : Boolean(forceOpen);
+  saleRepurchaseField.classList.remove("hidden");
+  saleRepurchaseField.classList.toggle("open", shouldOpen);
+  if (saleRepurchaseToggle) {
+    saleRepurchaseToggle.textContent = shouldOpen
+      ? "Ocultar seguimiento de recompra"
+      : "Agregar seguimiento de recompra";
+  }
+  if (!shouldOpen && saleRepurchaseCheckbox) {
+    saleRepurchaseCheckbox.checked = false;
+  }
+  updateSaleRepurchaseFrequencyVisibility();
   requestAnimationFrame(() => {
     refreshCollapseHeights();
   });
@@ -2874,16 +3045,29 @@ saleForm.addEventListener("submit", async (event) => {
   const summary = itemsPayload[0] || {};
   const isCredit = Boolean(saleCreditCheckbox?.checked);
   const observation = String(saleForm.observation?.value || "").trim();
+  const repurchaseActive = Boolean(saleRepurchaseField?.classList.contains("open") && saleRepurchaseCheckbox?.checked);
+  const repurchaseFrequencyDays = repurchaseActive
+    ? Number(saleForm.repurchaseFrequency?.value || 0)
+    : null;
   if (isCredit && !saleForm.dueDate.value) {
     window.alert("Completa la fecha de cobro para ventas a credito.");
     return;
   }
+  if (repurchaseActive && ![15, 30, 45, 60].includes(repurchaseFrequencyDays)) {
+    window.alert("Selecciona una frecuencia valida para el seguimiento de recompra.");
+    return;
+  }
+  const saleDate = normalizeDateValue(saleForm.date.value);
+  const nextRepurchaseDate = repurchaseActive
+    ? addDaysToDateValue(saleDate, repurchaseFrequencyDays)
+    : "";
   const payload = {
     date: saleForm.date.value,
     productId: summary.productId || "",
     productName: summary.productName || "",
     clientId: client?.id || "",
     clientName: client?.name || "",
+    clientPhone: client?.phone || "",
     items: itemsPayload,
     quantity: summary.quantity || 0,
     unitPrice: summary.unitPrice || 0,
@@ -2893,6 +3077,9 @@ saleForm.addEventListener("submit", async (event) => {
     isCredit,
     paid: isCredit ? "no" : "si",
     dueDate: isCredit ? saleForm.dueDate.value : "",
+    repurchaseActive,
+    repurchaseFrequencyDays: repurchaseActive ? repurchaseFrequencyDays : null,
+    repurchaseNextContactDate: nextRepurchaseDate,
     observation,
     userId: user.uid,
     createdAt: serverTimestamp()
@@ -2903,6 +3090,7 @@ saleForm.addEventListener("submit", async (event) => {
   if (saleCreditCheckbox) saleCreditCheckbox.checked = false;
   updateDueDateVisibility();
   updateSaleObservationVisibility(false);
+  updateSaleRepurchaseVisibility(false);
 });
 
 const toggleQuickClient = (show) => {
@@ -3104,10 +3292,18 @@ const startEditSale = (item) => {
   if (saleCreditCheckbox) saleCreditCheckbox.checked = isCreditSale;
   saleForm.dueDate.value = item.dueDate || "";
   if (saleForm.observation) saleForm.observation.value = item.observation || "";
+  const hasRepurchase = item.repurchaseActive === true;
+  if (saleRepurchaseCheckbox) saleRepurchaseCheckbox.checked = hasRepurchase;
+  if (saleForm.repurchaseFrequency) {
+    const validFrequencies = ["15", "30", "45", "60"];
+    const frequencyValue = String(item.repurchaseFrequencyDays || "");
+    saleForm.repurchaseFrequency.value = validFrequencies.includes(frequencyValue) ? frequencyValue : "";
+  }
   saleForm.dataset.editId = item.id;
   setSubmitLabel(saleForm, "Actualizar venta");
   updateDueDateVisibility();
   updateSaleObservationVisibility(Boolean(item.observation));
+  updateSaleRepurchaseVisibility(hasRepurchase);
 };
 
 const confirmDelete = (label) => window.confirm(`Eliminar ${label}?`);
@@ -3260,6 +3456,17 @@ saleObservationToggle?.addEventListener("click", () => {
   }
 });
 
+saleRepurchaseToggle?.addEventListener("click", () => {
+  updateSaleRepurchaseVisibility();
+});
+
+saleRepurchaseCheckbox?.addEventListener("change", () => {
+  updateSaleRepurchaseFrequencyVisibility();
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+  });
+});
+
 addSaleItemBtn?.addEventListener("click", () => {
   createSaleItemRow();
   refreshSaleProductOptions();
@@ -3302,6 +3509,7 @@ setupDashboardResizeObserver();
 setDefaultDates();
 updateDueDateVisibility();
 updateSaleObservationVisibility(false);
+updateSaleRepurchaseVisibility(false);
 renderRecipeDraft();
 updateRecipeIngredientFields();
 updateBatchCostPreview();
@@ -3334,7 +3542,7 @@ const closeSection = (toggle, body) => {
 document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
   const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
-  if (["salesGoalSection", "productsSection", "clientsSection", "salesSection"].includes(toggle.dataset.collapse)) {
+  if (["salesGoalSection", "productsSection", "clientsSection", "salesSection", "repurchaseSection"].includes(toggle.dataset.collapse)) {
     closeSection(toggle, body);
   } else {
     openSection(toggle, body);
