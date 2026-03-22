@@ -11,8 +11,8 @@
   --border-dark: #d1d5db;
   --shadow: 0 10px 20px rgba(17, 24, 39, 0.08);
   --radius: 14px;
-  --dashboard-block-gap: 14px;
-  --dashboard-block-gap-mobile: 12px;
+  --dashboard-block-gap: 28px;
+  --dashboard-block-gap-mobile: 24px;
 }
 
 * {
@@ -589,7 +589,7 @@ select:focus {
 }
 
 .dashboard-overview-viewport {
-  margin: 4px 0 var(--dashboard-block-gap);
+  margin: 0 0 var(--dashboard-block-gap);
   transition: height 0.34s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
