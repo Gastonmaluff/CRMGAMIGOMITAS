@@ -615,6 +615,10 @@ select:focus {
   align-items: flex-start;
 }
 
+.dashboard-overview-track {
+  align-items: flex-start;
+}
+
 .dashboard-panels-track > .tab-panel {
   display: block;
 }
