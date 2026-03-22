@@ -1210,6 +1210,129 @@ select:focus {
   background: #fff5f5;
 }
 
+.commercial-history {
+  display: grid;
+  gap: 14px;
+}
+
+.commercial-history-search {
+  display: grid;
+  gap: 8px;
+}
+
+.commercial-history-search > label {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.commercial-history-search-results {
+  max-height: 180px;
+}
+
+.commercial-history-filters {
+  margin-bottom: 0;
+}
+
+.commercial-history-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.history-summary-item {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 12px;
+  padding: 9px 11px;
+}
+
+.history-summary-item small {
+  display: block;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.history-summary-item strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 1rem;
+}
+
+.commercial-history-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.commercial-history-block {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  background: #f9fafb;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.commercial-history-block h3 {
+  margin: 0;
+  font-size: 0.86rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.commercial-history-block-full {
+  grid-column: 1 / -1;
+}
+
+.history-client-item {
+  display: grid;
+  gap: 6px;
+}
+
+.history-client-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.history-client-meta {
+  display: grid;
+  gap: 2px;
+  color: #475569;
+  font-size: 0.84rem;
+}
+
+.history-sale-lines {
+  display: grid;
+  gap: 6px;
+}
+
+.history-sale-line {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #fff;
+  display: grid;
+  gap: 2px;
+}
+
+.history-sale-line strong {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.history-sale-products {
+  color: #475569;
+  font-size: 0.82rem;
+}
+
 .batch-card {
   display: grid;
   gap: 12px;
@@ -1622,6 +1745,10 @@ select:focus {
 
   .sale-items > #addSaleItemBtn {
     width: 100%;
+  }
+
+  .commercial-history-grid {
+    grid-template-columns: 1fr;
   }
 }
 

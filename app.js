@@ -117,6 +117,18 @@ const productList = document.getElementById("productList");
 const clientList = document.getElementById("clientList");
 const saleList = document.getElementById("saleList");
 const repurchaseList = document.getElementById("repurchaseList");
+const historyFilters = document.getElementById("historyFilters");
+const historyCustomerSearch = document.getElementById("historyCustomerSearch");
+const historyCustomerResults = document.getElementById("historyCustomerResults");
+const historyClientFilter = document.getElementById("historyClientFilter");
+const historyDateFrom = document.getElementById("historyDateFrom");
+const historyDateTo = document.getElementById("historyDateTo");
+const historyStatusFilter = document.getElementById("historyStatusFilter");
+const historyPaymentFilter = document.getElementById("historyPaymentFilter");
+const historySummary = document.getElementById("historySummary");
+const historyPeriodClients = document.getElementById("historyPeriodClients");
+const historyCustomerProfile = document.getElementById("historyCustomerProfile");
+const historySalesResults = document.getElementById("historySalesResults");
 const finishedStockList = document.getElementById("finishedStockList");
 
 const dueDateField = document.getElementById("dueDateField");
@@ -142,6 +154,10 @@ const state = {
 let unsubscribers = [];
 const recipeDraft = {
   ingredients: []
+};
+const commercialHistoryState = {
+  searchTerm: "",
+  selectedClientId: ""
 };
 let saleProductIndex = new Map();
 const SALES_DASHBOARD_DEBUG = false;
@@ -1003,6 +1019,246 @@ const getSaleCreatedTimestamp = (sale) => Number(
   || sale?.updatedAt?._seconds
   || 0
 );
+
+const isSalePendingPayment = (sale) => {
+  const paidValue = normalizeText(sale?.paid);
+  if (paidValue === "si") return false;
+  if (paidValue === "no") return true;
+  return isCreditSaleRecord(sale);
+};
+
+const getCommercialHistoryFilterValues = () => {
+  let dateFrom = normalizeDateValue(historyDateFrom?.value);
+  let dateTo = normalizeDateValue(historyDateTo?.value);
+  if (dateFrom && dateTo && dateFrom > dateTo) {
+    [dateFrom, dateTo] = [dateTo, dateFrom];
+  }
+  return {
+    dateFrom,
+    dateTo,
+    clientId: String(historyClientFilter?.value || commercialHistoryState.selectedClientId || "").trim(),
+    status: String(historyStatusFilter?.value || "").trim(),
+    payment: normalizeText(historyPaymentFilter?.value || "")
+  };
+};
+
+const getCommercialHistoryFilteredSales = (filters) => state.sales
+  .filter((sale) => {
+    const saleDate = getSaleDateValue(sale);
+    if (!saleDate) return false;
+    if (filters.dateFrom && saleDate < filters.dateFrom) return false;
+    if (filters.dateTo && saleDate > filters.dateTo) return false;
+    if (filters.clientId && sale.clientId !== filters.clientId) return false;
+    if (filters.status === "pagado" && isSalePendingPayment(sale)) return false;
+    if (filters.status === "pendiente" && !isSalePendingPayment(sale)) return false;
+    if (filters.payment && normalizeText(sale.payment) !== filters.payment) return false;
+    return true;
+  })
+  .sort((a, b) => {
+    const bDay = toIsoDayNumber(getSaleDateValue(b)) ?? 0;
+    const aDay = toIsoDayNumber(getSaleDateValue(a)) ?? 0;
+    if (bDay !== aDay) return bDay - aDay;
+    return getSaleCreatedTimestamp(b) - getSaleCreatedTimestamp(a);
+  });
+
+const summarizeSaleProducts = (sale) => {
+  const lines = getSaleLineItems(sale);
+  if (!lines.length) return "Sin productos";
+  return lines
+    .map((line) => `${formatInteger(line.quantity)}x ${line.productName || "Producto"}`)
+    .join(" | ");
+};
+
+const buildCommercialHistoryPeriodClients = (sales) => {
+  const byClient = new Map();
+  sales.forEach((sale) => {
+    const details = getSaleClientDetails(sale);
+    const clientKey = sale.clientId
+      ? `id:${sale.clientId}`
+      : `name:${normalizeText(details.name)}`;
+    if (!clientKey || clientKey === "name:") return;
+    const saleDate = getSaleDateValue(sale);
+    const dayNumber = toIsoDayNumber(saleDate) ?? 0;
+    const amount = getSaleTotalAmount(sale);
+    const existing = byClient.get(clientKey);
+    if (!existing) {
+      byClient.set(clientKey, {
+        clientId: sale.clientId || "",
+        name: details.name,
+        purchaseCount: 1,
+        totalAmount: amount,
+        lastPurchase: saleDate,
+        lastDay: dayNumber
+      });
+      return;
+    }
+    existing.purchaseCount += 1;
+    existing.totalAmount += amount;
+    if (dayNumber >= existing.lastDay) {
+      existing.lastDay = dayNumber;
+      existing.lastPurchase = saleDate;
+    }
+  });
+  return Array.from(byClient.values()).sort((a, b) => {
+    if (b.lastDay !== a.lastDay) return b.lastDay - a.lastDay;
+    return b.totalAmount - a.totalAmount;
+  });
+};
+
+const refreshCommercialHistoryPaymentOptions = () => {
+  if (!historyPaymentFilter) return;
+  const selected = normalizeText(historyPaymentFilter.value || "");
+  const paymentMap = new Map();
+  state.sales.forEach((sale) => {
+    const label = String(sale.payment || "").trim();
+    const key = normalizeText(label);
+    if (!key) return;
+    if (!paymentMap.has(key)) paymentMap.set(key, label);
+  });
+  const options = ['<option value="">Todos</option>'];
+  Array.from(paymentMap.entries())
+    .sort((a, b) => a[1].localeCompare(b[1], "es"))
+    .forEach(([key, label]) => {
+      options.push(`<option value="${key}">${label}</option>`);
+    });
+  historyPaymentFilter.innerHTML = options.join("");
+  if (selected && paymentMap.has(selected)) {
+    historyPaymentFilter.value = selected;
+  }
+};
+
+const renderCommercialHistorySearchResults = () => {
+  if (!historyCustomerResults) return;
+  const term = normalizeText(commercialHistoryState.searchTerm);
+  if (!term) {
+    historyCustomerResults.innerHTML = '<div class="list-item muted">Escribe un nombre para buscar clientes.</div>';
+    return;
+  }
+  const matches = state.clients
+    .filter((client) => normalizeText(client.name).includes(term))
+    .sort((a, b) => a.name.localeCompare(b.name, "es"));
+  if (!matches.length) {
+    historyCustomerResults.innerHTML = '<div class="list-item muted">Sin coincidencias.</div>';
+    return;
+  }
+  historyCustomerResults.innerHTML = matches.map((client) => `
+    <div class="list-item history-client-item">
+      <div class="history-client-header">
+        <strong>${client.name}</strong>
+        <button class="btn ghost" type="button" data-select-history-client="${client.id}">Ver ficha</button>
+      </div>
+      <div class="history-client-meta">
+        ${client.phone ? `<div>Tel: ${client.phone}</div>` : ""}
+        ${client.ruc ? `<div>RUC: ${client.ruc}</div>` : ""}
+      </div>
+    </div>
+  `).join("");
+};
+
+const renderCommercialHistory = () => {
+  if (!historySummary || !historyPeriodClients || !historyCustomerProfile || !historySalesResults) return;
+  renderCommercialHistorySearchResults();
+
+  const filters = getCommercialHistoryFilterValues();
+  commercialHistoryState.selectedClientId = filters.clientId;
+  const filteredSales = getCommercialHistoryFilteredSales(filters);
+  const periodClients = buildCommercialHistoryPeriodClients(filteredSales);
+
+  const totalSalesAmount = filteredSales.reduce((sum, sale) => sum + getSaleTotalAmount(sale), 0);
+  const ticketAverage = filteredSales.length ? totalSalesAmount / filteredSales.length : 0;
+  historySummary.innerHTML = `
+    <div class="history-summary-item">
+      <small>Total ventas</small>
+      <strong>${formatInteger(filteredSales.length)}</strong>
+    </div>
+    <div class="history-summary-item">
+      <small>Total clientes</small>
+      <strong>${formatInteger(periodClients.length)}</strong>
+    </div>
+    <div class="history-summary-item">
+      <small>Monto del periodo</small>
+      <strong>Gs ${formatGs(totalSalesAmount)}</strong>
+    </div>
+    <div class="history-summary-item">
+      <small>Ticket promedio</small>
+      <strong>Gs ${formatGs(ticketAverage)}</strong>
+    </div>
+  `;
+
+  if (!periodClients.length) {
+    historyPeriodClients.innerHTML = '<div class="list-item muted">No hay clientes con compras para los filtros actuales.</div>';
+  } else {
+    historyPeriodClients.innerHTML = periodClients.map((entry) => `
+      <div class="list-item history-client-item">
+        <div class="history-client-header">
+          <strong>${entry.name}</strong>
+          ${entry.clientId ? `<button class="btn ghost" type="button" data-select-history-client="${entry.clientId}">Ver ficha</button>` : ""}
+        </div>
+        <div class="history-client-meta">
+          <div>Ultima compra: ${formatDate(entry.lastPurchase)}</div>
+          <div>Compras en periodo: ${formatInteger(entry.purchaseCount)}</div>
+          <div>Total en periodo: Gs ${formatGs(entry.totalAmount)}</div>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  const selectedClient = state.clients.find((client) => client.id === filters.clientId);
+  if (!selectedClient) {
+    historyCustomerProfile.innerHTML = '<div class="list-item muted">Selecciona un cliente para ver su ficha comercial.</div>';
+  } else {
+    const clientSales = state.sales
+      .filter((sale) => sale.clientId === selectedClient.id)
+      .sort((a, b) => {
+        const bDay = toIsoDayNumber(getSaleDateValue(b)) ?? 0;
+        const aDay = toIsoDayNumber(getSaleDateValue(a)) ?? 0;
+        if (bDay !== aDay) return bDay - aDay;
+        return getSaleCreatedTimestamp(b) - getSaleCreatedTimestamp(a);
+      });
+    const lastPurchase = clientSales.length ? getSaleDateValue(clientSales[0]) : "";
+    const totalAmount = clientSales.reduce((sum, sale) => sum + getSaleTotalAmount(sale), 0);
+    const recentSales = clientSales.slice(0, 6);
+    historyCustomerProfile.innerHTML = `
+      <div class="list-item">
+        <strong>${selectedClient.name || "Sin nombre"}</strong>
+        ${selectedClient.phone ? `<div>Telefono: ${selectedClient.phone}</div>` : ""}
+        ${selectedClient.ruc ? `<div>RUC: ${selectedClient.ruc}</div>` : ""}
+        ${selectedClient.address ? `<div>Direccion: ${selectedClient.address}</div>` : ""}
+        <div>Fecha de ultima compra: ${lastPurchase ? formatDate(lastPurchase) : "Sin compras"}</div>
+        <div>Cantidad de compras: ${formatInteger(clientSales.length)}</div>
+        <div>Total comprado acumulado: Gs ${formatGs(totalAmount)}</div>
+      </div>
+      <div class="history-sale-lines">
+        ${recentSales.length
+    ? recentSales.map((sale) => `
+          <div class="history-sale-line">
+            <strong>${formatDate(getSaleDateValue(sale))} - Gs ${formatGs(getSaleTotalAmount(sale))}</strong>
+            <div>Metodo: ${sale.payment || "No especificado"} | ${isSalePendingPayment(sale) ? "Pendiente" : "Pagado"}</div>
+            <div class="history-sale-products">${summarizeSaleProducts(sale)}</div>
+          </div>
+        `).join("")
+    : '<div class="list-item muted">Sin ventas registradas para este cliente.</div>'}
+      </div>
+    `;
+  }
+
+  if (!filteredSales.length) {
+    historySalesResults.innerHTML = '<div class="list-item muted">Sin ventas para los filtros seleccionados.</div>';
+  } else {
+    historySalesResults.innerHTML = filteredSales.map((sale) => {
+      const client = getSaleClientDetails(sale);
+      return `
+        <div class="list-item history-sale-item">
+          <strong>${client.name}</strong>
+          <div>Fecha: ${formatDate(getSaleDateValue(sale))}</div>
+          <div>Total: Gs ${formatGs(getSaleTotalAmount(sale))}</div>
+          <div>Metodo: ${sale.payment || "No especificado"} | ${isSalePendingPayment(sale) ? "Pendiente" : "Pagado"}</div>
+          <div class="history-sale-products">${summarizeSaleProducts(sale)}</div>
+        </div>
+      `;
+    }).join("");
+  }
+};
 
 const buildRepurchaseFollowups = () => {
   const byClient = new Map();
@@ -2262,9 +2518,17 @@ const syncState = (key, items) => {
   }
   if (key === "clients") {
     updateSelect(saleForm.client, items, "Opcional");
+    updateSelect(historyClientFilter, items, "Todos");
+    if (commercialHistoryState.selectedClientId && !items.some((item) => item.id === commercialHistoryState.selectedClientId)) {
+      commercialHistoryState.selectedClientId = "";
+      if (historyClientFilter) historyClientFilter.value = "";
+    }
   }
   if (key === "salesGoals") {
     updateSalesGoalForm(items[0]);
+  }
+  if (key === "sales") {
+    refreshCommercialHistoryPaymentOptions();
   }
 
   if (["rawMaterials", "purchases", "batches"].includes(key)) {
@@ -2475,6 +2739,7 @@ const renderAll = () => {
   });
 
   renderRepurchaseList();
+  renderCommercialHistory();
 
   requestAnimationFrame(refreshCollapseHeights);
   refreshIcons();
@@ -3429,6 +3694,77 @@ repurchaseList?.addEventListener("click", (event) => {
   window.open(link, "_blank", "noopener,noreferrer");
 });
 
+const selectCommercialHistoryClient = (clientId) => {
+  const safeId = String(clientId || "").trim();
+  commercialHistoryState.selectedClientId = safeId;
+  if (historyClientFilter) historyClientFilter.value = safeId;
+  const selectedClient = state.clients.find((client) => client.id === safeId);
+  if (selectedClient && historyCustomerSearch) {
+    historyCustomerSearch.value = selectedClient.name || "";
+    commercialHistoryState.searchTerm = selectedClient.name || "";
+  }
+  renderCommercialHistory();
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+  });
+};
+
+const initializeCommercialHistory = () => {
+  if (!historyFilters) return;
+  const { startDate, endDate } = getCurrentMonthRange();
+  if (historyDateFrom) historyDateFrom.value = startDate;
+  if (historyDateTo) historyDateTo.value = endDate;
+  updateSelect(historyClientFilter, state.clients, "Todos");
+  refreshCommercialHistoryPaymentOptions();
+  renderCommercialHistory();
+};
+
+historyCustomerSearch?.addEventListener("input", () => {
+  commercialHistoryState.searchTerm = historyCustomerSearch.value || "";
+  renderCommercialHistory();
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+  });
+});
+
+historyFilters?.addEventListener("input", () => {
+  commercialHistoryState.selectedClientId = String(historyClientFilter?.value || "").trim();
+  const selectedClient = state.clients.find((client) => client.id === commercialHistoryState.selectedClientId);
+  if (selectedClient && historyCustomerSearch) {
+    historyCustomerSearch.value = selectedClient.name || "";
+    commercialHistoryState.searchTerm = selectedClient.name || "";
+  }
+  renderCommercialHistory();
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+  });
+});
+
+historyFilters?.addEventListener("change", () => {
+  commercialHistoryState.selectedClientId = String(historyClientFilter?.value || "").trim();
+  const selectedClient = state.clients.find((client) => client.id === commercialHistoryState.selectedClientId);
+  if (selectedClient && historyCustomerSearch) {
+    historyCustomerSearch.value = selectedClient.name || "";
+    commercialHistoryState.searchTerm = selectedClient.name || "";
+  }
+  renderCommercialHistory();
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+  });
+});
+
+historyCustomerResults?.addEventListener("click", (event) => {
+  const selectBtn = event.target.closest("[data-select-history-client]");
+  if (!selectBtn) return;
+  selectCommercialHistoryClient(selectBtn.dataset.selectHistoryClient);
+});
+
+historyPeriodClients?.addEventListener("click", (event) => {
+  const selectBtn = event.target.closest("[data-select-history-client]");
+  if (!selectBtn) return;
+  selectCommercialHistoryClient(selectBtn.dataset.selectHistoryClient);
+});
+
 purchaseForm.quantity.addEventListener("input", () => {
   updatePurchaseTotal();
 });
@@ -3540,6 +3876,7 @@ saleItems?.addEventListener("click", (event) => {
 setupTabs();
 setupDashboardResizeObserver();
 setDefaultDates();
+initializeCommercialHistory();
 updateDueDateVisibility();
 updateSaleObservationVisibility(false);
 updateSaleRepurchaseVisibility(false);
@@ -3575,7 +3912,7 @@ const closeSection = (toggle, body) => {
 document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
   const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
-  if (["salesGoalSection", "productsSection", "clientsSection", "salesSection", "repurchaseSection"].includes(toggle.dataset.collapse)) {
+  if (["salesGoalSection", "productsSection", "clientsSection", "salesSection", "repurchaseSection", "commercialHistorySection"].includes(toggle.dataset.collapse)) {
     closeSection(toggle, body);
   } else {
     openSection(toggle, body);
