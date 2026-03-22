@@ -130,6 +130,9 @@ const historyDateFrom = document.getElementById("historyDateFrom");
 const historyDateTo = document.getElementById("historyDateTo");
 const historyStatusFilter = document.getElementById("historyStatusFilter");
 const historyPaymentFilter = document.getElementById("historyPaymentFilter");
+const historyProductFilter = document.getElementById("historyProductFilter");
+const historyProductModeField = document.getElementById("historyProductModeField");
+const historyProductMode = document.getElementById("historyProductMode");
 const historyPeriodClients = document.getElementById("historyPeriodClients");
 const historyCustomerProfile = document.getElementById("historyCustomerProfile");
 const historySalesResults = document.getElementById("historySalesResults");
@@ -1079,12 +1082,17 @@ const getCommercialHistoryFilterValues = () => {
   if (dateFrom && dateTo && dateFrom > dateTo) {
     [dateFrom, dateTo] = [dateTo, dateFrom];
   }
+  const productKey = String(historyProductFilter?.value || "").trim();
+  const productModeRaw = String(historyProductMode?.value || "includes").trim();
+  const productMode = ["includes", "only", "excludes"].includes(productModeRaw) ? productModeRaw : "includes";
   return {
     dateFrom,
     dateTo,
     clientId: String(historyClientFilter?.value || commercialHistoryState.selectedClientId || "").trim(),
     status: String(historyStatusFilter?.value || "").trim(),
-    payment: normalizeText(historyPaymentFilter?.value || "")
+    payment: normalizeText(historyPaymentFilter?.value || ""),
+    productKey,
+    productMode: productKey ? productMode : "includes"
   };
 };
 
@@ -1106,6 +1114,108 @@ const getCommercialHistoryFilteredSales = (filters) => state.sales
     if (bDay !== aDay) return bDay - aDay;
     return getSaleCreatedTimestamp(b) - getSaleCreatedTimestamp(a);
   });
+
+const getCommercialHistoryProductOptions = () => {
+  const byKey = new Map();
+  state.products.forEach((product) => {
+    const key = buildSaleOptionKey({ productId: product.id, name: product.name });
+    if (!key) return;
+    byKey.set(key, product.name || "Producto");
+  });
+  state.sales.forEach((sale) => {
+    getSaleLineItems(sale).forEach((line) => {
+      const key = buildSaleOptionKey({
+        productId: line.productId || sale.productId || "",
+        productName: line.productName || sale.productName || ""
+      });
+      const label = line.productName || sale.productName || "";
+      if (!key || !label) return;
+      if (!byKey.has(key)) byKey.set(key, label);
+    });
+  });
+  return Array.from(byKey.entries())
+    .map(([key, label]) => ({ key, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "es"));
+};
+
+const refreshCommercialHistoryProductOptions = () => {
+  if (!historyProductFilter) return;
+  const selected = String(historyProductFilter.value || "").trim();
+  const options = ['<option value="">Todos</option>'];
+  getCommercialHistoryProductOptions().forEach((item) => {
+    options.push(`<option value="${item.key}">${item.label}</option>`);
+  });
+  historyProductFilter.innerHTML = options.join("");
+  if (selected && Array.from(historyProductFilter.options).some((opt) => opt.value === selected)) {
+    historyProductFilter.value = selected;
+  }
+};
+
+const updateCommercialHistoryProductModeVisibility = () => {
+  if (!historyProductMode || !historyProductModeField) return;
+  const hasProduct = Boolean(String(historyProductFilter?.value || "").trim());
+  historyProductMode.disabled = !hasProduct;
+  historyProductModeField.classList.toggle("is-disabled", !hasProduct);
+  historyProductModeField.classList.toggle("hidden", !hasProduct);
+  if (!hasProduct) historyProductMode.value = "includes";
+};
+
+const getSaleProductKeys = (sale) => {
+  const keys = new Set();
+  getSaleLineItems(sale).forEach((line) => {
+    const key = buildSaleOptionKey({
+      productId: line.productId || sale.productId || "",
+      productName: line.productName || sale.productName || ""
+    });
+    if (key) keys.add(key);
+  });
+  return keys;
+};
+
+const applyCommercialHistoryProductMode = (sales, filters) => {
+  if (!filters.productKey) {
+    return { sales, allowedClientKeys: null };
+  }
+  const byClient = new Map();
+  sales.forEach((sale) => {
+    const details = getSaleClientDetails(sale);
+    const clientKey = sale.clientId
+      ? `id:${sale.clientId}`
+      : `name:${normalizeText(details.name)}`;
+    if (!clientKey || clientKey === "name:") return;
+    const existing = byClient.get(clientKey) || {
+      productKeys: new Set()
+    };
+    getSaleProductKeys(sale).forEach((productKey) => existing.productKeys.add(productKey));
+    byClient.set(clientKey, existing);
+  });
+
+  const allowedClientKeys = new Set();
+  byClient.forEach((entry, clientKey) => {
+    const hasProduct = entry.productKeys.has(filters.productKey);
+    if (filters.productMode === "includes" && hasProduct) {
+      allowedClientKeys.add(clientKey);
+      return;
+    }
+    if (filters.productMode === "only" && hasProduct && entry.productKeys.size === 1) {
+      allowedClientKeys.add(clientKey);
+      return;
+    }
+    if (filters.productMode === "excludes" && !hasProduct && entry.productKeys.size > 0) {
+      allowedClientKeys.add(clientKey);
+    }
+  });
+
+  const filteredByMode = sales.filter((sale) => {
+    const details = getSaleClientDetails(sale);
+    const clientKey = sale.clientId
+      ? `id:${sale.clientId}`
+      : `name:${normalizeText(details.name)}`;
+    return allowedClientKeys.has(clientKey);
+  });
+
+  return { sales: filteredByMode, allowedClientKeys };
+};
 
 const summarizeSaleProducts = (sale) => {
   const lines = getSaleLineItems(sale);
@@ -1207,7 +1317,8 @@ const renderCommercialHistory = () => {
 
   const filters = getCommercialHistoryFilterValues();
   commercialHistoryState.selectedClientId = filters.clientId;
-  const filteredSales = getCommercialHistoryFilteredSales(filters);
+  const baseFilteredSales = getCommercialHistoryFilteredSales(filters);
+  const { sales: filteredSales } = applyCommercialHistoryProductMode(baseFilteredSales, filters);
   const periodClients = buildCommercialHistoryPeriodClients(filteredSales);
 
   const totalSalesCount = filteredSales.length;
@@ -1244,7 +1355,7 @@ const renderCommercialHistory = () => {
   if (!selectedClient) {
     historyCustomerProfile.innerHTML = '<div class="list-item muted">Selecciona un cliente para ver su ficha comercial.</div>';
   } else {
-    const clientSales = state.sales
+    const clientSales = filteredSales
       .filter((sale) => sale.clientId === selectedClient.id)
       .sort((a, b) => {
         const bDay = toIsoDayNumber(getSaleDateValue(b)) ?? 0;
@@ -2551,6 +2662,7 @@ const syncState = (key, items) => {
   }
   if (key === "products") {
     updateSelect(batchProductSelect, items, "Seleccionar");
+    refreshCommercialHistoryProductOptions();
     if (batchForm.recipe.value) {
       updateBatchProductFromRecipe();
     }
@@ -2568,6 +2680,7 @@ const syncState = (key, items) => {
   }
   if (key === "sales") {
     refreshCommercialHistoryPaymentOptions();
+    refreshCommercialHistoryProductOptions();
   }
 
   if (["rawMaterials", "purchases", "batches"].includes(key)) {
@@ -3755,6 +3868,8 @@ const initializeCommercialHistory = () => {
   if (historyDateTo) historyDateTo.value = endDate;
   updateSelect(historyClientFilter, state.clients, "Todos");
   refreshCommercialHistoryPaymentOptions();
+  refreshCommercialHistoryProductOptions();
+  updateCommercialHistoryProductModeVisibility();
   renderCommercialHistory();
 };
 
@@ -3773,6 +3888,7 @@ historyFilters?.addEventListener("input", () => {
     historyCustomerSearch.value = selectedClient.name || "";
     commercialHistoryState.searchTerm = selectedClient.name || "";
   }
+  updateCommercialHistoryProductModeVisibility();
   renderCommercialHistory();
   requestAnimationFrame(() => {
     refreshCollapseHeights();
@@ -3786,6 +3902,7 @@ historyFilters?.addEventListener("change", () => {
     historyCustomerSearch.value = selectedClient.name || "";
     commercialHistoryState.searchTerm = selectedClient.name || "";
   }
+  updateCommercialHistoryProductModeVisibility();
   renderCommercialHistory();
   requestAnimationFrame(() => {
     refreshCollapseHeights();
