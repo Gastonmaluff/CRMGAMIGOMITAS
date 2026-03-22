@@ -960,7 +960,7 @@ select:focus {
   width: 0%;
   border-radius: 999px;
   background: #94a3b8;
-  transition: width 0.35s ease, background-color 0.25s ease;
+  transition: background-color 0.25s ease;
 }
 
 .sales-goal-stats {

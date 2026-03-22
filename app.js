@@ -204,8 +204,15 @@ const dashboardMetricSnapshot = {
     month: null,
     lastMonth: null,
     available: null,
-    goalPercent: null
+    goalPercent: null,
+    goalProgress: 0,
+    goalProgressColor: "#94a3b8"
   }
+};
+let salesGoalProgressFrameId = null;
+const salesGoalProgressState = {
+  target: null,
+  color: null
 };
 
 const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
@@ -367,6 +374,63 @@ const animateDashboardMetricsByTab = (tab, { force = false } = {}) => {
     return;
   }
   animateProductionDashboardMetrics({ force });
+};
+
+const getProgressAnimationDuration = (targetPercent) => {
+  const normalized = Math.max(0, Math.min(100, Number(targetPercent) || 0));
+  return Math.round(Math.max(700, Math.min(1000, 700 + (normalized * 3))));
+};
+
+const animateSalesGoalProgressBar = (targetPercent, color, { force = false } = {}) => {
+  if (!salesGoalProgressBar) return;
+  const clamped = Math.max(0, Math.min(100, Number(targetPercent) || 0));
+  const safeColor = color || "#94a3b8";
+  if (!force
+    && salesGoalProgressState.target === clamped
+    && salesGoalProgressState.color === safeColor) {
+    salesGoalProgressBar.style.width = `${clamped}%`;
+    salesGoalProgressBar.style.background = safeColor;
+    return;
+  }
+
+  if (salesGoalProgressFrameId) {
+    cancelAnimationFrame(salesGoalProgressFrameId);
+    salesGoalProgressFrameId = null;
+  }
+
+  if (prefersReducedMotion()) {
+    salesGoalProgressBar.style.width = `${clamped}%`;
+    salesGoalProgressBar.style.background = safeColor;
+    salesGoalProgressState.target = clamped;
+    salesGoalProgressState.color = safeColor;
+    return;
+  }
+
+  const duration = getProgressAnimationDuration(clamped);
+  const startValue = 0;
+  const delta = clamped - startValue;
+  let startTime = null;
+  salesGoalProgressBar.style.width = "0%";
+  salesGoalProgressBar.style.background = safeColor;
+
+  const tick = (timestamp) => {
+    if (startTime === null) startTime = timestamp;
+    const progress = Math.min(1, (timestamp - startTime) / duration);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const currentValue = startValue + (delta * eased);
+    salesGoalProgressBar.style.width = `${Math.max(0, Math.min(100, currentValue))}%`;
+    if (progress < 1) {
+      salesGoalProgressFrameId = requestAnimationFrame(tick);
+      return;
+    }
+    salesGoalProgressBar.style.width = `${clamped}%`;
+    salesGoalProgressBar.style.background = safeColor;
+    salesGoalProgressState.target = clamped;
+    salesGoalProgressState.color = safeColor;
+    salesGoalProgressFrameId = null;
+  };
+
+  salesGoalProgressFrameId = requestAnimationFrame(tick);
 };
 
 const refreshIcons = () => {
@@ -1385,6 +1449,13 @@ const updateDashboardVisibility = (activeTab) => {
   requestAnimationFrame(() => {
     syncDashboardSlideHeights(safeTab);
     animateDashboardMetricsByTab(safeTab, { force: true });
+    if (safeTab === "sales") {
+      animateSalesGoalProgressBar(
+        dashboardMetricSnapshot.sales.goalProgress,
+        dashboardMetricSnapshot.sales.goalProgressColor,
+        { force: true }
+      );
+    }
   });
 };
 
@@ -1573,17 +1644,19 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
 
   if (targetDisplays <= 0) {
     dashboardMetricSnapshot.sales.goalPercent = null;
+    dashboardMetricSnapshot.sales.goalProgress = 0;
+    dashboardMetricSnapshot.sales.goalProgressColor = "#94a3b8";
     animateSalesDashboardMetrics();
+    animateSalesGoalProgressBar(
+      dashboardMetricSnapshot.sales.goalProgress,
+      dashboardMetricSnapshot.sales.goalProgressColor
+    );
     if (salesGoalSummary) salesGoalSummary.textContent = "Sin objetivo configurado";
     if (salesGoalTarget) salesGoalTarget.textContent = "-";
     if (salesGoalRemaining) salesGoalRemaining.textContent = "-";
     if (salesGoalPaceCurrent) salesGoalPaceCurrent.textContent = "-";
     if (salesGoalPaceNeeded) salesGoalPaceNeeded.textContent = "";
     if (salesGoalMessage) salesGoalMessage.textContent = "Configura un objetivo mensual para ver avance.";
-    if (salesGoalProgressBar) {
-      salesGoalProgressBar.style.width = "0%";
-      salesGoalProgressBar.style.background = "#94a3b8";
-    }
     if (salesGoalCard) salesGoalCard.dataset.tone = "none";
     if (salesGoalCard) salesGoalCard.dataset.pace = "none";
     return;
@@ -1628,7 +1701,14 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
   }
 
   dashboardMetricSnapshot.sales.goalPercent = percentRounded;
+  const clampedProgress = Math.max(0, Math.min(percent, 100));
+  dashboardMetricSnapshot.sales.goalProgress = clampedProgress;
+  dashboardMetricSnapshot.sales.goalProgressColor = progressColor;
   animateSalesDashboardMetrics();
+  animateSalesGoalProgressBar(
+    dashboardMetricSnapshot.sales.goalProgress,
+    dashboardMetricSnapshot.sales.goalProgressColor
+  );
   if (salesGoalSummary) {
     salesGoalSummary.textContent = `${formatInteger(soldForGoal)} vendidos de ${formatInteger(targetDisplays)} objetivo`;
   }
@@ -1637,11 +1717,6 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
   if (salesGoalPaceCurrent) salesGoalPaceCurrent.textContent = paceCurrentLabel;
   if (salesGoalPaceNeeded) salesGoalPaceNeeded.textContent = paceNeededLabel;
   if (salesGoalMessage) salesGoalMessage.textContent = message;
-  if (salesGoalProgressBar) {
-    const clampedProgress = Math.max(0, Math.min(percent, 100));
-    salesGoalProgressBar.style.width = `${clampedProgress}%`;
-    salesGoalProgressBar.style.background = progressColor;
-  }
   if (salesGoalCard) salesGoalCard.dataset.tone = tone;
   if (salesGoalCard) salesGoalCard.dataset.pace = paceStatus;
 };
