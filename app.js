@@ -197,6 +197,16 @@ const formatPhoneForWhatsApp = (phone) => {
   return `595${cleaned}`;
 };
 
+const buildWhatsAppLink = (phone, customerName = "") => {
+  const formattedPhone = formatPhoneForWhatsApp(phone);
+  if (!formattedPhone) return null;
+  const safeName = String(customerName || "").trim();
+  const message = safeName
+    ? `Hola ${safeName}, ¿cómo estás? Te escribo para consultarte si necesitás reposición.`
+    : "Hola, ¿cómo estás? Te escribo para consultarte si necesitás reposición.";
+  return `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
+};
+
 const metricAnimationState = new WeakMap();
 const metricAnimationFrames = new WeakMap();
 const dashboardMetricSnapshot = {
