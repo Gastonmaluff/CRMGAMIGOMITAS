@@ -624,7 +624,7 @@ select:focus {
 
 .tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
   margin-bottom: 18px;
   width: 100%;
@@ -1210,9 +1210,26 @@ select:focus {
   background: #fff5f5;
 }
 
-.commercial-history {
+.history-overview .overview-value {
+  font-size: 2rem;
+}
+
+.history-overview .overview-sub {
+  font-size: 0.8rem;
+}
+
+.commercial-history-page {
   display: grid;
   gap: 14px;
+}
+
+.commercial-history-filters-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.commercial-history-filters-panel .section-title {
+  margin-bottom: 2px;
 }
 
 .commercial-history-search {
@@ -1232,62 +1249,31 @@ select:focus {
 
 .commercial-history-filters {
   margin-bottom: 0;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
 }
 
-.commercial-history-summary {
+.commercial-history-main {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 8px;
+  gap: 14px;
+  grid-template-columns: minmax(260px, 0.95fr) minmax(0, 1.35fr);
+  align-items: start;
 }
 
-.history-summary-item {
-  border: 1px solid var(--border);
-  background: #fff;
-  border-radius: 12px;
-  padding: 9px 11px;
+.commercial-history-list-panel .list.scroll {
+  max-height: 560px;
 }
 
-.history-summary-item small {
-  display: block;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 700;
-}
-
-.history-summary-item strong {
-  display: block;
-  margin-top: 3px;
-  font-size: 1rem;
-}
-
-.commercial-history-grid {
+.commercial-history-right {
   display: grid;
+  gap: 14px;
+}
+
+.commercial-history-profile-panel .list {
   gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.commercial-history-block {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 10px;
-  background: #f9fafb;
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-}
-
-.commercial-history-block h3 {
-  margin: 0;
-  font-size: 0.86rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
-.commercial-history-block-full {
-  grid-column: 1 / -1;
+.commercial-history-sales-panel .list.scroll {
+  max-height: 320px;
 }
 
 .history-client-item {
@@ -1585,6 +1571,16 @@ select:focus {
 }
 
 @media (max-width: 720px) {
+  .tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .tab {
+    font-size: 0.9rem;
+    padding: 12px 8px;
+  }
+
   .topbar {
     flex-direction: column;
     align-items: center;
@@ -1747,7 +1743,7 @@ select:focus {
     width: 100%;
   }
 
-  .commercial-history-grid {
+  .commercial-history-main {
     grid-template-columns: 1fr;
   }
 }

@@ -47,6 +47,7 @@ const logoutBtn = document.getElementById("logoutBtn");
 
 const tabs = document.querySelectorAll(".tab");
 const panels = document.querySelectorAll(".tab-panel");
+const TAB_IDS = Array.from(tabs).map((tab) => tab.dataset.tab).filter(Boolean);
 
 const rawMaterialForm = document.getElementById("rawMaterialForm");
 const purchaseForm = document.getElementById("purchaseForm");
@@ -83,6 +84,10 @@ const salesGoalRemaining = document.getElementById("salesGoalRemaining");
 const salesGoalPaceCurrent = document.getElementById("salesGoalPaceCurrent");
 const salesGoalPaceNeeded = document.getElementById("salesGoalPaceNeeded");
 const salesGoalMessage = document.getElementById("salesGoalMessage");
+const historyMetricSalesCount = document.getElementById("historyMetricSalesCount");
+const historyMetricCustomersCount = document.getElementById("historyMetricCustomersCount");
+const historyMetricAmount = document.getElementById("historyMetricAmount");
+const historyMetricTicket = document.getElementById("historyMetricTicket");
 const productForm = document.getElementById("productForm");
 const clientForm = document.getElementById("clientForm");
 const saleForm = document.getElementById("saleForm");
@@ -125,7 +130,6 @@ const historyDateFrom = document.getElementById("historyDateFrom");
 const historyDateTo = document.getElementById("historyDateTo");
 const historyStatusFilter = document.getElementById("historyStatusFilter");
 const historyPaymentFilter = document.getElementById("historyPaymentFilter");
-const historySummary = document.getElementById("historySummary");
 const historyPeriodClients = document.getElementById("historyPeriodClients");
 const historyCustomerProfile = document.getElementById("historyCustomerProfile");
 const historySalesResults = document.getElementById("historySalesResults");
@@ -259,6 +263,12 @@ const dashboardMetricSnapshot = {
     goalPercent: null,
     goalProgress: 0,
     goalProgressColor: "#94a3b8"
+  },
+  commercialHistory: {
+    totalSales: 0,
+    totalCustomers: 0,
+    totalAmount: 0,
+    averageTicket: 0
   }
 };
 let salesGoalProgressFrameId = null;
@@ -420,9 +430,45 @@ const animateSalesDashboardMetrics = ({ force = false } = {}) => {
   }
 };
 
+const animateCommercialHistoryMetrics = ({ force = false } = {}) => {
+  const snapshot = dashboardMetricSnapshot.commercialHistory;
+  if (historyMetricSalesCount) {
+    animateMetricNumber(historyMetricSalesCount, snapshot.totalSales, {
+      force,
+      formatFrame: (value) => formatInteger(value),
+      formatFinal: (value) => formatInteger(value)
+    });
+  }
+  if (historyMetricCustomersCount) {
+    animateMetricNumber(historyMetricCustomersCount, snapshot.totalCustomers, {
+      force,
+      formatFrame: (value) => formatInteger(value),
+      formatFinal: (value) => formatInteger(value)
+    });
+  }
+  if (historyMetricAmount) {
+    animateMetricNumber(historyMetricAmount, snapshot.totalAmount, {
+      force,
+      formatFrame: (value) => `Gs ${formatGs(value)}`,
+      formatFinal: (value) => `Gs ${formatGs(value)}`
+    });
+  }
+  if (historyMetricTicket) {
+    animateMetricNumber(historyMetricTicket, snapshot.averageTicket, {
+      force,
+      formatFrame: (value) => `Gs ${formatGs(value)}`,
+      formatFinal: (value) => `Gs ${formatGs(value)}`
+    });
+  }
+};
+
 const animateDashboardMetricsByTab = (tab, { force = false } = {}) => {
   if (tab === "sales") {
     animateSalesDashboardMetrics({ force });
+    return;
+  }
+  if (tab === "commercial-history") {
+    animateCommercialHistoryMetrics({ force });
     return;
   }
   animateProductionDashboardMetrics({ force });
@@ -1156,7 +1202,7 @@ const renderCommercialHistorySearchResults = () => {
 };
 
 const renderCommercialHistory = () => {
-  if (!historySummary || !historyPeriodClients || !historyCustomerProfile || !historySalesResults) return;
+  if (!historyPeriodClients || !historyCustomerProfile || !historySalesResults) return;
   renderCommercialHistorySearchResults();
 
   const filters = getCommercialHistoryFilterValues();
@@ -1164,26 +1210,17 @@ const renderCommercialHistory = () => {
   const filteredSales = getCommercialHistoryFilteredSales(filters);
   const periodClients = buildCommercialHistoryPeriodClients(filteredSales);
 
+  const totalSalesCount = filteredSales.length;
   const totalSalesAmount = filteredSales.reduce((sum, sale) => sum + getSaleTotalAmount(sale), 0);
-  const ticketAverage = filteredSales.length ? totalSalesAmount / filteredSales.length : 0;
-  historySummary.innerHTML = `
-    <div class="history-summary-item">
-      <small>Total ventas</small>
-      <strong>${formatInteger(filteredSales.length)}</strong>
-    </div>
-    <div class="history-summary-item">
-      <small>Total clientes</small>
-      <strong>${formatInteger(periodClients.length)}</strong>
-    </div>
-    <div class="history-summary-item">
-      <small>Monto del periodo</small>
-      <strong>Gs ${formatGs(totalSalesAmount)}</strong>
-    </div>
-    <div class="history-summary-item">
-      <small>Ticket promedio</small>
-      <strong>Gs ${formatGs(ticketAverage)}</strong>
-    </div>
-  `;
+  const ticketAverage = totalSalesCount ? totalSalesAmount / totalSalesCount : 0;
+  dashboardMetricSnapshot.commercialHistory.totalSales = totalSalesCount;
+  dashboardMetricSnapshot.commercialHistory.totalCustomers = periodClients.length;
+  dashboardMetricSnapshot.commercialHistory.totalAmount = totalSalesAmount;
+  dashboardMetricSnapshot.commercialHistory.averageTicket = ticketAverage;
+  const activeTab = document.querySelector(".tab.active")?.dataset.tab || "production";
+  if (activeTab === "commercial-history") {
+    animateCommercialHistoryMetrics({ force: true });
+  }
 
   if (!periodClients.length) {
     historyPeriodClients.innerHTML = '<div class="list-item muted">No hay clientes con compras para los filtros actuales.</div>';
@@ -1818,9 +1855,10 @@ const getLayoutHeight = (node) => {
 };
 
 const syncDashboardSlideHeights = (activeTab) => {
-  const safeTab = activeTab === "sales" ? "sales" : "production";
+  const safeTab = TAB_IDS.includes(activeTab) ? activeTab : (TAB_IDS[0] || "production");
+  const tabIndex = TAB_IDS.indexOf(safeTab);
   if (dashboardOverviewViewport && dashboardOverviewTrack) {
-    const overviewIndex = safeTab === "sales" ? 1 : 0;
+    const overviewIndex = tabIndex >= 0 ? tabIndex : 0;
     const overviewSlide = dashboardOverviewTrack.children[overviewIndex];
     if (overviewSlide) {
       dashboardOverviewViewport.style.height = `${getLayoutHeight(overviewSlide)}px`;
@@ -1859,8 +1897,9 @@ const setupDashboardResizeObserver = () => {
 };
 
 const updateDashboardVisibility = (activeTab) => {
-  const safeTab = activeTab === "sales" ? "sales" : "production";
-  const offset = safeTab === "sales" ? "-100%" : "0%";
+  const safeTab = TAB_IDS.includes(activeTab) ? activeTab : (TAB_IDS[0] || "production");
+  const tabIndex = TAB_IDS.indexOf(safeTab);
+  const offset = `${-100 * (tabIndex >= 0 ? tabIndex : 0)}%`;
   if (dashboardSection) {
     dashboardSection.dataset.view = safeTab;
   }
@@ -3912,7 +3951,7 @@ const closeSection = (toggle, body) => {
 document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
   const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
-  if (["salesGoalSection", "productsSection", "clientsSection", "salesSection", "repurchaseSection", "commercialHistorySection"].includes(toggle.dataset.collapse)) {
+  if (["salesGoalSection", "productsSection", "clientsSection", "salesSection", "repurchaseSection"].includes(toggle.dataset.collapse)) {
     closeSection(toggle, body);
   } else {
     openSection(toggle, body);

@@ -43,6 +43,7 @@
         <div class="tabs">
           <button class="tab active" data-tab="production">Produccion</button>
           <button class="tab" data-tab="sales">Ventas</button>
+          <button class="tab" data-tab="commercial-history">Historial comercial</button>
         </div>
         <div class="dashboard-overview-viewport" id="dashboardOverviewViewport">
           <div class="dashboard-overview-track" id="dashboardOverviewTrack">
@@ -128,6 +129,30 @@
               </div>
             </div>
             <div class="sales-goal-message" id="salesGoalMessage">Configura un objetivo mensual para ver avance.</div>
+          </div>
+        </div>
+            </div>
+            <div class="dashboard-overview-slide">
+        <div class="overview-grid history-overview" id="historyDashboard">
+          <div class="overview-card history-card">
+            <div class="overview-label">Total ventas del periodo</div>
+            <div class="overview-value" id="historyMetricSalesCount">0</div>
+            <div class="overview-sub">ventas filtradas</div>
+          </div>
+          <div class="overview-card history-card">
+            <div class="overview-label">Total clientes</div>
+            <div class="overview-value" id="historyMetricCustomersCount">0</div>
+            <div class="overview-sub">clientes compradores</div>
+          </div>
+          <div class="overview-card history-card">
+            <div class="overview-label">Monto total</div>
+            <div class="overview-value" id="historyMetricAmount">Gs 0</div>
+            <div class="overview-sub">monto acumulado del periodo</div>
+          </div>
+          <div class="overview-card history-card">
+            <div class="overview-label">Ticket promedio</div>
+            <div class="overview-value" id="historyMetricTicket">Gs 0</div>
+            <div class="overview-sub">promedio por venta</div>
           </div>
         </div>
             </div>
@@ -557,58 +582,67 @@
                 <div class="list scroll" id="repurchaseList"></div>
               </div>
             </div>
-            <div class="card">
-              <h2 class="section-title"><span class="section-title-text"><i data-lucide="history"></i><span class="section-title-label">Historial comercial</span></span> <button class="collapse-toggle" type="button" data-collapse="commercialHistorySection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
-              <div class="collapse-body" id="commercialHistorySection">
-                <div class="commercial-history">
-                  <div class="commercial-history-search">
-                    <label for="historyCustomerSearch">Buscar cliente por nombre</label>
-                    <input id="historyCustomerSearch" type="text" placeholder="Ej: Gustavo" />
-                    <div class="list scroll commercial-history-search-results" id="historyCustomerResults"></div>
-                  </div>
-                  <form class="form-grid commercial-history-filters" id="historyFilters">
-                    <label>
-                      Fecha desde
-                      <input id="historyDateFrom" type="date" />
-                    </label>
-                    <label>
-                      Fecha hasta
-                      <input id="historyDateTo" type="date" />
-                    </label>
-                    <label>
-                      Cliente
-                      <select id="historyClientFilter"></select>
-                    </label>
-                    <label>
-                      Estado de pago
-                      <select id="historyStatusFilter">
-                        <option value="">Todos</option>
-                        <option value="pagado">Pagado</option>
-                        <option value="pendiente">Pendiente</option>
-                      </select>
-                    </label>
-                    <label>
-                      Metodo de pago
-                      <select id="historyPaymentFilter">
-                        <option value="">Todos</option>
-                      </select>
-                    </label>
-                  </form>
-                  <div class="commercial-history-summary" id="historySummary"></div>
-                  <div class="commercial-history-grid">
-                    <div class="commercial-history-block">
-                      <h3>Clientes que compraron</h3>
-                      <div class="list scroll" id="historyPeriodClients"></div>
-                    </div>
-                    <div class="commercial-history-block">
-                      <h3>Ficha comercial</h3>
-                      <div class="list" id="historyCustomerProfile"></div>
-                    </div>
-                    <div class="commercial-history-block commercial-history-block-full">
-                      <h3>Ventas filtradas</h3>
-                      <div class="list scroll" id="historySalesResults"></div>
-                    </div>
-                  </div>
+          </div>
+        </section>
+        <section class="tab-panel" id="commercial-history">
+          <div class="commercial-history-page">
+            <div class="card commercial-history-filters-panel">
+              <h2 class="section-title">
+                <span class="section-title-text"><i data-lucide="history"></i><span class="section-title-label">Historial comercial</span></span>
+              </h2>
+              <div class="commercial-history-search">
+                <label for="historyCustomerSearch">Buscar cliente por nombre</label>
+                <input id="historyCustomerSearch" type="text" placeholder="Ej: Gustavo" />
+                <div class="list scroll commercial-history-search-results" id="historyCustomerResults"></div>
+              </div>
+              <form class="form-grid commercial-history-filters" id="historyFilters">
+                <label>
+                  Fecha desde
+                  <input id="historyDateFrom" type="date" />
+                </label>
+                <label>
+                  Fecha hasta
+                  <input id="historyDateTo" type="date" />
+                </label>
+                <label>
+                  Cliente
+                  <select id="historyClientFilter"></select>
+                </label>
+                <label>
+                  Metodo de pago
+                  <select id="historyPaymentFilter">
+                    <option value="">Todos</option>
+                  </select>
+                </label>
+                <label>
+                  Estado de pago
+                  <select id="historyStatusFilter">
+                    <option value="">Todos</option>
+                    <option value="pagado">Pagado</option>
+                    <option value="pendiente">Pendiente</option>
+                  </select>
+                </label>
+              </form>
+            </div>
+            <div class="commercial-history-main">
+              <div class="card commercial-history-list-panel">
+                <h2 class="section-title">
+                  <span class="section-title-text"><i data-lucide="users"></i><span class="section-title-label">Clientes filtrados</span></span>
+                </h2>
+                <div class="list scroll" id="historyPeriodClients"></div>
+              </div>
+              <div class="commercial-history-right">
+                <div class="card commercial-history-profile-panel">
+                  <h2 class="section-title">
+                    <span class="section-title-text"><i data-lucide="id-card"></i><span class="section-title-label">Ficha comercial</span></span>
+                  </h2>
+                  <div class="list" id="historyCustomerProfile"></div>
+                </div>
+                <div class="card commercial-history-sales-panel">
+                  <h2 class="section-title">
+                    <span class="section-title-text"><i data-lucide="receipt"></i><span class="section-title-label">Ventas filtradas</span></span>
+                  </h2>
+                  <div class="list scroll" id="historySalesResults"></div>
                 </div>
               </div>
             </div>
@@ -622,7 +656,7 @@
 
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260322-17"></script>
+  <script type="module" src="app.js?v=20260322-18"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();
