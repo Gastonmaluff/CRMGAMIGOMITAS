@@ -1092,7 +1092,7 @@ const renderRepurchaseList = () => {
         </div>
         <div class="list-actions">
           ${whatsappLink
-    ? `<a class="btn ghost" href="${whatsappLink}" target="_blank" rel="noopener noreferrer">WhatsApp</a>`
+    ? `<button class="btn ghost" type="button" data-whatsapp-link="${whatsappLink}">WhatsApp</button>`
     : '<button class="btn ghost" type="button" disabled>WhatsApp</button>'}
         </div>
       </div>
@@ -3396,6 +3396,14 @@ saleList.addEventListener("click", async (event) => {
   if (deleteId && confirmDelete("venta")) {
     await deleteDoc(doc(db, "sales", deleteId));
   }
+});
+
+repurchaseList?.addEventListener("click", (event) => {
+  const whatsappBtn = event.target.closest("[data-whatsapp-link]");
+  if (!whatsappBtn) return;
+  const link = String(whatsappBtn.dataset.whatsappLink || "").trim();
+  if (!link) return;
+  window.open(link, "_blank", "noopener,noreferrer");
 });
 
 purchaseForm.quantity.addEventListener("input", () => {
