@@ -586,6 +586,15 @@
         </section>
         <section class="tab-panel" id="commercial-history">
           <div class="commercial-history-page">
+            <div class="card commercial-history-chart-panel">
+              <h2 class="section-title">
+                <span class="section-title-text"><i data-lucide="line-chart"></i><span class="section-title-label">Evolucion de ventas</span></span>
+              </h2>
+              <div class="commercial-history-chart-wrap">
+                <canvas id="historySalesChart" aria-label="Grafico de evolucion de ventas" role="img"></canvas>
+              </div>
+              <div class="list-item muted hidden history-chart-empty" id="historySalesChartEmpty">No hay datos para el periodo seleccionado.</div>
+            </div>
             <div class="card commercial-history-filters-panel">
               <h2 class="section-title">
                 <span class="section-title-text"><i data-lucide="history"></i><span class="section-title-label">Historial comercial</span></span>
@@ -674,8 +683,9 @@
   </div>
 
   <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260322-21"></script>
+  <script type="module" src="app.js?v=20260322-22"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

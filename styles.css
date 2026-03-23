@@ -1223,6 +1223,26 @@ select:focus {
   gap: 14px;
 }
 
+.commercial-history-chart-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.commercial-history-chart-wrap {
+  position: relative;
+  width: 100%;
+  height: 240px;
+}
+
+.commercial-history-chart-wrap canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.history-chart-empty {
+  margin-top: 2px;
+}
+
 .commercial-history-filters-panel {
   display: grid;
   gap: 10px;
@@ -1794,6 +1814,10 @@ select:focus {
   .commercial-history-filters-row-primary,
   .commercial-history-filters-row-secondary {
     grid-template-columns: 1fr;
+  }
+
+  .commercial-history-chart-wrap {
+    height: 210px;
   }
 }
 

@@ -137,6 +137,8 @@ const historyResetFiltersBtn = document.getElementById("historyResetFiltersBtn")
 const historyPeriodClients = document.getElementById("historyPeriodClients");
 const historyCustomerProfile = document.getElementById("historyCustomerProfile");
 const historySalesResults = document.getElementById("historySalesResults");
+const historySalesChartCanvas = document.getElementById("historySalesChart");
+const historySalesChartEmpty = document.getElementById("historySalesChartEmpty");
 const finishedStockList = document.getElementById("finishedStockList");
 
 const dueDateField = document.getElementById("dueDateField");
@@ -280,6 +282,7 @@ const salesGoalProgressState = {
   target: null,
   color: null
 };
+let historySalesChart = null;
 
 const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
 
@@ -1282,6 +1285,132 @@ const summarizeSaleProducts = (sale) => {
     .join(" | ");
 };
 
+const buildCommercialHistoryDailySeries = (sales) => {
+  const totalsByDate = new Map();
+  sales.forEach((sale) => {
+    const saleDate = getSaleDateValue(sale);
+    if (!saleDate) return;
+    const current = totalsByDate.get(saleDate) || 0;
+    totalsByDate.set(saleDate, current + getSaleTotalAmount(sale));
+  });
+  return Array.from(totalsByDate.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]));
+};
+
+const renderCommercialHistoryChart = (sales) => {
+  if (!historySalesChartCanvas || !historySalesChartEmpty) return;
+  const ChartLib = window.Chart;
+  if (!ChartLib || typeof ChartLib !== "function") {
+    historySalesChartCanvas.classList.add("hidden");
+    historySalesChartEmpty.classList.remove("hidden");
+    historySalesChartEmpty.textContent = "No se pudo cargar el grafico.";
+    if (historySalesChart) {
+      historySalesChart.destroy();
+      historySalesChart = null;
+    }
+    return;
+  }
+
+  const series = buildCommercialHistoryDailySeries(sales);
+  if (!series.length) {
+    historySalesChartCanvas.classList.add("hidden");
+    historySalesChartEmpty.classList.remove("hidden");
+    historySalesChartEmpty.textContent = "No hay datos para el periodo seleccionado.";
+    if (historySalesChart) {
+      historySalesChart.destroy();
+      historySalesChart = null;
+    }
+    return;
+  }
+
+  historySalesChartCanvas.classList.remove("hidden");
+  historySalesChartEmpty.classList.add("hidden");
+  const labels = series.map(([iso]) => {
+    const [year, month, day] = iso.split("-");
+    if (!year || !month || !day) return iso;
+    return `${day}/${month}`;
+  });
+  const fullLabels = series.map(([iso]) => formatDateForPdf(iso));
+  const values = series.map(([, total]) => Math.round(Number(total) || 0));
+
+  const tooltipTitle = (items) => {
+    const point = items?.[0];
+    if (!point) return "";
+    return fullLabels[point.dataIndex] || point.label || "";
+  };
+
+  if (historySalesChart) {
+    historySalesChart.data.labels = labels;
+    historySalesChart.data.datasets[0].data = values;
+    historySalesChart.options.plugins.tooltip.callbacks.title = tooltipTitle;
+    historySalesChart.update();
+    return;
+  }
+
+  const ctx = historySalesChartCanvas.getContext("2d");
+  if (!ctx) return;
+  historySalesChart = new ChartLib(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: "Monto vendido",
+        data: values,
+        borderColor: "#1f2937",
+        backgroundColor: "rgba(31, 41, 55, 0.12)",
+        borderWidth: 2.2,
+        pointRadius: 3,
+        pointHoverRadius: 4,
+        pointBackgroundColor: "#111827",
+        tension: 0.3,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: "index",
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          display: false
+        },
+        tooltip: {
+          callbacks: {
+            title: tooltipTitle,
+            label: (context) => `Gs ${formatGs(context.parsed.y || 0)}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: {
+            display: false
+          },
+          ticks: {
+            color: "#64748b",
+            maxRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 8
+          }
+        },
+        y: {
+          beginAtZero: true,
+          grid: {
+            color: "rgba(148, 163, 184, 0.28)"
+          },
+          ticks: {
+            color: "#475569",
+            callback: (value) => `Gs ${formatGs(value)}`
+          }
+        }
+      }
+    }
+  });
+};
+
 const buildCommercialHistoryPeriodClients = (sales) => {
   const byClient = new Map();
   sales.forEach((sale) => {
@@ -1376,6 +1505,7 @@ const renderCommercialHistory = () => {
   commercialHistoryState.selectedClientId = filters.clientId;
   const baseFilteredSales = getCommercialHistoryFilteredSales(filters);
   const { sales: filteredSales } = applyCommercialHistoryProductMode(baseFilteredSales, filters);
+  renderCommercialHistoryChart(filteredSales);
   const periodClients = buildCommercialHistoryPeriodClients(filteredSales);
 
   const totalSalesCount = filteredSales.length;
