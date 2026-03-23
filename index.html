@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CRM Gami Gomitas</title>
-  <link rel="stylesheet" href="styles.css?v=20260322-16" />
+  <link rel="stylesheet" href="styles.css?v=20260322-17" />
 </head>
 <body>
   <div class="app">
@@ -542,6 +542,10 @@
                   Direccion
                   <input name="address" />
                 </label>
+                <label>
+                  Notas del cliente
+                  <textarea name="notes" placeholder="Ej: Prefiere contacto por la tarde"></textarea>
+                </label>
                 <button class="btn primary" type="submit">Guardar cliente</button>
                 </form>
                 <div class="list scroll" id="clientList"></div>
@@ -685,7 +689,7 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260322-23"></script>
+  <script type="module" src="app.js?v=20260322-24"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

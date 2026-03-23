@@ -1174,6 +1174,59 @@ select:focus {
   font-size: 0.86rem;
 }
 
+.repurchase-followup-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.repurchase-followup-grid label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.repurchase-followup-grid input,
+.repurchase-followup-grid select {
+  width: 100%;
+  min-width: 0;
+  font-size: 0.84rem;
+  padding: 8px 9px;
+}
+
+.repurchase-followup-grid.disabled {
+  opacity: 0.72;
+}
+
+.repurchase-notes-panel {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.repurchase-notes-panel label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: #475569;
+  font-weight: 600;
+}
+
+.repurchase-notes-panel textarea {
+  min-height: 78px;
+}
+
+.repurchase-inline-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .repurchase-status {
   display: inline-flex;
   align-items: center;
@@ -1814,6 +1867,10 @@ select:focus {
   }
 
   .commercial-history-main {
+    grid-template-columns: 1fr;
+  }
+
+  .repurchase-followup-grid {
     grid-template-columns: 1fr;
   }
 

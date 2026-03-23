@@ -169,6 +169,7 @@ const commercialHistoryState = {
   searchTerm: "",
   selectedClientId: ""
 };
+const repurchaseNotesOpenState = new Set();
 let saleProductIndex = new Map();
 const SALES_DASHBOARD_DEBUG = false;
 const COMPANY_INFO = {
@@ -179,6 +180,18 @@ const COMPANY_INFO = {
 };
 const COMPANY_LOGO_SRC = "IMG_8867.PNG";
 let companyLogoDataUrlPromise = null;
+const REPURCHASE_CONTACT_RESULT_OPTIONS = [
+  { value: "", label: "Seleccionar" },
+  { value: "vendio", label: "Vendio" },
+  { value: "no_respondio", label: "No respondio" },
+  { value: "dijo_despues", label: "Dijo despues" },
+  { value: "sin_stock", label: "Sin stock" }
+];
+const REPURCHASE_CONTACT_RESULT_VALUES = new Set(
+  REPURCHASE_CONTACT_RESULT_OPTIONS
+    .map((option) => option.value)
+    .filter(Boolean)
+);
 
 const showAuth = () => {
   authSection.style.display = "grid";
@@ -241,6 +254,33 @@ const formatPhoneForWhatsApp = (phone) => {
   const normalized = normalizePhoneForStorage(phone);
   return normalized || null;
 };
+
+const escapeHtml = (value) => String(value ?? "")
+  .replace(/&/g, "&amp;")
+  .replace(/</g, "&lt;")
+  .replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;")
+  .replace(/'/g, "&#39;");
+
+const normalizeRepurchaseContactResult = (value) => {
+  const normalized = normalizeText(value || "");
+  return REPURCHASE_CONTACT_RESULT_VALUES.has(normalized) ? normalized : "";
+};
+
+const getClientFollowupData = (client) => {
+  const followup = client?.followUp && typeof client.followUp === "object"
+    ? client.followUp
+    : {};
+  return {
+    lastContactDate: normalizeDateValue(followup.lastContactDate || client?.lastContactDate || ""),
+    result: normalizeRepurchaseContactResult(followup.result || client?.contactResult || ""),
+    nextActionDate: normalizeDateValue(followup.nextActionDate || client?.nextActionDate || "")
+  };
+};
+
+const buildRepurchaseContactResultOptions = (selectedValue = "") => REPURCHASE_CONTACT_RESULT_OPTIONS
+  .map((option) => `<option value="${option.value}"${option.value === selectedValue ? " selected" : ""}>${option.label}</option>`)
+  .join("");
 
 const buildWhatsAppLink = (phone, customerName = "") => {
   const formattedPhone = formatPhoneForWhatsApp(phone);
@@ -1655,13 +1695,18 @@ const buildRepurchaseFollowups = () => {
     const linkedClient = sale.clientId
       ? state.clients.find((client) => client.id === sale.clientId)
       : null;
+    const clientFollowup = getClientFollowupData(linkedClient);
     const candidate = {
       clientId: sale.clientId || "",
       clientName,
       phone: linkedClient?.phone || sale.clientPhone || "",
+      notes: String(linkedClient?.notes || "").trim(),
       saleDate,
       frequency,
       nextContactDate,
+      lastContactDate: clientFollowup.lastContactDate,
+      contactResult: clientFollowup.result,
+      nextActionDate: clientFollowup.nextActionDate,
       sortDay: toIsoDayNumber(saleDate) ?? -1,
       sortCreatedAt: getSaleCreatedTimestamp(sale)
     };
@@ -1681,7 +1726,8 @@ const buildRepurchaseFollowups = () => {
 
   return Array.from(byClient.values())
     .map((entry) => {
-      const nextDay = toIsoDayNumber(entry.nextContactDate);
+      const operativeDate = normalizeDateValue(entry.nextActionDate) || entry.nextContactDate;
+      const nextDay = toIsoDayNumber(operativeDate);
       if (nextDay === null) return null;
       const dayDelta = todayDay - nextDay;
       let status = "proximo";
@@ -1698,6 +1744,7 @@ const buildRepurchaseFollowups = () => {
       }
       return {
         ...entry,
+        operativeDate,
         status,
         statusClass,
         statusOrder,
@@ -1717,6 +1764,10 @@ const buildRepurchaseFollowups = () => {
 
 const renderRepurchaseList = () => {
   if (!repurchaseList) return;
+  const validClientIds = new Set(state.clients.map((client) => client.id));
+  Array.from(repurchaseNotesOpenState).forEach((clientId) => {
+    if (!validClientIds.has(clientId)) repurchaseNotesOpenState.delete(clientId);
+  });
   const followups = buildRepurchaseFollowups();
   if (!followups.length) {
     repurchaseList.innerHTML = '<div class="list-item muted">Sin clientes con seguimiento activo.</div>';
@@ -1724,8 +1775,12 @@ const renderRepurchaseList = () => {
   }
   repurchaseList.innerHTML = followups.map((entry) => {
     const whatsappLink = buildWhatsAppLink(entry.phone, entry.clientName);
+    const hasClientRecord = Boolean(entry.clientId);
+    const notesOpen = hasClientRecord && repurchaseNotesOpenState.has(entry.clientId);
+    const notesValue = escapeHtml(entry.notes || "");
+    const resultOptions = buildRepurchaseContactResultOptions(entry.contactResult || "");
     return `
-      <div class="list-item repurchase-item ${entry.statusClass === "overdue" ? "overdue" : ""}">
+      <div class="list-item repurchase-item ${entry.statusClass === "overdue" ? "overdue" : ""}" data-repurchase-client-id="${entry.clientId}">
         <div class="repurchase-item-header">
           <strong>${entry.clientName}</strong>
           <span class="repurchase-status ${entry.statusClass}">${entry.status}</span>
@@ -1734,13 +1789,48 @@ const renderRepurchaseList = () => {
           <div>Telefono: ${entry.phone || "Sin telefono"}</div>
           <div>Ultima compra: ${formatDateForPdf(entry.saleDate)}</div>
           <div>Frecuencia: cada ${entry.frequency} dias</div>
-          <div>Proximo contacto: ${formatDateForPdf(entry.nextContactDate)}</div>
+          <div>Proximo contacto sugerido: ${formatDateForPdf(entry.nextContactDate)}</div>
+        </div>
+        <div class="repurchase-followup-grid ${hasClientRecord ? "" : "disabled"}">
+          <label>
+            Ultimo contacto
+            <input type="date" value="${entry.lastContactDate || ""}" data-repurchase-last-contact ${hasClientRecord ? "" : "disabled"} />
+          </label>
+          <label>
+            Resultado del contacto
+            <select data-repurchase-contact-result ${hasClientRecord ? "" : "disabled"}>
+              ${resultOptions}
+            </select>
+          </label>
+          <label>
+            Proxima accion
+            <input type="date" value="${entry.nextActionDate || entry.nextContactDate || ""}" data-repurchase-next-action ${hasClientRecord ? "" : "disabled"} />
+          </label>
         </div>
         <div class="list-actions">
           ${whatsappLink
     ? `<button class="btn ghost" type="button" data-whatsapp-link="${whatsappLink}">WhatsApp</button>`
     : '<button class="btn ghost" type="button" disabled>WhatsApp</button>'}
+          ${hasClientRecord
+    ? `<button class="btn ghost" type="button" data-toggle-repurchase-notes="${entry.clientId}">Notas</button>`
+    : '<button class="btn ghost" type="button" disabled>Notas</button>'}
+          ${hasClientRecord
+    ? `<button class="btn ghost" type="button" data-save-repurchase-followup="${entry.clientId}">Guardar seguimiento</button>`
+    : ""}
         </div>
+        ${hasClientRecord
+    ? `
+          <div class="repurchase-notes-panel ${notesOpen ? "open" : "hidden"}">
+            <label>
+              Notas del cliente
+              <textarea data-repurchase-notes-input>${notesValue}</textarea>
+            </label>
+            <div class="repurchase-inline-actions">
+              <button class="btn ghost" type="button" data-save-repurchase-notes="${entry.clientId}">Guardar notas</button>
+            </div>
+          </div>
+        `
+    : '<div class="muted">Asocia este seguimiento a un cliente para guardar notas y acciones.</div>'}
       </div>
     `;
   }).join("");
@@ -3080,6 +3170,7 @@ const renderAll = () => {
       ${item.ruc ? `RUC: ${item.ruc}` : ""}
       ${item.phone ? ` | Tel: ${item.phone}` : ""}
       ${item.address ? ` | Dir: ${item.address}` : ""}
+      ${item.notes ? `<div class="muted">Notas: ${item.notes}</div>` : ""}
       <div class="list-actions">
         <button class="btn ghost" type="button" data-edit-client="${item.id}">Editar</button>
         <button class="btn ghost danger" type="button" data-delete-client="${item.id}">Eliminar</button>
@@ -3613,6 +3704,7 @@ clientForm.addEventListener("submit", async (event) => {
     ruc,
     phone,
     address: clientForm.address.value.trim(),
+    notes: String(clientForm.notes?.value || "").trim(),
     userId: user.uid,
     createdAt: serverTimestamp()
   };
@@ -3798,6 +3890,7 @@ quickClientSave?.addEventListener("click", async () => {
     ruc,
     phone,
     address,
+    notes: "",
     userId: user.uid,
     createdAt: serverTimestamp()
   };
@@ -3939,6 +4032,7 @@ const startEditClient = (item) => {
   if (clientForm.rucDv) clientForm.rucDv.value = rucParts.dv;
   clientForm.phone.value = getLocalPhoneInputValue(item.phone);
   clientForm.address.value = item.address || "";
+  if (clientForm.notes) clientForm.notes.value = item.notes || "";
   clientForm.dataset.editId = item.id;
   setSubmitLabel(clientForm, "Actualizar cliente");
 };
@@ -4066,12 +4160,102 @@ saleList.addEventListener("click", async (event) => {
   }
 });
 
-repurchaseList?.addEventListener("click", (event) => {
+const updateClientNotesFromRepurchase = async (clientId, notesValue) => {
+  const safeClientId = String(clientId || "").trim();
+  if (!safeClientId) return false;
+  const client = state.clients.find((item) => item.id === safeClientId);
+  if (!client) return false;
+  await updateDoc(doc(db, "clients", safeClientId), {
+    notes: String(notesValue || "").trim(),
+    updatedAt: serverTimestamp()
+  });
+  return true;
+};
+
+const updateClientFollowupFromRepurchase = async (clientId, fields = {}) => {
+  const safeClientId = String(clientId || "").trim();
+  if (!safeClientId) return false;
+  const client = state.clients.find((item) => item.id === safeClientId);
+  if (!client) return false;
+  const current = getClientFollowupData(client);
+  const nextFollowup = {
+    lastContactDate: normalizeDateValue(fields.lastContactDate ?? current.lastContactDate) || "",
+    result: normalizeRepurchaseContactResult(fields.result ?? current.result),
+    nextActionDate: normalizeDateValue(fields.nextActionDate ?? current.nextActionDate) || ""
+  };
+  await updateDoc(doc(db, "clients", safeClientId), {
+    followUp: nextFollowup,
+    updatedAt: serverTimestamp()
+  });
+  return true;
+};
+
+repurchaseList?.addEventListener("click", async (event) => {
   const whatsappBtn = event.target.closest("[data-whatsapp-link]");
-  if (!whatsappBtn) return;
-  const link = String(whatsappBtn.dataset.whatsappLink || "").trim();
-  if (!link) return;
-  window.open(link, "_blank", "noopener,noreferrer");
+  if (whatsappBtn) {
+    const link = String(whatsappBtn.dataset.whatsappLink || "").trim();
+    if (!link) return;
+    window.open(link, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  const toggleNotesBtn = event.target.closest("[data-toggle-repurchase-notes]");
+  if (toggleNotesBtn) {
+    const clientId = String(toggleNotesBtn.dataset.toggleRepurchaseNotes || "").trim();
+    if (!clientId) return;
+    if (repurchaseNotesOpenState.has(clientId)) {
+      repurchaseNotesOpenState.delete(clientId);
+    } else {
+      repurchaseNotesOpenState.add(clientId);
+    }
+    renderRepurchaseList();
+    requestAnimationFrame(() => {
+      refreshCollapseHeights();
+    });
+    return;
+  }
+
+  const saveNotesBtn = event.target.closest("[data-save-repurchase-notes]");
+  if (saveNotesBtn) {
+    const clientId = String(saveNotesBtn.dataset.saveRepurchaseNotes || "").trim();
+    if (!clientId) return;
+    const card = saveNotesBtn.closest(".repurchase-item");
+    const notesInput = card?.querySelector("[data-repurchase-notes-input]");
+    const notesValue = String(notesInput?.value || "").trim();
+    try {
+      await updateClientNotesFromRepurchase(clientId, notesValue);
+      repurchaseNotesOpenState.add(clientId);
+      renderRepurchaseList();
+      requestAnimationFrame(() => {
+        refreshCollapseHeights();
+      });
+    } catch (error) {
+      console.error("No se pudo guardar notas de recompra:", error);
+    }
+    return;
+  }
+
+  const saveFollowupBtn = event.target.closest("[data-save-repurchase-followup]");
+  if (!saveFollowupBtn) return;
+  const clientId = String(saveFollowupBtn.dataset.saveRepurchaseFollowup || "").trim();
+  if (!clientId) return;
+  const card = saveFollowupBtn.closest(".repurchase-item");
+  const lastContactInput = card?.querySelector("[data-repurchase-last-contact]");
+  const resultInput = card?.querySelector("[data-repurchase-contact-result]");
+  const nextActionInput = card?.querySelector("[data-repurchase-next-action]");
+  try {
+    await updateClientFollowupFromRepurchase(clientId, {
+      lastContactDate: String(lastContactInput?.value || "").trim(),
+      result: String(resultInput?.value || "").trim(),
+      nextActionDate: String(nextActionInput?.value || "").trim()
+    });
+    renderRepurchaseList();
+    requestAnimationFrame(() => {
+      refreshCollapseHeights();
+    });
+  } catch (error) {
+    console.error("No se pudo guardar seguimiento de recompra:", error);
+  }
 });
 
 const selectCommercialHistoryClient = (clientId) => {
