@@ -1297,7 +1297,20 @@ const buildCommercialHistoryDailySeries = (sales) => {
     .sort((a, b) => a[0].localeCompare(b[0]));
 };
 
-const renderCommercialHistoryChart = (sales) => {
+const getCommercialHistoryRangeDayCount = (filters, series) => {
+  if (!series.length) return 0;
+  const fallbackStart = series[0][0];
+  const fallbackEnd = series[series.length - 1][0];
+  const startIso = normalizeDateValue(filters?.dateFrom) || fallbackStart;
+  const endIso = normalizeDateValue(filters?.dateTo) || fallbackEnd;
+  const startDay = toIsoDayNumber(startIso);
+  const endDay = toIsoDayNumber(endIso);
+  if (startDay === null || endDay === null) return series.length;
+  const diff = Math.abs(endDay - startDay) + 1;
+  return Math.max(1, diff);
+};
+
+const renderCommercialHistoryChart = (sales, filters = null) => {
   if (!historySalesChartCanvas || !historySalesChartEmpty) return;
   const ChartLib = window.Chart;
   if (!ChartLib || typeof ChartLib !== "function") {
@@ -1332,17 +1345,55 @@ const renderCommercialHistoryChart = (sales) => {
   });
   const fullLabels = series.map(([iso]) => formatDateForPdf(iso));
   const values = series.map(([, total]) => Math.round(Number(total) || 0));
+  const totalAmount = values.reduce((sum, value) => sum + value, 0);
+  const dayCount = getCommercialHistoryRangeDayCount(filters, series);
+  const averageDaily = dayCount > 0 ? (totalAmount / dayCount) : 0;
+  const averageValues = labels.map(() => averageDaily);
+  const datasets = [
+    {
+      label: "Monto vendido",
+      data: values,
+      borderColor: "#1f2937",
+      backgroundColor: "rgba(31, 41, 55, 0.12)",
+      borderWidth: 2.2,
+      pointRadius: 3,
+      pointHoverRadius: 4,
+      pointBackgroundColor: "#111827",
+      tension: 0.3,
+      fill: true
+    },
+    {
+      label: "Promedio diario",
+      data: averageValues,
+      borderColor: "rgba(100, 116, 139, 0.9)",
+      backgroundColor: "rgba(100, 116, 139, 0.08)",
+      borderWidth: 1.8,
+      borderDash: [6, 6],
+      pointRadius: 0,
+      pointHoverRadius: 0,
+      tension: 0,
+      fill: false
+    }
+  ];
 
   const tooltipTitle = (items) => {
     const point = items?.[0];
     if (!point) return "";
     return fullLabels[point.dataIndex] || point.label || "";
   };
+  const tooltipLabel = (context) => {
+    const value = context.parsed.y || 0;
+    if (context.dataset?.label === "Promedio diario") {
+      return `Promedio diario: Gs ${formatGs(value)}`;
+    }
+    return `Monto vendido: Gs ${formatGs(value)}`;
+  };
 
   if (historySalesChart) {
     historySalesChart.data.labels = labels;
-    historySalesChart.data.datasets[0].data = values;
+    historySalesChart.data.datasets = datasets;
     historySalesChart.options.plugins.tooltip.callbacks.title = tooltipTitle;
+    historySalesChart.options.plugins.tooltip.callbacks.label = tooltipLabel;
     historySalesChart.update();
     return;
   }
@@ -1353,18 +1404,7 @@ const renderCommercialHistoryChart = (sales) => {
     type: "line",
     data: {
       labels,
-      datasets: [{
-        label: "Monto vendido",
-        data: values,
-        borderColor: "#1f2937",
-        backgroundColor: "rgba(31, 41, 55, 0.12)",
-        borderWidth: 2.2,
-        pointRadius: 3,
-        pointHoverRadius: 4,
-        pointBackgroundColor: "#111827",
-        tension: 0.3,
-        fill: true
-      }]
+      datasets
     },
     options: {
       responsive: true,
@@ -1380,7 +1420,7 @@ const renderCommercialHistoryChart = (sales) => {
         tooltip: {
           callbacks: {
             title: tooltipTitle,
-            label: (context) => `Gs ${formatGs(context.parsed.y || 0)}`
+            label: tooltipLabel
           }
         }
       },
@@ -1505,7 +1545,7 @@ const renderCommercialHistory = () => {
   commercialHistoryState.selectedClientId = filters.clientId;
   const baseFilteredSales = getCommercialHistoryFilteredSales(filters);
   const { sales: filteredSales } = applyCommercialHistoryProductMode(baseFilteredSales, filters);
-  renderCommercialHistoryChart(filteredSales);
+  renderCommercialHistoryChart(filteredSales, filters);
   const periodClients = buildCommercialHistoryPeriodClients(filteredSales);
 
   const totalSalesCount = filteredSales.length;
