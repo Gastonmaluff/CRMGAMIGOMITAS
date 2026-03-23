@@ -5088,6 +5088,15 @@ const setCollapseMax = (body) => {
   body.style.setProperty("--collapse-max", `${body.scrollHeight}px`);
 };
 
+const focusFirstSaleProductField = () => {
+  if (!window.matchMedia("(min-width: 769px)").matches) return;
+  const firstProductSelect = saleItems?.querySelector(".sale-item-product");
+  if (!firstProductSelect) return;
+  requestAnimationFrame(() => {
+    firstProductSelect.focus({ preventScroll: false });
+  });
+};
+
 const syncExpandableCardState = (body, isOpen) => {
   const card = body?.closest(".desktop-expandable-card");
   if (!card) return;
@@ -5138,6 +5147,9 @@ document.addEventListener("click", (event) => {
   }
   if (toggle.dataset.collapse === "coverageSection" && body.classList.contains("open")) {
     renderSalesCoverage({ animatePins: true });
+  }
+  if (toggle.dataset.collapse === "salesSection" && body.classList.contains("open")) {
+    focusFirstSaleProductField();
   }
   requestAnimationFrame(() => {
     refreshCollapseHeights();

@@ -1631,6 +1631,33 @@ select:focus {
     grid-column: span 2;
     box-shadow: 0 16px 30px rgba(17, 24, 39, 0.1);
   }
+
+  .desktop-sales-card.is-expanded #saleForm {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 16px;
+    row-gap: 12px;
+  }
+
+  .desktop-sales-card.is-expanded #saleForm > .inline-panel,
+  .desktop-sales-card.is-expanded #saleForm > .sale-items,
+  .desktop-sales-card.is-expanded #saleForm > .sale-observation,
+  .desktop-sales-card.is-expanded #saleForm > .sale-repurchase,
+  .desktop-sales-card.is-expanded #saleForm > button[type="submit"] {
+    grid-column: 1 / -1;
+  }
+
+  .desktop-sales-card.is-expanded #saleForm > .inline-actions {
+    align-self: end;
+  }
+
+  .desktop-sales-card.is-expanded #saleForm > button[type="submit"] {
+    min-width: 220px;
+    justify-self: start;
+  }
+
+  .desktop-sales-card.is-expanded .sale-items-table {
+    min-width: 640px;
+  }
 }
 
 @media (min-width: 769px) {
