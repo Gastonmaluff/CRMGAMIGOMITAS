@@ -1297,6 +1297,11 @@ select:focus {
   min-width: 0;
 }
 
+.commercial-history-filters-row input,
+.commercial-history-filters-row select {
+  width: 100%;
+}
+
 .commercial-history-filters-row-primary {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -1307,6 +1312,14 @@ select:focus {
 
 .commercial-history-filters-row-secondary.mode-hidden {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 768px) {
+  .commercial-history-filters-row-primary,
+  .commercial-history-filters-row-secondary,
+  .commercial-history-filters-row-secondary.mode-hidden {
+    grid-template-columns: 1fr;
+  }
 }
 
 .commercial-history-main {
@@ -1804,18 +1817,9 @@ select:focus {
     grid-template-columns: 1fr;
   }
 
-  .commercial-history-filters-row-primary,
-  .commercial-history-filters-row-secondary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 520px) {
-  .commercial-history-filters-row-primary,
-  .commercial-history-filters-row-secondary {
-    grid-template-columns: 1fr;
-  }
-
   .commercial-history-chart-wrap {
     height: 210px;
   }
