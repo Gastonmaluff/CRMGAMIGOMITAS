@@ -152,7 +152,6 @@ const saleObservationToggle = document.getElementById("saleObservationToggle");
 const saleObservationField = document.getElementById("saleObservationField");
 const saleRepurchaseToggle = document.getElementById("saleRepurchaseToggle");
 const saleRepurchaseField = document.getElementById("saleRepurchaseField");
-const saleRepurchaseCheckbox = document.getElementById("saleRepurchase");
 const saleRepurchaseFrequencyField = document.getElementById("saleRepurchaseFrequencyField");
 const unitGroups = Array.from(document.querySelectorAll(".unit-group[data-target]"));
 
@@ -3713,10 +3712,9 @@ const updateSaleObservationVisibility = (forceOpen = null) => {
 
 const updateSaleRepurchaseFrequencyVisibility = () => {
   if (!saleRepurchaseFrequencyField) return;
-  const isActive = Boolean(saleRepurchaseCheckbox?.checked);
   const isOpen = Boolean(saleRepurchaseField?.classList.contains("open"));
-  saleRepurchaseFrequencyField.classList.toggle("open", isOpen && isActive);
-  if (!isActive && saleForm?.repurchaseFrequency) {
+  saleRepurchaseFrequencyField.classList.toggle("open", isOpen);
+  if (!isOpen && saleForm?.repurchaseFrequency) {
     saleForm.repurchaseFrequency.value = "";
   }
 };
@@ -3731,8 +3729,10 @@ const updateSaleRepurchaseVisibility = (forceOpen = null) => {
       ? "Ocultar seguimiento de recompra"
       : "Agregar seguimiento de recompra";
   }
-  if (!shouldOpen && saleRepurchaseCheckbox) {
-    saleRepurchaseCheckbox.checked = false;
+  if (shouldOpen && saleForm?.repurchaseFrequency) {
+    requestAnimationFrame(() => {
+      saleForm.repurchaseFrequency.focus({ preventScroll: false });
+    });
   }
   updateSaleRepurchaseFrequencyVisibility();
   requestAnimationFrame(() => {
@@ -4253,7 +4253,7 @@ saleForm.addEventListener("submit", async (event) => {
   const summary = itemsPayload[0] || {};
   const isCredit = Boolean(saleCreditCheckbox?.checked);
   const observation = String(saleForm.observation?.value || "").trim();
-  const repurchaseActive = Boolean(saleRepurchaseField?.classList.contains("open") && saleRepurchaseCheckbox?.checked);
+  const repurchaseActive = Boolean(saleRepurchaseField?.classList.contains("open"));
   const repurchaseFrequencyDays = repurchaseActive
     ? Number(saleForm.repurchaseFrequency?.value || 0)
     : null;
@@ -4507,7 +4507,6 @@ const startEditSale = (item) => {
   saleForm.dueDate.value = item.dueDate || "";
   if (saleForm.observation) saleForm.observation.value = item.observation || "";
   const hasRepurchase = item.repurchaseActive === true;
-  if (saleRepurchaseCheckbox) saleRepurchaseCheckbox.checked = hasRepurchase;
   if (saleForm.repurchaseFrequency) {
     const validFrequencies = ["15", "30", "45", "60"];
     const frequencyValue = String(item.repurchaseFrequencyDays || "");
@@ -5017,13 +5016,6 @@ saleObservationToggle?.addEventListener("click", () => {
 
 saleRepurchaseToggle?.addEventListener("click", () => {
   updateSaleRepurchaseVisibility();
-});
-
-saleRepurchaseCheckbox?.addEventListener("change", () => {
-  updateSaleRepurchaseFrequencyVisibility();
-  requestAnimationFrame(() => {
-    refreshCollapseHeights();
-  });
 });
 
 addSaleItemBtn?.addEventListener("click", () => {
