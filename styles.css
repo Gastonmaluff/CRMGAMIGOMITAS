@@ -1174,6 +1174,11 @@ select:focus {
   font-size: 0.86rem;
 }
 
+#repurchaseList.list.scroll {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 .repurchase-followup-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1426,6 +1431,28 @@ select:focus {
   .commercial-history-filters-row-secondary,
   .commercial-history-filters-row-secondary.mode-hidden {
     grid-template-columns: 1fr;
+  }
+
+  .repurchase-item {
+    padding: 14px;
+    gap: 10px;
+  }
+
+  .repurchase-followup-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .repurchase-item .list-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+    overflow-x: hidden;
+  }
+
+  .repurchase-item .list-actions .btn {
+    width: 100%;
+    min-width: 0;
   }
 }
 
@@ -1921,10 +1948,6 @@ select:focus {
   }
 
   .commercial-history-main {
-    grid-template-columns: 1fr;
-  }
-
-  .repurchase-followup-grid {
     grid-template-columns: 1fr;
   }
 
