@@ -133,6 +133,7 @@ const historyPaymentFilter = document.getElementById("historyPaymentFilter");
 const historyProductFilter = document.getElementById("historyProductFilter");
 const historyProductModeField = document.getElementById("historyProductModeField");
 const historyProductMode = document.getElementById("historyProductMode");
+const historyResetFiltersBtn = document.getElementById("historyResetFiltersBtn");
 const historyPeriodClients = document.getElementById("historyPeriodClients");
 const historyCustomerProfile = document.getElementById("historyCustomerProfile");
 const historySalesResults = document.getElementById("historySalesResults");
@@ -1096,6 +1097,58 @@ const getCommercialHistoryFilterValues = () => {
   };
 };
 
+const getCommercialHistoryDefaultDateRange = () => getCurrentMonthRange();
+
+const hasActiveCommercialHistoryFilters = () => {
+  const { startDate, endDate } = getCommercialHistoryDefaultDateRange();
+  const searchValue = String(historyCustomerSearch?.value || commercialHistoryState.searchTerm || "").trim();
+  const dateFrom = normalizeDateValue(historyDateFrom?.value);
+  const dateTo = normalizeDateValue(historyDateTo?.value);
+  const clientId = String(historyClientFilter?.value || "").trim();
+  const productKey = String(historyProductFilter?.value || "").trim();
+  const productMode = String(historyProductMode?.value || "includes").trim();
+  const payment = String(historyPaymentFilter?.value || "").trim();
+  const status = String(historyStatusFilter?.value || "").trim();
+  return Boolean(
+    searchValue
+    || (dateFrom && dateFrom !== startDate)
+    || (dateTo && dateTo !== endDate)
+    || clientId
+    || productKey
+    || (productKey && productMode !== "includes")
+    || payment
+    || status
+  );
+};
+
+const updateCommercialHistoryResetButtonState = () => {
+  if (!historyResetFiltersBtn) return;
+  const hasActiveFilters = hasActiveCommercialHistoryFilters();
+  historyResetFiltersBtn.disabled = !hasActiveFilters;
+  historyResetFiltersBtn.setAttribute("aria-disabled", String(!hasActiveFilters));
+};
+
+const resetCommercialHistoryFilters = () => {
+  if (!historyFilters || !hasActiveCommercialHistoryFilters()) return;
+  const { startDate, endDate } = getCommercialHistoryDefaultDateRange();
+  if (historyCustomerSearch) historyCustomerSearch.value = "";
+  commercialHistoryState.searchTerm = "";
+  commercialHistoryState.selectedClientId = "";
+  if (historyDateFrom) historyDateFrom.value = startDate;
+  if (historyDateTo) historyDateTo.value = endDate;
+  if (historyClientFilter) historyClientFilter.value = "";
+  if (historyProductFilter) historyProductFilter.value = "";
+  if (historyProductMode) historyProductMode.value = "includes";
+  if (historyPaymentFilter) historyPaymentFilter.value = "";
+  if (historyStatusFilter) historyStatusFilter.value = "";
+  updateCommercialHistoryProductModeVisibility();
+  renderCommercialHistory();
+  updateCommercialHistoryResetButtonState();
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+  });
+};
+
 const getCommercialHistoryFilteredSales = (filters) => state.sales
   .filter((sale) => {
     const saleDate = getSaleDateValue(sale);
@@ -1410,6 +1463,7 @@ const renderCommercialHistory = () => {
       `;
     }).join("");
   }
+  updateCommercialHistoryResetButtonState();
 };
 
 const buildRepurchaseFollowups = () => {
@@ -3867,7 +3921,7 @@ const selectCommercialHistoryClient = (clientId) => {
 
 const initializeCommercialHistory = () => {
   if (!historyFilters) return;
-  const { startDate, endDate } = getCurrentMonthRange();
+  const { startDate, endDate } = getCommercialHistoryDefaultDateRange();
   if (historyDateFrom) historyDateFrom.value = startDate;
   if (historyDateTo) historyDateTo.value = endDate;
   updateSelect(historyClientFilter, state.clients, "Todos");
@@ -3876,6 +3930,10 @@ const initializeCommercialHistory = () => {
   updateCommercialHistoryProductModeVisibility();
   renderCommercialHistory();
 };
+
+historyResetFiltersBtn?.addEventListener("click", () => {
+  resetCommercialHistoryFilters();
+});
 
 historyCustomerSearch?.addEventListener("input", () => {
   commercialHistoryState.searchTerm = historyCustomerSearch.value || "";

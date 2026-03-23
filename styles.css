@@ -1232,6 +1232,21 @@ select:focus {
   margin-bottom: 2px;
 }
 
+.history-reset-btn {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.history-reset-btn:disabled,
+.history-reset-btn:disabled:hover {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+
 .commercial-history-search {
   display: grid;
   gap: 8px;
