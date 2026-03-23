@@ -5088,17 +5088,25 @@ const setCollapseMax = (body) => {
   body.style.setProperty("--collapse-max", `${body.scrollHeight}px`);
 };
 
+const syncExpandableCardState = (body, isOpen) => {
+  const card = body?.closest(".desktop-expandable-card");
+  if (!card) return;
+  card.classList.toggle("is-expanded", Boolean(isOpen));
+};
+
 const openSection = (toggle, body) => {
   setCollapseMax(body);
   body.classList.add("open");
   toggle.classList.add("open");
   toggle.setAttribute("aria-expanded", "true");
+  syncExpandableCardState(body, true);
 };
 
 const closeSection = (toggle, body) => {
   body.classList.remove("open");
   toggle.classList.remove("open");
   toggle.setAttribute("aria-expanded", "false");
+  syncExpandableCardState(body, false);
 };
 
 document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
