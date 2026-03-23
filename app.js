@@ -123,6 +123,10 @@ const productList = document.getElementById("productList");
 const clientList = document.getElementById("clientList");
 const saleList = document.getElementById("saleList");
 const repurchaseList = document.getElementById("repurchaseList");
+const salesCoverageSection = document.getElementById("coverageSection");
+const salesCoveragePins = document.getElementById("salesCoveragePins");
+const salesCoverageSummary = document.getElementById("salesCoverageSummary");
+const salesCoverageCities = document.getElementById("salesCoverageCities");
 const historyFilters = document.getElementById("historyFilters");
 const historyCustomerSearch = document.getElementById("historyCustomerSearch");
 const historyCustomerResults = document.getElementById("historyCustomerResults");
@@ -196,6 +200,29 @@ const REPURCHASE_CONTACT_RESULT_VALUES = new Set(
     .map((option) => option.value)
     .filter(Boolean)
 );
+const PARAGUAY_COVERAGE_CITIES = [
+  { key: "asuncion", label: "Asuncion", x: 150, y: 332, aliases: ["asuncion"] },
+  { key: "san-lorenzo", label: "San Lorenzo", x: 169, y: 329, aliases: ["san lorenzo"] },
+  { key: "luque", label: "Luque", x: 181, y: 317, aliases: ["luque"] },
+  { key: "lambare", label: "Lambare", x: 143, y: 344, aliases: ["lambare"] },
+  { key: "capiata", label: "Capiata", x: 187, y: 336, aliases: ["capiata"] },
+  { key: "caacupe", label: "Caacupe", x: 197, y: 292, aliases: ["caacupe"] },
+  { key: "concepcion", label: "Concepcion", x: 206, y: 180, aliases: ["concepcion"] },
+  { key: "san-estanislao", label: "San Estanislao", x: 209, y: 230, aliases: ["san estanislao", "santani"] },
+  { key: "curuguaty", label: "Curuguaty", x: 272, y: 188, aliases: ["curuguaty"] },
+  { key: "pedro-juan-caballero", label: "Pedro Juan Caballero", x: 258, y: 92, aliases: ["pedro juan caballero"] },
+  { key: "salto-del-guaira", label: "Salto del Guaira", x: 289, y: 71, aliases: ["salto del guaira"] },
+  { key: "caaguazu", label: "Caaguazu", x: 238, y: 307, aliases: ["caaguazu"] },
+  { key: "coronel-oviedo", label: "Coronel Oviedo", x: 221, y: 331, aliases: ["coronel oviedo", "oviedo"] },
+  { key: "villarrica", label: "Villarrica", x: 221, y: 374, aliases: ["villarrica"] },
+  { key: "ciudad-del-este", label: "Ciudad del Este", x: 321, y: 336, aliases: ["ciudad del este", "cde"] },
+  { key: "hernandarias", label: "Hernandarias", x: 322, y: 321, aliases: ["hernandarias"] },
+  { key: "presidente-franco", label: "Presidente Franco", x: 315, y: 349, aliases: ["presidente franco"] },
+  { key: "minga-guazu", label: "Minga Guazu", x: 299, y: 337, aliases: ["minga guazu"] },
+  { key: "santa-rita", label: "Santa Rita", x: 287, y: 396, aliases: ["santa rita"] },
+  { key: "encarnacion", label: "Encarnacion", x: 232, y: 501, aliases: ["encarnacion"] },
+  { key: "pilar", label: "Pilar", x: 120, y: 456, aliases: ["pilar"] }
+];
 
 const showAuth = () => {
   authSection.style.display = "grid";
@@ -1173,6 +1200,159 @@ const getSaleCreatedTimestamp = (sale) => Number(
   || sale?.updatedAt?._seconds
   || 0
 );
+
+const normalizeLookupText = (value) => String(value || "")
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .toLowerCase()
+  .replace(/[^a-z0-9\s]/g, " ")
+  .replace(/\s+/g, " ")
+  .trim();
+
+const COVERAGE_CITY_INDEX = PARAGUAY_COVERAGE_CITIES.map((city) => ({
+  ...city,
+  aliasesNormalized: (city.aliases || []).map((alias) => normalizeLookupText(alias)).filter(Boolean)
+}));
+
+const getCoverageCityByAddress = (address) => {
+  const normalizedAddress = normalizeLookupText(address);
+  if (!normalizedAddress) return null;
+  for (const city of COVERAGE_CITY_INDEX) {
+    if (city.aliasesNormalized.some((alias) => normalizedAddress.includes(alias))) {
+      return city;
+    }
+  }
+  return null;
+};
+
+const getSaleClientRecord = (sale) => {
+  if (sale?.clientId) {
+    const byId = state.clients.find((client) => client.id === sale.clientId);
+    if (byId) return byId;
+  }
+  const saleClientName = normalizeText(sale?.clientName || "");
+  if (!saleClientName) return null;
+  return state.clients.find((client) => normalizeText(client.name) === saleClientName) || null;
+};
+
+const getSaleClientUniqueKey = (sale, client) => {
+  if (sale?.clientId) return `id:${sale.clientId}`;
+  if (client?.id) return `id:${client.id}`;
+  const byName = normalizeText(sale?.clientName || client?.name || "");
+  return byName ? `name:${byName}` : "";
+};
+
+const buildSalesCoverageData = () => {
+  const cityMap = new Map();
+  const purchasedClientKeys = new Set();
+
+  state.sales.forEach((sale) => {
+    const client = getSaleClientRecord(sale);
+    const clientKey = getSaleClientUniqueKey(sale, client);
+    if (clientKey) purchasedClientKeys.add(clientKey);
+
+    const city = getCoverageCityByAddress(client?.address || sale?.clientAddress || sale?.address || "");
+    if (!city) return;
+    const saleDate = getSaleDateValue(sale);
+    const saleTimestamp = getSaleCreatedTimestamp(sale);
+    const cityEntry = cityMap.get(city.key) || {
+      ...city,
+      salesCount: 0,
+      clientKeys: new Set(),
+      firstSaleDate: "",
+      firstSaleTs: 0
+    };
+
+    cityEntry.salesCount += 1;
+    if (clientKey) cityEntry.clientKeys.add(clientKey);
+
+    if (saleDate) {
+      if (
+        !cityEntry.firstSaleDate
+        || saleDate < cityEntry.firstSaleDate
+        || (saleDate === cityEntry.firstSaleDate && saleTimestamp < cityEntry.firstSaleTs)
+      ) {
+        cityEntry.firstSaleDate = saleDate;
+        cityEntry.firstSaleTs = saleTimestamp;
+      }
+    }
+
+    cityMap.set(city.key, cityEntry);
+  });
+
+  const cities = Array.from(cityMap.values())
+    .map((entry) => ({
+      ...entry,
+      clientsCount: entry.clientKeys.size
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  const latestCity = cities
+    .filter((city) => city.firstSaleDate)
+    .sort((a, b) => {
+      if (a.firstSaleDate !== b.firstSaleDate) return a.firstSaleDate < b.firstSaleDate ? 1 : -1;
+      return b.firstSaleTs - a.firstSaleTs;
+    })[0] || null;
+
+  return {
+    cities,
+    cityCount: cities.length,
+    customersWithPurchase: purchasedClientKeys.size,
+    latestCity
+  };
+};
+
+const renderSalesCoverage = ({ animatePins = false } = {}) => {
+  if (!salesCoveragePins || !salesCoverageSummary || !salesCoverageCities) return;
+  const coverage = buildSalesCoverageData();
+  const canAnimate = Boolean(animatePins && salesCoverageSection?.classList.contains("open"));
+
+  if (!coverage.cities.length) {
+    salesCoveragePins.innerHTML = "";
+    salesCoverageSummary.innerHTML = `
+      <div class="coverage-stat"><span>Ciudades con venta</span><strong>0</strong></div>
+      <div class="coverage-stat"><span>Clientes con compra</span><strong>${formatInteger(coverage.customersWithPurchase)}</strong></div>
+      <div class="coverage-stat"><span>Ultima ciudad incorporada</span><strong>Sin datos</strong></div>
+    `;
+    salesCoverageCities.innerHTML = '<div class="list-item muted">Aun no hay ciudades con venta registrada.</div>';
+    return;
+  }
+
+  salesCoveragePins.innerHTML = coverage.cities.map((city, index) => `
+    <g class="coverage-pin ${canAnimate ? "animate" : ""}" style="--pin-x:${city.x}px; --pin-y:${city.y}px; --pin-delay:${Math.min(index * 65, 700)}ms;">
+      <title>${city.label}: ${city.salesCount} venta${city.salesCount === 1 ? "" : "s"}</title>
+      <path class="coverage-pin-tail" d="M0 8 L-4 14 L4 14 Z"></path>
+      <circle class="coverage-pin-dot" cx="0" cy="0" r="7"></circle>
+      <circle class="coverage-pin-core" cx="0" cy="0" r="2.4"></circle>
+    </g>
+  `).join("");
+
+  salesCoverageSummary.innerHTML = `
+    <div class="coverage-stat">
+      <span>Ciudades con venta</span>
+      <strong>${formatInteger(coverage.cityCount)}</strong>
+    </div>
+    <div class="coverage-stat">
+      <span>Clientes con compra</span>
+      <strong>${formatInteger(coverage.customersWithPurchase)}</strong>
+    </div>
+    <div class="coverage-stat">
+      <span>Ultima ciudad incorporada</span>
+      <strong>${coverage.latestCity ? coverage.latestCity.label : "Sin datos"}</strong>
+      ${coverage.latestCity?.firstSaleDate ? `<small>${formatDateForPdf(coverage.latestCity.firstSaleDate)}</small>` : ""}
+    </div>
+  `;
+
+  salesCoverageCities.innerHTML = coverage.cities
+    .sort((a, b) => b.salesCount - a.salesCount || a.label.localeCompare(b.label))
+    .map((city) => `
+      <div class="coverage-city-item">
+        <span class="coverage-city-name">${city.label}</span>
+        <strong>${formatInteger(city.salesCount)} venta${city.salesCount === 1 ? "" : "s"}</strong>
+      </div>
+    `)
+    .join("");
+};
 
 const isSalePendingPayment = (sale) => {
   const paidValue = normalizeText(sale?.paid);
@@ -3308,6 +3488,7 @@ const renderAll = () => {
   });
 
   renderRepurchaseList();
+  renderSalesCoverage();
   renderCommercialHistory();
 
   requestAnimationFrame(refreshCollapseHeights);
@@ -4630,7 +4811,7 @@ const closeSection = (toggle, body) => {
 document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
   const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
-  if (["salesGoalSection", "productsSection", "clientsSection", "salesSection", "repurchaseSection"].includes(toggle.dataset.collapse)) {
+  if (["salesGoalSection", "productsSection", "clientsSection", "salesSection", "repurchaseSection", "coverageSection"].includes(toggle.dataset.collapse)) {
     closeSection(toggle, body);
   } else {
     openSection(toggle, body);
@@ -4653,6 +4834,9 @@ document.addEventListener("click", (event) => {
     closeSection(toggle, body);
   } else {
     openSection(toggle, body);
+  }
+  if (toggle.dataset.collapse === "coverageSection" && body.classList.contains("open")) {
+    renderSalesCoverage({ animatePins: true });
   }
   requestAnimationFrame(() => {
     refreshCollapseHeights();

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CRM Gami Gomitas</title>
-  <link rel="stylesheet" href="styles.css?v=20260323-19" />
+  <link rel="stylesheet" href="styles.css?v=20260323-20" />
 </head>
 <body>
   <div class="app">
@@ -586,6 +586,25 @@
                 <div class="list scroll" id="repurchaseList"></div>
               </div>
             </div>
+            <div class="card">
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="map-pinned"></i><span class="section-title-label">Cobertura nacional</span></span> <button class="collapse-toggle" type="button" data-collapse="coverageSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
+              <div class="collapse-body" id="coverageSection">
+                <div class="sales-coverage-layout">
+                  <div class="sales-coverage-map-wrap">
+                    <svg class="sales-coverage-map" viewBox="0 0 420 560" role="img" aria-label="Mapa de Paraguay con ciudades con ventas">
+                      <path class="coverage-country-base" d="M166 18L208 8L254 23L293 57L328 111L350 164L344 214L363 270L340 331L320 401L291 469L235 528L184 551L141 530L98 496L79 449L64 395L54 335L35 281L32 231L49 177L82 124L118 84L146 47Z"></path>
+                      <path class="coverage-country-shade" d="M244 30L291 57L328 111L350 164L344 214L363 270L340 331L320 401L291 469L235 528L184 551L176 497L190 438L212 378L244 324L272 266L279 205L270 141L252 84Z"></path>
+                      <path class="coverage-country-outline" d="M166 18L208 8L254 23L293 57L328 111L350 164L344 214L363 270L340 331L320 401L291 469L235 528L184 551L141 530L98 496L79 449L64 395L54 335L35 281L32 231L49 177L82 124L118 84L146 47Z"></path>
+                      <g id="salesCoveragePins"></g>
+                    </svg>
+                  </div>
+                  <div class="sales-coverage-side">
+                    <div class="sales-coverage-summary" id="salesCoverageSummary"></div>
+                    <div class="sales-coverage-cities list" id="salesCoverageCities"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
         <section class="tab-panel" id="commercial-history">
@@ -689,7 +708,7 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260323-25"></script>
+  <script type="module" src="app.js?v=20260323-26"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();
