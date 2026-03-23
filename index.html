@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CRM Gami Gomitas</title>
-  <link rel="stylesheet" href="styles.css?v=20260323-20" />
+  <link rel="stylesheet" href="styles.css?v=20260323-21" />
 </head>
 <body>
   <div class="app">
@@ -214,7 +214,12 @@
             <div class="card">
               <h2 class="section-title"><span class="section-title-text"><i data-lucide="box"></i><span class="section-title-label">Stock Actual</span></span> <button class="collapse-toggle" type="button" data-collapse="finishedStockSection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="finishedStockSection">
+                <div class="stock-adjustment-warning">
+                  Este ajuste modifica solo el stock terminado y no afecta materia prima ni produccion.
+                </div>
                 <div class="list" id="finishedStockList"></div>
+                <div class="section-subtitle">Historial de ajustes manuales</div>
+                <div class="list scroll" id="finishedStockAdjustmentHistory"></div>
               </div>
             </div>
 
@@ -708,7 +713,7 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260323-26"></script>
+  <script type="module" src="app.js?v=20260323-27"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

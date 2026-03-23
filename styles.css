@@ -1155,6 +1155,42 @@ select:focus {
   margin-bottom: 4px;
 }
 
+.stock-adjustment-warning {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.84rem;
+  margin-bottom: 10px;
+}
+
+.stock-adjustment-panel {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 10px;
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.stock-adjustment-info {
+  display: grid;
+  gap: 2px;
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.stock-adjustment-diff {
+  font-size: 0.84rem;
+  color: #334155;
+}
+
+.stock-adjustment-history-item {
+  gap: 4px;
+}
+
 .repurchase-item {
   display: grid;
   gap: 8px;

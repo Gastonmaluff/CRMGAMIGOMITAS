@@ -145,6 +145,7 @@ const historySalesResults = document.getElementById("historySalesResults");
 const historySalesChartCanvas = document.getElementById("historySalesChart");
 const historySalesChartEmpty = document.getElementById("historySalesChartEmpty");
 const finishedStockList = document.getElementById("finishedStockList");
+const finishedStockAdjustmentHistory = document.getElementById("finishedStockAdjustmentHistory");
 
 const dueDateField = document.getElementById("dueDateField");
 const saleObservationToggle = document.getElementById("saleObservationToggle");
@@ -163,7 +164,8 @@ const state = {
   products: [],
   clients: [],
   sales: [],
-  salesGoals: []
+  salesGoals: [],
+  finishedStockAdjustments: []
 };
 
 let unsubscribers = [];
@@ -177,6 +179,11 @@ const commercialHistoryState = {
 const repurchaseNotesOpenState = new Set();
 const repurchaseHistoryOpenState = new Set();
 const clientHistoryOpenState = new Set();
+const stockAdjustmentState = {
+  openKey: "",
+  newStock: "",
+  reason: ""
+};
 let saleProductIndex = new Map();
 const SALES_DASHBOARD_DEBUG = false;
 const COMPANY_INFO = {
@@ -1200,6 +1207,35 @@ const getSaleCreatedTimestamp = (sale) => Number(
   || sale?.updatedAt?._seconds
   || 0
 );
+
+const getProductKey = ({ productId = "", name = "" } = {}) => {
+  const safeId = String(productId || "").trim();
+  if (safeId) return safeId;
+  return normalizeText(name || "");
+};
+
+const getAdjustmentProductKey = (adjustment) => getProductKey({
+  productId: adjustment?.productId || "",
+  name: adjustment?.productName || adjustment?.productKey || ""
+});
+
+const getAdjustmentTimestamp = (adjustment) => {
+  const direct = Number(adjustment?.createdAtMs || 0);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const createdAt = adjustment?.createdAt;
+  if (typeof createdAt?.toDate === "function") return createdAt.toDate().getTime();
+  if (Number.isFinite(createdAt?.seconds)) return Number(createdAt.seconds) * 1000;
+  if (Number.isFinite(createdAt?._seconds)) return Number(createdAt._seconds) * 1000;
+  const parsedDate = normalizeDateValue(adjustment?.date);
+  const parsedTime = parsedDate ? new Date(parsedDate).getTime() : 0;
+  return Number.isFinite(parsedTime) ? parsedTime : 0;
+};
+
+const formatSignedInteger = (value) => {
+  const num = Math.round(Number(value) || 0);
+  if (num > 0) return `+${formatInteger(num)}`;
+  return formatInteger(num);
+};
 
 const normalizeLookupText = (value) => String(value || "")
   .normalize("NFD")
@@ -2302,10 +2338,26 @@ const buildFinishedStockRows = () => {
     return map[key];
   };
 
+  state.products.forEach((product) => {
+    const key = getProductKey({ productId: product.id, name: product.name });
+    if (!key) return;
+    ensureEntry(key, product.name || "Producto", product.id || "");
+  });
+
+  state.finishedStockAdjustments.forEach((adjustment) => {
+    const key = getAdjustmentProductKey(adjustment);
+    if (!key) return;
+    ensureEntry(
+      key,
+      String(adjustment.productName || "Producto ajustado"),
+      String(adjustment.productId || "")
+    );
+  });
+
   state.batches.forEach((batch) => {
     const productId = batch.productId || "";
     const name = batch.productName || batch.recipeName || "Producto";
-    const key = productId || normalizeText(name);
+    const key = getProductKey({ productId, name });
     const entry = ensureEntry(key, name, productId);
     const product = state.products.find((item) => item.id === productId);
     const recipe = product ? findRecipeForProduct(product) : null;
@@ -2321,7 +2373,7 @@ const buildFinishedStockRows = () => {
     getSaleLineItems(sale).forEach((line) => {
       const productId = line.productId || sale.productId || "";
       const name = line.productName || sale.productName || "Producto";
-      const key = productId || normalizeText(name);
+      const key = getProductKey({ productId, name });
       const entry = ensureEntry(key, name, productId);
       const displays = computeDisplaysForSaleLine(line);
       if (displays === null) {
@@ -2467,7 +2519,7 @@ const refreshSaleProductOptions = () => {
   const options = [{ value: "", label: "Seleccionar", displays: null }];
   rows.forEach((row) => {
     if (!row.name) return;
-    const displays = row.canCompute ? row.produced - row.sold : null;
+    const displays = row.stockDisplays;
     const optionValue = row.productId ? row.productId : buildSaleOptionKey({ name: row.name });
     const label = displays !== null
       ? `${row.name} (${formatInteger(displays)} disponibles)`
@@ -2505,14 +2557,36 @@ const refreshSaleProductOptions = () => {
 };
 
 const computeFinishedStockTotals = () => {
-  const rows = buildFinishedStockRows();
+  const baseRows = buildFinishedStockRows();
+  const adjustmentDeltaByKey = new Map();
+  state.finishedStockAdjustments.forEach((adjustment) => {
+    const key = getAdjustmentProductKey(adjustment);
+    if (!key) return;
+    const delta = Number(adjustment?.difference || 0);
+    if (!Number.isFinite(delta) || delta === 0) return;
+    adjustmentDeltaByKey.set(key, (adjustmentDeltaByKey.get(key) || 0) + delta);
+  });
+  const rows = baseRows.map((row) => {
+    const baseDisplays = row.canCompute ? (row.produced - row.sold) : null;
+    const adjustmentDelta = adjustmentDeltaByKey.get(row.key) || 0;
+    const stockDisplays = baseDisplays !== null
+      ? baseDisplays + adjustmentDelta
+      : (adjustmentDelta !== 0 ? adjustmentDelta : null);
+    return {
+      ...row,
+      adjustmentDelta,
+      baseDisplays,
+      stockDisplays,
+      canCompute: stockDisplays !== null
+    };
+  });
   let total = 0;
   let hasData = false;
   const breakdown = [];
   rows.forEach((row) => {
-    if (!row.canCompute) return;
+    if (row.stockDisplays === null) return;
     hasData = true;
-    const displays = row.produced - row.sold;
+    const displays = row.stockDisplays;
     total += displays;
     breakdown.push({
       name: row.name,
@@ -2522,24 +2596,88 @@ const computeFinishedStockTotals = () => {
   return { totalDisplays: hasData ? total : null, rows, breakdown };
 };
 
+const renderFinishedStockAdjustmentHistory = () => {
+  if (!finishedStockAdjustmentHistory) return;
+  const history = [...state.finishedStockAdjustments]
+    .sort((a, b) => getAdjustmentTimestamp(b) - getAdjustmentTimestamp(a));
+  if (!history.length) {
+    finishedStockAdjustmentHistory.innerHTML = '<div class="list-item muted">Sin ajustes manuales registrados.</div>';
+    return;
+  }
+  finishedStockAdjustmentHistory.innerHTML = history.slice(0, 30).map((entry) => {
+    const dateLabel = formatDate(normalizeDateValue(entry.date) || normalizeDateValue(entry.createdAt) || "");
+    const userLabel = String(entry.userName || entry.userEmail || "").trim() || "Sin usuario";
+    const previous = Number(entry.previousStock || 0);
+    const current = Number(entry.newStock || 0);
+    const difference = Number(entry.difference || 0);
+    return `
+      <div class="list-item stock-adjustment-history-item">
+        <strong>${entry.productName || "Producto"}</strong>
+        <div>Fecha: ${dateLabel || "Sin fecha"} | Usuario: ${userLabel}</div>
+        <div>Anterior: ${formatNumber(previous)} | Nuevo: ${formatNumber(current)} | Diferencia: ${formatSignedInteger(difference)}</div>
+        <div>Motivo: ${escapeHtml(String(entry.reason || "Sin motivo"))}</div>
+      </div>
+    `;
+  }).join("");
+};
+
 const refreshFinishedStock = () => {
   if (!finishedStockList) return;
   const { rows } = computeFinishedStockTotals();
   if (!rows.length) {
     finishedStockList.innerHTML = '<div class="list-item muted">Sin registros todavia.</div>';
+    renderFinishedStockAdjustmentHistory();
     return;
   }
   finishedStockList.innerHTML = rows.map((row) => {
-    const stockDisplays = row.canCompute ? row.produced - row.sold : null;
+    const stockDisplays = row.stockDisplays;
     const stockKg = stockDisplays !== null ? stockDisplays * 0.36 : null;
+    const isAdjustmentOpen = stockAdjustmentState.openKey === row.key;
+    const effectiveCurrent = Number.isFinite(Number(stockDisplays)) ? Number(stockDisplays) : 0;
+    const newStockValue = isAdjustmentOpen
+      ? stockAdjustmentState.newStock
+      : "";
+    const parsedNewStock = Number(newStockValue);
+    const diffPreview = newStockValue !== "" && Number.isFinite(parsedNewStock)
+      ? parsedNewStock - effectiveCurrent
+      : null;
     return `
       <div class="list-item">
         <strong>${row.name}</strong>
         <div>Displays disponibles: ${stockDisplays !== null ? formatNumber(stockDisplays) : "N/D"}</div>
         <div>Equivalente en kg: ${stockKg !== null ? `${formatNumber(stockKg)} kg` : "N/D"}</div>
+        ${row.adjustmentDelta
+    ? `<div class="muted">Ajuste manual acumulado: ${formatSignedInteger(row.adjustmentDelta)} displays</div>`
+    : ""}
+        <div class="list-actions">
+          <button class="btn ghost" type="button" data-open-stock-adjustment="${row.key}">Ajustar stock</button>
+        </div>
+        <div class="stock-adjustment-panel ${isAdjustmentOpen ? "open" : "hidden"}" data-stock-adjustment-panel="${row.key}">
+          <div class="stock-adjustment-info">
+            <div>Producto: <strong>${row.name}</strong></div>
+            <div>Stock actual: <strong>${formatNumber(effectiveCurrent)} displays</strong></div>
+            <div class="muted">Este ajuste modifica solo stock terminado.</div>
+          </div>
+          <label>
+            Nuevo stock real
+            <input type="number" min="0" step="1" value="${isAdjustmentOpen ? escapeHtml(newStockValue) : ""}" data-stock-adjustment-new="${row.key}" />
+          </label>
+          <div class="stock-adjustment-diff">
+            Diferencia: <strong>${diffPreview === null ? "-" : formatSignedInteger(diffPreview)}</strong>
+          </div>
+          <label>
+            Motivo del ajuste
+            <textarea rows="2" maxlength="180" data-stock-adjustment-reason="${row.key}" placeholder="Ej: Stock inicial previo al sistema">${isAdjustmentOpen ? escapeHtml(stockAdjustmentState.reason) : ""}</textarea>
+          </label>
+          <div class="list-actions">
+            <button class="btn primary" type="button" data-save-stock-adjustment="${row.key}">Guardar ajuste</button>
+            <button class="btn ghost" type="button" data-cancel-stock-adjustment>Cancelar</button>
+          </div>
+        </div>
       </div>
     `;
   }).join("");
+  renderFinishedStockAdjustmentHistory();
 };
 
 const getLayoutHeight = (node) => {
@@ -3270,12 +3408,12 @@ const syncState = (key, items) => {
   if (["rawMaterials", "purchases", "batches"].includes(key)) {
     refreshStockSummary();
   }
-  if (["sales", "products", "salesGoals", "rawMaterials", "purchases", "batches"].includes(key)) {
+  if (["sales", "products", "salesGoals", "rawMaterials", "purchases", "batches", "finishedStockAdjustments"].includes(key)) {
     const stockData = computeStockTotals();
     refreshSalesDashboard(stockData);
     refreshDashboard(stockData);
   }
-  if (["batches", "sales", "products", "recipes"].includes(key)) {
+  if (["batches", "sales", "products", "recipes", "finishedStockAdjustments"].includes(key)) {
     refreshFinishedStock();
     refreshSaleProductOptions();
   }
@@ -3420,7 +3558,7 @@ const renderAll = () => {
   } else {
     const { rows } = computeFinishedStockTotals();
     renderList(productList, rows, (item) => {
-      const displays = item.canCompute ? item.produced - item.sold : null;
+      const displays = item.stockDisplays;
       return `
         <div class="list-item">
           <strong>${item.name}</strong>
@@ -4410,6 +4548,126 @@ productList.addEventListener("click", async (event) => {
   }
 });
 
+finishedStockList?.addEventListener("input", (event) => {
+  const newStockInput = event.target.closest("[data-stock-adjustment-new]");
+  if (newStockInput) {
+    const key = String(newStockInput.dataset.stockAdjustmentNew || "").trim();
+    if (!key || stockAdjustmentState.openKey !== key) return;
+    stockAdjustmentState.newStock = newStockInput.value;
+    const panel = newStockInput.closest(".stock-adjustment-panel");
+    const diffStrong = panel?.querySelector(".stock-adjustment-diff strong");
+    if (diffStrong) {
+      const currentRows = computeFinishedStockTotals().rows;
+      const currentRow = currentRows.find((row) => row.key === key);
+      const currentStock = Number.isFinite(Number(currentRow?.stockDisplays))
+        ? Number(currentRow.stockDisplays)
+        : 0;
+      const nextStock = Number(newStockInput.value);
+      diffStrong.textContent = Number.isFinite(nextStock)
+        ? formatSignedInteger(nextStock - currentStock)
+        : "-";
+    }
+    return;
+  }
+  const reasonInput = event.target.closest("[data-stock-adjustment-reason]");
+  if (reasonInput) {
+    const key = String(reasonInput.dataset.stockAdjustmentReason || "").trim();
+    if (!key || stockAdjustmentState.openKey !== key) return;
+    stockAdjustmentState.reason = reasonInput.value;
+  }
+});
+
+finishedStockList?.addEventListener("click", async (event) => {
+  const openBtn = event.target.closest("[data-open-stock-adjustment]");
+  if (openBtn) {
+    const key = String(openBtn.dataset.openStockAdjustment || "").trim();
+    const rows = computeFinishedStockTotals().rows;
+    const row = rows.find((item) => item.key === key);
+    if (!key || !row) return;
+    const currentStock = Number.isFinite(Number(row.stockDisplays))
+      ? Number(row.stockDisplays)
+      : 0;
+    stockAdjustmentState.openKey = key;
+    stockAdjustmentState.newStock = String(Math.max(0, Math.round(currentStock)));
+    stockAdjustmentState.reason = "";
+    refreshFinishedStock();
+    requestAnimationFrame(() => {
+      refreshCollapseHeights();
+    });
+    return;
+  }
+
+  const cancelBtn = event.target.closest("[data-cancel-stock-adjustment]");
+  if (cancelBtn) {
+    stockAdjustmentState.openKey = "";
+    stockAdjustmentState.newStock = "";
+    stockAdjustmentState.reason = "";
+    refreshFinishedStock();
+    requestAnimationFrame(() => {
+      refreshCollapseHeights();
+    });
+    return;
+  }
+
+  const saveBtn = event.target.closest("[data-save-stock-adjustment]");
+  if (!saveBtn) return;
+  const key = String(saveBtn.dataset.saveStockAdjustment || "").trim();
+  if (!key || stockAdjustmentState.openKey !== key) return;
+  const rows = computeFinishedStockTotals().rows;
+  const row = rows.find((item) => item.key === key);
+  if (!row) return;
+
+  const newStockRaw = Number(stockAdjustmentState.newStock);
+  if (!Number.isFinite(newStockRaw) || newStockRaw < 0) {
+    window.alert("Ingresa un nuevo stock valido (0 o mayor).");
+    return;
+  }
+  const reason = String(stockAdjustmentState.reason || "").trim();
+  if (!reason) {
+    window.alert("El motivo del ajuste es obligatorio.");
+    return;
+  }
+  const previousStock = Number.isFinite(Number(row.stockDisplays))
+    ? Number(row.stockDisplays)
+    : 0;
+  const newStock = Math.round(newStockRaw);
+  const difference = newStock - previousStock;
+  if (difference === 0) {
+    window.alert("El nuevo stock es igual al stock actual. No hay ajuste para guardar.");
+    return;
+  }
+  const user = auth.currentUser;
+  const now = new Date();
+  const payload = {
+    date: toDateInputValue(now),
+    productId: row.productId || "",
+    productName: row.name || "Producto",
+    productKey: row.key,
+    previousStock,
+    newStock,
+    difference,
+    reason,
+    userId: user?.uid || "",
+    userEmail: user?.email || "",
+    userName: user?.displayName || "",
+    createdAt: serverTimestamp(),
+    createdAtMs: now.getTime()
+  };
+  try {
+    await addDoc(collection(db, "finished_stock_adjustments"), payload);
+    stockAdjustmentState.openKey = "";
+    stockAdjustmentState.newStock = "";
+    stockAdjustmentState.reason = "";
+    refreshFinishedStock();
+    requestAnimationFrame(() => {
+      refreshCollapseHeights();
+    });
+  } catch (error) {
+    console.error("No se pudo guardar ajuste manual de stock:", error);
+    window.alert("No se pudo guardar el ajuste manual. Intenta nuevamente.");
+  }
+});
+
 clientList.addEventListener("click", async (event) => {
   const toggleHistoryId = event.target.closest("[data-toggle-client-history]")?.dataset.toggleClientHistory;
   if (toggleHistoryId) {
@@ -4877,6 +5135,7 @@ onAuthStateChanged(auth, (user) => {
   listenCollection("clients", "clients", user.uid);
   listenCollection("sales", "sales", user.uid);
   listenCollection("sales_goals", "salesGoals", user.uid);
+  listenCollection("finished_stock_adjustments", "finishedStockAdjustments", user.uid);
 }, (error) => {
   console.error("[auth] observer error", error);
   setAuthFeedback(getAuthMessage(error), "error");
