@@ -1342,19 +1342,21 @@ select:focus {
   height: auto;
 }
 
-.coverage-country-base {
-  fill: #e6edf6;
+.coverage-country-shadow {
+  fill: rgba(15, 23, 42, 0.08);
+  transform: translate(16px, 18px);
 }
 
-.coverage-country-shade {
-  fill: rgba(148, 163, 184, 0.16);
+.coverage-country-base {
+  fill: #eef3f8;
 }
 
 .coverage-country-outline {
   fill: none;
-  stroke: #94a3b8;
-  stroke-width: 2.1;
+  stroke: #8fa0b8;
+  stroke-width: 8;
   stroke-linejoin: round;
+  stroke-linecap: round;
 }
 
 .coverage-pin {
@@ -1365,7 +1367,7 @@ select:focus {
 
 .coverage-pin.animate {
   opacity: 0;
-  transform: translate(var(--pin-x), calc(var(--pin-y) - 18px)) scale(0.86);
+  transform: translate(var(--pin-x), calc(var(--pin-y) - 42px)) scale(0.84);
   animation: coveragePinDrop 430ms cubic-bezier(0.2, 0.92, 0.25, 1.05) forwards;
   animation-delay: var(--pin-delay, 0ms);
 }
@@ -1373,7 +1375,7 @@ select:focus {
 .coverage-pin-dot {
   fill: #0f172a;
   stroke: #fff;
-  stroke-width: 1.1;
+  stroke-width: 2.8;
 }
 
 .coverage-pin-core {
@@ -1387,7 +1389,7 @@ select:focus {
 @keyframes coveragePinDrop {
   0% {
     opacity: 0;
-    transform: translate(var(--pin-x), calc(var(--pin-y) - 20px)) scale(0.86);
+    transform: translate(var(--pin-x), calc(var(--pin-y) - 48px)) scale(0.84);
   }
   72% {
     opacity: 1;

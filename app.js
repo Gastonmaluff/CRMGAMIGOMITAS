@@ -208,28 +208,40 @@ const REPURCHASE_CONTACT_RESULT_VALUES = new Set(
     .filter(Boolean)
 );
 const PARAGUAY_COVERAGE_CITIES = [
-  { key: "asuncion", label: "Asuncion", x: 150, y: 332, aliases: ["asuncion"] },
-  { key: "san-lorenzo", label: "San Lorenzo", x: 169, y: 329, aliases: ["san lorenzo"] },
-  { key: "luque", label: "Luque", x: 181, y: 317, aliases: ["luque"] },
-  { key: "lambare", label: "Lambare", x: 143, y: 344, aliases: ["lambare"] },
-  { key: "capiata", label: "Capiata", x: 187, y: 336, aliases: ["capiata"] },
-  { key: "caacupe", label: "Caacupe", x: 197, y: 292, aliases: ["caacupe"] },
-  { key: "concepcion", label: "Concepcion", x: 206, y: 180, aliases: ["concepcion"] },
-  { key: "san-estanislao", label: "San Estanislao", x: 209, y: 230, aliases: ["san estanislao", "santani"] },
-  { key: "curuguaty", label: "Curuguaty", x: 272, y: 188, aliases: ["curuguaty"] },
-  { key: "pedro-juan-caballero", label: "Pedro Juan Caballero", x: 258, y: 92, aliases: ["pedro juan caballero"] },
-  { key: "salto-del-guaira", label: "Salto del Guaira", x: 289, y: 71, aliases: ["salto del guaira"] },
-  { key: "caaguazu", label: "Caaguazu", x: 238, y: 307, aliases: ["caaguazu"] },
-  { key: "coronel-oviedo", label: "Coronel Oviedo", x: 221, y: 331, aliases: ["coronel oviedo", "oviedo"] },
-  { key: "villarrica", label: "Villarrica", x: 221, y: 374, aliases: ["villarrica"] },
-  { key: "ciudad-del-este", label: "Ciudad del Este", x: 321, y: 336, aliases: ["ciudad del este", "cde"] },
-  { key: "hernandarias", label: "Hernandarias", x: 322, y: 321, aliases: ["hernandarias"] },
-  { key: "presidente-franco", label: "Presidente Franco", x: 315, y: 349, aliases: ["presidente franco"] },
-  { key: "minga-guazu", label: "Minga Guazu", x: 299, y: 337, aliases: ["minga guazu"] },
-  { key: "santa-rita", label: "Santa Rita", x: 287, y: 396, aliases: ["santa rita"] },
-  { key: "encarnacion", label: "Encarnacion", x: 232, y: 501, aliases: ["encarnacion"] },
-  { key: "pilar", label: "Pilar", x: 120, y: 456, aliases: ["pilar"] }
+  { key: "asuncion", label: "Asuncion", lat: -25.2637, lng: -57.5759, aliases: ["asuncion"] },
+  { key: "san-lorenzo", label: "San Lorenzo", lat: -25.3397, lng: -57.5088, aliases: ["san lorenzo"] },
+  { key: "luque", label: "Luque", lat: -25.2666, lng: -57.4916, aliases: ["luque"] },
+  { key: "lambare", label: "Lambare", lat: -25.3465, lng: -57.6065, aliases: ["lambare"] },
+  { key: "capiata", label: "Capiata", lat: -25.3552, lng: -57.4454, aliases: ["capiata"] },
+  { key: "caacupe", label: "Caacupe", lat: -25.3857, lng: -57.1422, aliases: ["caacupe"] },
+  { key: "concepcion", label: "Concepcion", lat: -23.4064, lng: -57.4344, aliases: ["concepcion"] },
+  { key: "san-estanislao", label: "San Estanislao", lat: -24.6638, lng: -56.4438, aliases: ["san estanislao", "santani"] },
+  { key: "curuguaty", label: "Curuguaty", lat: -24.4729, lng: -55.692, aliases: ["curuguaty"] },
+  { key: "pedro-juan-caballero", label: "Pedro Juan Caballero", lat: -22.547, lng: -55.7336, aliases: ["pedro juan caballero"] },
+  { key: "salto-del-guaira", label: "Salto del Guaira", lat: -24.0619, lng: -54.3097, aliases: ["salto del guaira"] },
+  { key: "caaguazu", label: "Caaguazu", lat: -25.4554, lng: -56.0169, aliases: ["caaguazu"] },
+  { key: "coronel-oviedo", label: "Coronel Oviedo", lat: -25.4444, lng: -56.4401, aliases: ["coronel oviedo", "oviedo"] },
+  { key: "villarrica", label: "Villarrica", lat: -25.7495, lng: -56.4352, aliases: ["villarrica"] },
+  { key: "ciudad-del-este", label: "Ciudad del Este", lat: -25.5097, lng: -54.6111, aliases: ["ciudad del este", "cde"] },
+  { key: "hernandarias", label: "Hernandarias", lat: -25.4079, lng: -54.6421, aliases: ["hernandarias"] },
+  { key: "presidente-franco", label: "Presidente Franco", lat: -25.5638, lng: -54.6108, aliases: ["presidente franco"] },
+  { key: "minga-guazu", label: "Minga Guazu", lat: -25.4996, lng: -54.7594, aliases: ["minga guazu"] },
+  { key: "santa-rita", label: "Santa Rita", lat: -25.7974, lng: -55.0888, aliases: ["santa rita"] },
+  { key: "encarnacion", label: "Encarnacion", lat: -27.3306, lng: -55.8667, aliases: ["encarnacion"] },
+  { key: "pilar", label: "Pilar", lat: -26.8682, lng: -58.2935, aliases: ["pilar"] }
 ];
+const COVERAGE_MAP_VIEWBOX = {
+  width: 1261.43,
+  height: 1387.544,
+  minLat: -27.75,
+  maxLat: -19.15,
+  minLng: -62.85,
+  maxLng: -54.0,
+  paddingLeft: 76,
+  paddingRight: 82,
+  paddingTop: 58,
+  paddingBottom: 52
+};
 
 const showAuth = () => {
   authSection.style.display = "grid";
@@ -1250,6 +1262,26 @@ const COVERAGE_CITY_INDEX = PARAGUAY_COVERAGE_CITIES.map((city) => ({
   aliasesNormalized: (city.aliases || []).map((alias) => normalizeLookupText(alias)).filter(Boolean)
 }));
 
+const projectCoverageCityPoint = (city) => {
+  const lat = Number(city?.lat);
+  const lng = Number(city?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return { x: COVERAGE_MAP_VIEWBOX.width / 2, y: COVERAGE_MAP_VIEWBOX.height / 2 };
+  }
+
+  const usableWidth = COVERAGE_MAP_VIEWBOX.width - COVERAGE_MAP_VIEWBOX.paddingLeft - COVERAGE_MAP_VIEWBOX.paddingRight;
+  const usableHeight = COVERAGE_MAP_VIEWBOX.height - COVERAGE_MAP_VIEWBOX.paddingTop - COVERAGE_MAP_VIEWBOX.paddingBottom;
+  const lngRatio = (lng - COVERAGE_MAP_VIEWBOX.minLng) / (COVERAGE_MAP_VIEWBOX.maxLng - COVERAGE_MAP_VIEWBOX.minLng);
+  const latRatio = (COVERAGE_MAP_VIEWBOX.maxLat - lat) / (COVERAGE_MAP_VIEWBOX.maxLat - COVERAGE_MAP_VIEWBOX.minLat);
+  const clampedLngRatio = Math.min(Math.max(lngRatio, 0), 1);
+  const clampedLatRatio = Math.min(Math.max(latRatio, 0), 1);
+
+  return {
+    x: COVERAGE_MAP_VIEWBOX.paddingLeft + usableWidth * clampedLngRatio,
+    y: COVERAGE_MAP_VIEWBOX.paddingTop + usableHeight * clampedLatRatio
+  };
+};
+
 const getCoverageCityByAddress = (address) => {
   const normalizedAddress = normalizeLookupText(address);
   if (!normalizedAddress) return null;
@@ -1354,14 +1386,17 @@ const renderSalesCoverage = ({ animatePins = false } = {}) => {
     return;
   }
 
-  salesCoveragePins.innerHTML = coverage.cities.map((city, index) => `
-    <g class="coverage-pin ${canAnimate ? "animate" : ""}" style="--pin-x:${city.x}px; --pin-y:${city.y}px; --pin-delay:${Math.min(index * 65, 700)}ms;">
+  salesCoveragePins.innerHTML = coverage.cities.map((city, index) => {
+    const point = projectCoverageCityPoint(city);
+    return `
+    <g class="coverage-pin ${canAnimate ? "animate" : ""}" style="--pin-x:${point.x}px; --pin-y:${point.y}px; --pin-delay:${Math.min(index * 65, 700)}ms;">
       <title>${city.label}: ${city.salesCount} venta${city.salesCount === 1 ? "" : "s"}</title>
-      <path class="coverage-pin-tail" d="M0 8 L-4 14 L4 14 Z"></path>
-      <circle class="coverage-pin-dot" cx="0" cy="0" r="7"></circle>
-      <circle class="coverage-pin-core" cx="0" cy="0" r="2.4"></circle>
+      <path class="coverage-pin-tail" d="M0 20 L-11 38 L11 38 Z"></path>
+      <circle class="coverage-pin-dot" cx="0" cy="0" r="16"></circle>
+      <circle class="coverage-pin-core" cx="0" cy="0" r="5.6"></circle>
     </g>
-  `).join("");
+  `;
+  }).join("");
 
   salesCoverageSummary.innerHTML = `
     <div class="coverage-stat">
