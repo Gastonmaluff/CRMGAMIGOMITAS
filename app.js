@@ -17,7 +17,8 @@ import {
   onSnapshot,
   query,
   where,
-  serverTimestamp
+  serverTimestamp,
+  arrayUnion
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -170,6 +171,8 @@ const commercialHistoryState = {
   selectedClientId: ""
 };
 const repurchaseNotesOpenState = new Set();
+const repurchaseHistoryOpenState = new Set();
+const clientHistoryOpenState = new Set();
 let saleProductIndex = new Map();
 const SALES_DASHBOARD_DEBUG = false;
 const COMPANY_INFO = {
@@ -185,7 +188,8 @@ const REPURCHASE_CONTACT_RESULT_OPTIONS = [
   { value: "vendio", label: "Vendio" },
   { value: "no_respondio", label: "No respondio" },
   { value: "dijo_despues", label: "Dijo despues" },
-  { value: "sin_stock", label: "Sin stock" }
+  { value: "sin_stock", label: "Sin stock" },
+  { value: "tiene_todavia", label: "Tiene todavia" }
 ];
 const REPURCHASE_CONTACT_RESULT_VALUES = new Set(
   REPURCHASE_CONTACT_RESULT_OPTIONS
@@ -274,13 +278,70 @@ const getClientFollowupData = (client) => {
   return {
     lastContactDate: normalizeDateValue(followup.lastContactDate || client?.lastContactDate || ""),
     result: normalizeRepurchaseContactResult(followup.result || client?.contactResult || ""),
-    nextActionDate: normalizeDateValue(followup.nextActionDate || client?.nextActionDate || "")
+    nextActionDate: normalizeDateValue(followup.nextActionDate || client?.nextActionDate || ""),
+    observation: String(followup.observation || client?.followupObservation || "").trim()
   };
 };
 
 const buildRepurchaseContactResultOptions = (selectedValue = "") => REPURCHASE_CONTACT_RESULT_OPTIONS
   .map((option) => `<option value="${option.value}"${option.value === selectedValue ? " selected" : ""}>${option.label}</option>`)
   .join("");
+
+const getRepurchaseContactResultLabel = (value) => {
+  const normalized = normalizeRepurchaseContactResult(value);
+  const match = REPURCHASE_CONTACT_RESULT_OPTIONS.find((option) => option.value === normalized);
+  return match?.label || "Sin resultado";
+};
+
+const parseHistoryCreatedAt = (value) => {
+  if (value && typeof value === "object") {
+    if (Number.isFinite(value.seconds)) return Number(value.seconds) * 1000;
+    if (typeof value.toDate === "function") return value.toDate().getTime();
+  }
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+};
+
+const getClientFollowupHistory = (client) => {
+  const history = Array.isArray(client?.followUpHistory) ? client.followUpHistory : [];
+  return history
+    .map((entry) => ({
+      date: normalizeDateValue(entry?.date || entry?.followupDate || entry?.lastContactDate || ""),
+      result: normalizeRepurchaseContactResult(entry?.result || entry?.contactResult || ""),
+      observation: String(entry?.observation || entry?.note || entry?.notes || "").trim(),
+      nextActionDate: normalizeDateValue(entry?.nextActionDate || entry?.nextDate || ""),
+      userName: String(entry?.userName || entry?.user || "").trim(),
+      userEmail: String(entry?.userEmail || entry?.email || "").trim(),
+      createdAtMs: parseHistoryCreatedAt(entry?.createdAtMs || entry?.createdAt || 0)
+    }))
+    .filter((entry) => entry.date || entry.result || entry.observation || entry.nextActionDate)
+    .sort((a, b) => {
+      const aDay = toIsoDayNumber(a.date) ?? -1;
+      const bDay = toIsoDayNumber(b.date) ?? -1;
+      if (aDay !== bDay) return bDay - aDay;
+      return Number(b.createdAtMs || 0) - Number(a.createdAtMs || 0);
+    });
+};
+
+const buildClientFollowupHistoryMarkup = (client, emptyText = "Sin historial de seguimiento.") => {
+  const entries = getClientFollowupHistory(client);
+  if (!entries.length) {
+    return `<div class="list-item muted">${emptyText}</div>`;
+  }
+  return entries.map((entry) => `
+    <div class="followup-history-item">
+      <div class="followup-history-main">
+        <strong>${formatDateForPdf(entry.date)}</strong>
+        <span>${getRepurchaseContactResultLabel(entry.result)}</span>
+      </div>
+      ${entry.observation ? `<div class="followup-history-note">${escapeHtml(entry.observation)}</div>` : ""}
+      <div class="followup-history-meta">
+        ${entry.nextActionDate ? `<span>Proxima accion: ${formatDateForPdf(entry.nextActionDate)}</span>` : ""}
+        ${entry.userName || entry.userEmail ? `<span>Usuario: ${escapeHtml(entry.userName || entry.userEmail)}</span>` : ""}
+      </div>
+    </div>
+  `).join("");
+};
 
 const buildWhatsAppLink = (phone, customerName = "") => {
   const formattedPhone = formatPhoneForWhatsApp(phone);
@@ -1696,6 +1757,7 @@ const buildRepurchaseFollowups = () => {
       ? state.clients.find((client) => client.id === sale.clientId)
       : null;
     const clientFollowup = getClientFollowupData(linkedClient);
+    const clientHistory = getClientFollowupHistory(linkedClient);
     const candidate = {
       clientId: sale.clientId || "",
       clientName,
@@ -1707,6 +1769,8 @@ const buildRepurchaseFollowups = () => {
       lastContactDate: clientFollowup.lastContactDate,
       contactResult: clientFollowup.result,
       nextActionDate: clientFollowup.nextActionDate,
+      followupObservation: clientFollowup.observation,
+      followupHistory: clientHistory,
       sortDay: toIsoDayNumber(saleDate) ?? -1,
       sortCreatedAt: getSaleCreatedTimestamp(sale)
     };
@@ -1768,6 +1832,9 @@ const renderRepurchaseList = () => {
   Array.from(repurchaseNotesOpenState).forEach((clientId) => {
     if (!validClientIds.has(clientId)) repurchaseNotesOpenState.delete(clientId);
   });
+  Array.from(repurchaseHistoryOpenState).forEach((clientId) => {
+    if (!validClientIds.has(clientId)) repurchaseHistoryOpenState.delete(clientId);
+  });
   const followups = buildRepurchaseFollowups();
   if (!followups.length) {
     repurchaseList.innerHTML = '<div class="list-item muted">Sin clientes con seguimiento activo.</div>';
@@ -1777,7 +1844,9 @@ const renderRepurchaseList = () => {
     const whatsappLink = buildWhatsAppLink(entry.phone, entry.clientName);
     const hasClientRecord = Boolean(entry.clientId);
     const notesOpen = hasClientRecord && repurchaseNotesOpenState.has(entry.clientId);
+    const historyOpen = hasClientRecord && repurchaseHistoryOpenState.has(entry.clientId);
     const notesValue = escapeHtml(entry.notes || "");
+    const followupObservation = escapeHtml(entry.followupObservation || "");
     const resultOptions = buildRepurchaseContactResultOptions(entry.contactResult || "");
     return `
       <div class="list-item repurchase-item ${entry.statusClass === "overdue" ? "overdue" : ""}" data-repurchase-client-id="${entry.clientId}">
@@ -1806,6 +1875,10 @@ const renderRepurchaseList = () => {
             Proxima accion
             <input type="date" value="${entry.nextActionDate || entry.nextContactDate || ""}" data-repurchase-next-action ${hasClientRecord ? "" : "disabled"} />
           </label>
+          <label class="repurchase-followup-observation">
+            Observacion del seguimiento
+            <textarea data-repurchase-followup-observation ${hasClientRecord ? "" : "disabled"}>${followupObservation}</textarea>
+          </label>
         </div>
         <div class="list-actions">
           ${whatsappLink
@@ -1817,6 +1890,9 @@ const renderRepurchaseList = () => {
           ${hasClientRecord
     ? `<button class="btn ghost" type="button" data-save-repurchase-followup="${entry.clientId}">Guardar seguimiento</button>`
     : ""}
+          ${hasClientRecord
+    ? `<button class="btn ghost" type="button" data-toggle-repurchase-history="${entry.clientId}">Historial</button>`
+    : '<button class="btn ghost" type="button" disabled>Historial</button>'}
         </div>
         ${hasClientRecord
     ? `
@@ -1831,6 +1907,16 @@ const renderRepurchaseList = () => {
           </div>
         `
     : '<div class="muted">Asocia este seguimiento a un cliente para guardar notas y acciones.</div>'}
+        ${hasClientRecord
+    ? `
+          <div class="followup-history-panel ${historyOpen ? "open" : "hidden"}">
+            ${buildClientFollowupHistoryMarkup(
+    state.clients.find((client) => client.id === entry.clientId),
+    "Sin historial de seguimiento para este cliente."
+  )}
+          </div>
+        `
+    : ""}
       </div>
     `;
   }).join("");
@@ -3164,19 +3250,31 @@ const renderAll = () => {
     });
   }
 
-  renderList(clientList, state.clients, (item) => `
-    <div class="list-item">
+  const validClientIds = new Set(state.clients.map((client) => client.id));
+  Array.from(clientHistoryOpenState).forEach((clientId) => {
+    if (!validClientIds.has(clientId)) clientHistoryOpenState.delete(clientId);
+  });
+
+  renderList(clientList, state.clients, (item) => {
+    const historyOpen = clientHistoryOpenState.has(item.id);
+    return `
+    <div class="list-item client-item">
       <strong>${item.name}</strong>
       ${item.ruc ? `RUC: ${item.ruc}` : ""}
       ${item.phone ? ` | Tel: ${item.phone}` : ""}
       ${item.address ? ` | Dir: ${item.address}` : ""}
       ${item.notes ? `<div class="muted">Notas: ${item.notes}</div>` : ""}
       <div class="list-actions">
+        <button class="btn ghost" type="button" data-toggle-client-history="${item.id}">Historial</button>
         <button class="btn ghost" type="button" data-edit-client="${item.id}">Editar</button>
         <button class="btn ghost danger" type="button" data-delete-client="${item.id}">Eliminar</button>
       </div>
+      <div class="followup-history-panel ${historyOpen ? "open" : "hidden"}">
+        ${buildClientFollowupHistoryMarkup(item, "Sin historial comercial de seguimiento.")}
+      </div>
     </div>
-  `);
+  `;
+  });
 
   renderList(saleList, state.sales, (item) => {
     const lines = getSaleLineItems(item);
@@ -4132,6 +4230,18 @@ productList.addEventListener("click", async (event) => {
 });
 
 clientList.addEventListener("click", async (event) => {
+  const toggleHistoryId = event.target.closest("[data-toggle-client-history]")?.dataset.toggleClientHistory;
+  if (toggleHistoryId) {
+    const safeId = String(toggleHistoryId).trim();
+    if (!safeId) return;
+    if (clientHistoryOpenState.has(safeId)) {
+      clientHistoryOpenState.delete(safeId);
+    } else {
+      clientHistoryOpenState.add(safeId);
+    }
+    renderAll();
+    return;
+  }
   const editId = event.target.dataset.editClient;
   const deleteId = event.target.dataset.deleteClient;
   if (editId) {
@@ -4178,13 +4288,31 @@ const updateClientFollowupFromRepurchase = async (clientId, fields = {}) => {
   const client = state.clients.find((item) => item.id === safeClientId);
   if (!client) return false;
   const current = getClientFollowupData(client);
+  const user = auth.currentUser;
+  const resolvedLastContactDate = normalizeDateValue(fields.lastContactDate ?? current.lastContactDate)
+    || toDateInputValue(new Date())
+    || "";
+  const resolvedResult = normalizeRepurchaseContactResult(fields.result ?? current.result);
+  const resolvedObservation = String((fields.observation ?? current.observation ?? "")).trim();
+  const resolvedNextActionDate = normalizeDateValue(fields.nextActionDate ?? current.nextActionDate) || "";
   const nextFollowup = {
-    lastContactDate: normalizeDateValue(fields.lastContactDate ?? current.lastContactDate) || "",
-    result: normalizeRepurchaseContactResult(fields.result ?? current.result),
-    nextActionDate: normalizeDateValue(fields.nextActionDate ?? current.nextActionDate) || ""
+    lastContactDate: resolvedLastContactDate,
+    result: resolvedResult,
+    nextActionDate: resolvedNextActionDate,
+    observation: resolvedObservation
+  };
+  const historyEntry = {
+    date: resolvedLastContactDate,
+    result: resolvedResult,
+    observation: resolvedObservation,
+    nextActionDate: resolvedNextActionDate,
+    userName: String(user?.displayName || "").trim(),
+    userEmail: String(user?.email || "").trim(),
+    createdAtMs: Date.now()
   };
   await updateDoc(doc(db, "clients", safeClientId), {
     followUp: nextFollowup,
+    followUpHistory: arrayUnion(historyEntry),
     updatedAt: serverTimestamp()
   });
   return true;
@@ -4235,6 +4363,22 @@ repurchaseList?.addEventListener("click", async (event) => {
     return;
   }
 
+  const toggleHistoryBtn = event.target.closest("[data-toggle-repurchase-history]");
+  if (toggleHistoryBtn) {
+    const clientId = String(toggleHistoryBtn.dataset.toggleRepurchaseHistory || "").trim();
+    if (!clientId) return;
+    if (repurchaseHistoryOpenState.has(clientId)) {
+      repurchaseHistoryOpenState.delete(clientId);
+    } else {
+      repurchaseHistoryOpenState.add(clientId);
+    }
+    renderRepurchaseList();
+    requestAnimationFrame(() => {
+      refreshCollapseHeights();
+    });
+    return;
+  }
+
   const saveFollowupBtn = event.target.closest("[data-save-repurchase-followup]");
   if (!saveFollowupBtn) return;
   const clientId = String(saveFollowupBtn.dataset.saveRepurchaseFollowup || "").trim();
@@ -4243,11 +4387,13 @@ repurchaseList?.addEventListener("click", async (event) => {
   const lastContactInput = card?.querySelector("[data-repurchase-last-contact]");
   const resultInput = card?.querySelector("[data-repurchase-contact-result]");
   const nextActionInput = card?.querySelector("[data-repurchase-next-action]");
+  const observationInput = card?.querySelector("[data-repurchase-followup-observation]");
   try {
     await updateClientFollowupFromRepurchase(clientId, {
       lastContactDate: String(lastContactInput?.value || "").trim(),
       result: String(resultInput?.value || "").trim(),
-      nextActionDate: String(nextActionInput?.value || "").trim()
+      nextActionDate: String(nextActionInput?.value || "").trim(),
+      observation: String(observationInput?.value || "").trim()
     });
     renderRepurchaseList();
     requestAnimationFrame(() => {
