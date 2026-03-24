@@ -1617,6 +1617,14 @@ select:focus {
     box-shadow: 0 16px 30px rgba(17, 24, 39, 0.1);
   }
 
+  .desktop-stock-summary-card.is-expanded .summary-card {
+    max-width: none;
+  }
+
+  .desktop-stock-summary-card.is-expanded .materials-row {
+    grid-template-columns: 1.8fr 1fr 1fr 1fr 0.8fr 0.95fr;
+  }
+
   .desktop-sales-card.is-expanded #saleForm {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 16px;
