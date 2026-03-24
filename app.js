@@ -5633,6 +5633,18 @@ const isElementReadyForFocus = (element) => Boolean(
   && element.getClientRects().length > 0
 );
 
+const scrollSalesCardIntoView = () => {
+  const salesBody = document.getElementById("salesSection");
+  const salesCard = salesBody?.closest(".card");
+  const scrollTarget = salesCard || salesBody || document.getElementById("sales");
+  if (!scrollTarget || typeof scrollTarget.scrollIntoView !== "function") return;
+  scrollTarget.scrollIntoView({
+    behavior: "auto",
+    block: "start",
+    inline: "nearest"
+  });
+};
+
 const navigateToSalesShortcut = async () => {
   if (isNavigatingToSales) return;
   isNavigatingToSales = true;
@@ -5667,6 +5679,11 @@ const navigateToSalesShortcut = async () => {
     if (!salesCardReady) return;
     console.log("Ventas card opened");
 
+    scrollSalesCardIntoView();
+    await waitForNextFrame();
+    refreshCollapseHeights();
+    await waitForDelay(60);
+
     const targetReady = await waitForCondition(() => {
       const target = getSalesShortcutTarget();
       return isElementReadyForFocus(target);
@@ -5675,7 +5692,7 @@ const navigateToSalesShortcut = async () => {
     if (targetReady) {
       console.log("Focusing target input");
       const target = getSalesShortcutTarget();
-      target?.focus({ preventScroll: false });
+      target?.focus({ preventScroll: true });
     }
 
     refreshCollapseHeights();
