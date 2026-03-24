@@ -119,6 +119,7 @@ const batchList = document.getElementById("batchList");
 const stockSummaryGeneral = document.getElementById("stockSummaryGeneral");
 const stockMaterialsList = document.getElementById("stockMaterialsList");
 const stockRecipeSelect = document.getElementById("stockRecipeSelect");
+const rawMaterialAdjustmentHistory = document.getElementById("rawMaterialAdjustmentHistory");
 const productList = document.getElementById("productList");
 const clientList = document.getElementById("clientList");
 const saleList = document.getElementById("saleList");
@@ -164,7 +165,8 @@ const state = {
   clients: [],
   sales: [],
   salesGoals: [],
-  finishedStockAdjustments: []
+  finishedStockAdjustments: [],
+  rawMaterialAdjustments: []
 };
 
 let unsubscribers = [];
@@ -179,6 +181,11 @@ const repurchaseNotesOpenState = new Set();
 const repurchaseHistoryOpenState = new Set();
 const clientHistoryOpenState = new Set();
 const stockAdjustmentState = {
+  openKey: "",
+  newStock: "",
+  reason: ""
+};
+const rawMaterialAdjustmentState = {
   openKey: "",
   newStock: "",
   reason: ""
@@ -1093,9 +1100,20 @@ const computeStockTotals = () => {
     });
   });
 
+  const adjustmentDeltaByMaterial = new Map();
+  state.rawMaterialAdjustments.forEach((adjustment) => {
+    const materialId = String(adjustment?.materialId || "").trim();
+    if (!materialId) return;
+    const delta = Number(adjustment?.difference || 0);
+    if (!Number.isFinite(delta) || delta === 0) return;
+    adjustmentDeltaByMaterial.set(materialId, (adjustmentDeltaByMaterial.get(materialId) || 0) + delta);
+  });
+
   const rows = state.rawMaterials.map((material) => {
     const summary = totals[material.id] || { purchased: 0, used: 0 };
-    const available = summary.purchased - summary.used;
+    const baseAvailable = summary.purchased - summary.used;
+    const adjustmentDelta = adjustmentDeltaByMaterial.get(material.id) || 0;
+    const available = baseAvailable + adjustmentDelta;
     return {
       name: material.name,
       unit: material.unit,
@@ -1104,7 +1122,9 @@ const computeStockTotals = () => {
       minStock: material.minStock ?? null,
       purchased: summary.purchased,
       used: summary.used,
-      available
+      available,
+      baseAvailable,
+      adjustmentDelta
     };
   });
 
@@ -2714,6 +2734,43 @@ const refreshFinishedStock = () => {
   renderFinishedStockAdjustmentHistory();
 };
 
+const getRawMaterialAdjustmentTimestamp = (adjustment) => {
+  const direct = Number(adjustment?.createdAtMs || 0);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const createdAt = adjustment?.createdAt;
+  if (typeof createdAt?.toDate === "function") return createdAt.toDate().getTime();
+  if (Number.isFinite(createdAt?.seconds)) return Number(createdAt.seconds) * 1000;
+  if (Number.isFinite(createdAt?._seconds)) return Number(createdAt._seconds) * 1000;
+  const parsedDate = normalizeDateValue(adjustment?.date);
+  const parsedTime = parsedDate ? new Date(parsedDate).getTime() : 0;
+  return Number.isFinite(parsedTime) ? parsedTime : 0;
+};
+
+const renderRawMaterialAdjustmentHistory = () => {
+  if (!rawMaterialAdjustmentHistory) return;
+  const history = [...state.rawMaterialAdjustments]
+    .sort((a, b) => getRawMaterialAdjustmentTimestamp(b) - getRawMaterialAdjustmentTimestamp(a));
+  if (!history.length) {
+    rawMaterialAdjustmentHistory.innerHTML = '<div class="list-item muted">Sin ajustes manuales registrados.</div>';
+    return;
+  }
+  rawMaterialAdjustmentHistory.innerHTML = history.slice(0, 30).map((entry) => {
+    const dateLabel = formatDate(normalizeDateValue(entry.date) || normalizeDateValue(entry.createdAt) || "");
+    const userLabel = String(entry.userName || entry.userEmail || "").trim() || "Sin usuario";
+    const previous = Number(entry.previousStock || 0);
+    const current = Number(entry.newStock || 0);
+    const difference = Number(entry.difference || 0);
+    return `
+      <div class="list-item stock-adjustment-history-item">
+        <strong>${entry.materialName || "Materia prima"}</strong>
+        <div>Fecha: ${dateLabel || "Sin fecha"} | Usuario: ${userLabel}</div>
+        <div>Anterior: ${formatNumber(previous)} ${entry.unit || ""} | Nuevo: ${formatNumber(current)} ${entry.unit || ""} | Diferencia: ${formatSignedInteger(difference)} ${entry.unit || ""}</div>
+        <div>Motivo: ${escapeHtml(String(entry.reason || "Sin motivo"))}</div>
+      </div>
+    `;
+  }).join("");
+};
+
 const getLayoutHeight = (node) => {
   if (!node) return 0;
   const rectHeight = Number(node.getBoundingClientRect?.().height || 0);
@@ -3056,6 +3113,10 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
 
 const refreshStockSummary = () => {
   const { rows, availabilityMap } = computeStockTotals();
+  const stockRowsByMaterialId = rows.reduce((acc, row) => {
+    acc[row.materialId] = row;
+    return acc;
+  }, {});
   const totalValue = rows.reduce((sum, row) => sum + row.available * row.price, 0);
   const selectedRecipeId = stockRecipeSelect?.value;
   const selectedRecipe = state.recipes.find((recipe) => recipe.id === selectedRecipeId);
@@ -3100,9 +3161,11 @@ const refreshStockSummary = () => {
         <div>Requerido/lote</div>
         <div>Lotes posibles</div>
         <div>Estado</div>
+        <div>Accion</div>
       </div>
     `;
     const body = ingredientRows.map((row) => {
+      const stockRow = stockRowsByMaterialId[row.materialId] || null;
       const available = Number(row.available || 0);
       const lotsPossible = row.lotsPossible;
       let statusLabel = "OK";
@@ -3119,19 +3182,55 @@ const refreshStockSummary = () => {
       }
       const isBottleneck = limitingRow && row.materialId === limitingRow.materialId;
       const badge = isBottleneck ? '<span class="badge">Cuello</span>' : "";
+      const isAdjustmentOpen = rawMaterialAdjustmentState.openKey === row.materialId;
+      const effectiveCurrent = Number.isFinite(Number(stockRow?.available)) ? Number(stockRow.available) : 0;
+      const newStockValue = isAdjustmentOpen ? rawMaterialAdjustmentState.newStock : "";
+      const parsedNewStock = Number(newStockValue);
+      const diffPreview = newStockValue !== "" && Number.isFinite(parsedNewStock)
+        ? parsedNewStock - effectiveCurrent
+        : null;
+      const adjustmentInfo = stockRow?.adjustmentDelta
+        ? `<div class="materials-adjustment-note muted">Ajuste manual acumulado: ${formatSignedInteger(stockRow.adjustmentDelta)} ${row.unit}</div>`
+        : "";
       return `
+        <div class="materials-entry">
         <div class="materials-row ${isBottleneck ? "bottleneck" : ""}">
           <div class="materials-cell" data-label="Materia prima"><strong>${row.name}</strong>${badge}</div>
-          <div class="materials-cell" data-label="Disponible">${formatNumber(row.available)} ${row.unit}</div>
+          <div class="materials-cell" data-label="Disponible">${formatNumber(row.available)} ${row.unit}${adjustmentInfo}</div>
           <div class="materials-cell" data-label="Requerido/lote">${formatNumber(row.requiredBase)} ${row.unit}</div>
           <div class="materials-cell" data-label="Lotes posibles">${Number.isFinite(lotsPossible) ? formatNumber(lotsPossible) : "N/D"}</div>
           <div class="materials-cell" data-label="Estado"><span class="status-tag ${statusClass}">${statusLabel}</span></div>
+          <div class="materials-cell" data-label="Accion"><button class="btn ghost" type="button" data-open-raw-material-adjustment="${row.materialId}">Ajustar</button></div>
+        </div>
+        <div class="stock-adjustment-panel materials-adjustment-panel ${isAdjustmentOpen ? "open" : "hidden"}" data-raw-material-adjustment-panel="${row.materialId}">
+          <div class="stock-adjustment-info">
+            <div>Materia prima: <strong>${row.name}</strong></div>
+            <div>Stock actual: <strong>${formatNumber(effectiveCurrent)} ${row.unit}</strong></div>
+            <div class="muted">Este ajuste corrige el stock disponible y no representa una compra real.</div>
+          </div>
+          <label>
+            Nuevo stock real
+            <input type="number" min="0" step="0.01" value="${isAdjustmentOpen ? escapeHtml(newStockValue) : ""}" data-raw-material-adjustment-new="${row.materialId}" />
+          </label>
+          <div class="stock-adjustment-diff">
+            Diferencia: <strong>${diffPreview === null ? "-" : `${formatSignedInteger(diffPreview)} ${row.unit}`}</strong>
+          </div>
+          <label>
+            Motivo del ajuste
+            <textarea rows="2" maxlength="180" data-raw-material-adjustment-reason="${row.materialId}" placeholder="Ej: Correccion de inventario">${isAdjustmentOpen ? escapeHtml(rawMaterialAdjustmentState.reason) : ""}</textarea>
+          </label>
+          <div class="list-actions">
+            <button class="btn primary" type="button" data-save-raw-material-adjustment="${row.materialId}">Guardar ajuste</button>
+            <button class="btn ghost" type="button" data-cancel-raw-material-adjustment>Cancelar</button>
+          </div>
+        </div>
         </div>
       `;
     }).join("");
     stockMaterialsList.innerHTML = header + body;
   }
 
+  renderRawMaterialAdjustmentHistory();
   refreshDashboard({ rows, availabilityMap });
   requestAnimationFrame(refreshCollapseHeights);
 };
@@ -3439,10 +3538,10 @@ const syncState = (key, items) => {
     refreshCommercialHistoryProductOptions();
   }
 
-  if (["rawMaterials", "purchases", "batches"].includes(key)) {
+  if (["rawMaterials", "purchases", "batches", "rawMaterialAdjustments"].includes(key)) {
     refreshStockSummary();
   }
-  if (["sales", "products", "salesGoals", "rawMaterials", "purchases", "batches", "finishedStockAdjustments"].includes(key)) {
+  if (["sales", "products", "salesGoals", "rawMaterials", "purchases", "batches", "finishedStockAdjustments", "rawMaterialAdjustments"].includes(key)) {
     const stockData = computeStockTotals();
     refreshSalesDashboard(stockData);
     refreshDashboard(stockData);
@@ -4974,6 +5073,114 @@ purchaseForm.material.addEventListener("change", () => {
 
 purchaseForm.purchaseUnit.addEventListener("change", updatePurchaseTotal);
 stockRecipeSelect?.addEventListener("change", refreshStockSummary);
+stockMaterialsList?.addEventListener("input", (event) => {
+  const newStockInput = event.target.closest("[data-raw-material-adjustment-new]");
+  if (newStockInput) {
+    rawMaterialAdjustmentState.openKey = String(newStockInput.dataset.rawMaterialAdjustmentNew || "").trim();
+    rawMaterialAdjustmentState.newStock = newStockInput.value;
+    refreshStockSummary();
+    return;
+  }
+  const reasonInput = event.target.closest("[data-raw-material-adjustment-reason]");
+  if (reasonInput) {
+    rawMaterialAdjustmentState.openKey = String(reasonInput.dataset.rawMaterialAdjustmentReason || "").trim();
+    rawMaterialAdjustmentState.reason = reasonInput.value;
+  }
+});
+
+stockMaterialsList?.addEventListener("click", async (event) => {
+  const openBtn = event.target.closest("[data-open-raw-material-adjustment]");
+  if (openBtn) {
+    const materialId = String(openBtn.dataset.openRawMaterialAdjustment || "").trim();
+    if (!materialId) return;
+    if (rawMaterialAdjustmentState.openKey === materialId) {
+      rawMaterialAdjustmentState.openKey = "";
+      rawMaterialAdjustmentState.newStock = "";
+      rawMaterialAdjustmentState.reason = "";
+    } else {
+      const { rows } = computeStockTotals();
+      const row = rows.find((item) => item.materialId === materialId);
+      rawMaterialAdjustmentState.openKey = materialId;
+      rawMaterialAdjustmentState.newStock = row ? String(row.available ?? "") : "";
+      rawMaterialAdjustmentState.reason = "";
+    }
+    refreshStockSummary();
+    requestAnimationFrame(() => {
+      const targetInput = materialId
+        ? stockMaterialsList.querySelector(`[data-raw-material-adjustment-new="${materialId}"]`)
+        : null;
+      targetInput?.focus();
+    });
+    return;
+  }
+
+  const cancelBtn = event.target.closest("[data-cancel-raw-material-adjustment]");
+  if (cancelBtn) {
+    rawMaterialAdjustmentState.openKey = "";
+    rawMaterialAdjustmentState.newStock = "";
+    rawMaterialAdjustmentState.reason = "";
+    refreshStockSummary();
+    return;
+  }
+
+  const saveBtn = event.target.closest("[data-save-raw-material-adjustment]");
+  if (!saveBtn) return;
+  const materialId = String(saveBtn.dataset.saveRawMaterialAdjustment || "").trim();
+  if (!materialId) return;
+  const { rows } = computeStockTotals();
+  const row = rows.find((item) => item.materialId === materialId);
+  if (!row) {
+    window.alert("No se encontro la materia prima a ajustar.");
+    return;
+  }
+  const newStockRaw = Number(rawMaterialAdjustmentState.newStock);
+  const reason = String(rawMaterialAdjustmentState.reason || "").trim();
+  if (!Number.isFinite(newStockRaw) || newStockRaw < 0) {
+    window.alert("Ingresa un nuevo stock valido.");
+    return;
+  }
+  if (!reason) {
+    window.alert("El motivo del ajuste es obligatorio.");
+    return;
+  }
+  const previousStock = Number.isFinite(Number(row.available)) ? Number(row.available) : 0;
+  const newStock = Number(newStockRaw);
+  const difference = newStock - previousStock;
+  if (Math.abs(difference) < 1e-9) {
+    window.alert("El nuevo stock es igual al stock actual. No hay ajuste para guardar.");
+    return;
+  }
+  const user = auth.currentUser;
+  const now = new Date();
+  const payload = {
+    date: toDateInputValue(now),
+    materialId: row.materialId,
+    materialName: row.name || "Materia prima",
+    unit: row.unit || "",
+    previousStock,
+    newStock,
+    difference,
+    reason,
+    userId: user?.uid || "",
+    userEmail: user?.email || "",
+    userName: user?.displayName || "",
+    createdAt: serverTimestamp(),
+    createdAtMs: now.getTime()
+  };
+  try {
+    await addDoc(collection(db, "raw_material_adjustments"), payload);
+    rawMaterialAdjustmentState.openKey = "";
+    rawMaterialAdjustmentState.newStock = "";
+    rawMaterialAdjustmentState.reason = "";
+    refreshStockSummary();
+    requestAnimationFrame(() => {
+      refreshCollapseHeights();
+    });
+  } catch (error) {
+    console.error("No se pudo guardar ajuste manual de materia prima:", error);
+    window.alert("No se pudo guardar el ajuste manual. Intenta nuevamente.");
+  }
+});
 
 recipeForm.material.addEventListener("change", updateRecipeIngredientFields);
 recipeForm.yieldQuantity.addEventListener("input", renderRecipeDraft);
@@ -5183,6 +5390,7 @@ onAuthStateChanged(auth, (user) => {
   listenCollection("sales", "sales", user.uid);
   listenCollection("sales_goals", "salesGoals", user.uid);
   listenCollection("finished_stock_adjustments", "finishedStockAdjustments", user.uid);
+  listenCollection("raw_material_adjustments", "rawMaterialAdjustments", user.uid);
 }, (error) => {
   console.error("[auth] observer error", error);
   setAuthFeedback(getAuthMessage(error), "error");
