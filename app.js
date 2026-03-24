@@ -2482,6 +2482,79 @@ const updateSaleItemStock = (row) => {
   }
 };
 
+const isDesktopSalesKeyboardMode = () => window.matchMedia("(min-width: 769px)").matches;
+
+const focusSaleRowProduct = (row) => {
+  const select = row?.querySelector(".sale-item-product");
+  if (!select) return;
+  requestAnimationFrame(() => {
+    select.focus({ preventScroll: false });
+  });
+};
+
+const focusSaleRowQty = (row) => {
+  const input = row?.querySelector(".sale-item-qty");
+  if (!input) return;
+  requestAnimationFrame(() => {
+    input.focus({ preventScroll: false });
+    input.select?.();
+  });
+};
+
+const ensureTrailingBlankSaleRow = (currentRow = null) => {
+  const rows = Array.from(saleItems?.querySelectorAll(".sale-item") || []);
+  const hasEmptyRow = rows.some((row) => {
+    const product = String(row.querySelector(".sale-item-product")?.value || "").trim();
+    const qty = String(row.querySelector(".sale-item-qty")?.value || "").trim();
+    const price = String(row.querySelector(".sale-item-price")?.value || "").trim();
+    return !product && !qty && !price;
+  });
+  if (!hasEmptyRow) {
+    return createSaleItemRow();
+  }
+  if (currentRow?.nextElementSibling?.classList?.contains("sale-item")) {
+    return currentRow.nextElementSibling;
+  }
+  return rows.find((row) => {
+    const product = String(row.querySelector(".sale-item-product")?.value || "").trim();
+    const qty = String(row.querySelector(".sale-item-qty")?.value || "").trim();
+    const price = String(row.querySelector(".sale-item-price")?.value || "").trim();
+    return !product && !qty && !price;
+  }) || rows[rows.length - 1] || null;
+};
+
+const moveSalesFocusToFirstProduct = () => {
+  if (!isDesktopSalesKeyboardMode()) return;
+  const firstProductSelect = saleItems?.querySelector(".sale-item-product");
+  if (!firstProductSelect) return;
+  requestAnimationFrame(() => {
+    firstProductSelect.focus({ preventScroll: false });
+  });
+};
+
+const handleSaleQtyEnter = (row) => {
+  if (!isDesktopSalesKeyboardMode() || !row) return;
+  const productSelect = row.querySelector(".sale-item-product");
+  const qtyInput = row.querySelector(".sale-item-qty");
+  const priceInput = row.querySelector(".sale-item-price");
+  const productKey = String(productSelect?.value || "").trim();
+  const quantity = Number(qtyInput?.value || 0);
+  if (!productKey || !Number.isFinite(quantity) || quantity <= 0) return;
+  const productRow = saleProductIndex.get(productKey);
+  if (priceInput && !String(priceInput.value || "").trim()) {
+    const defaultPrice = Number(productRow?.price || 0);
+    if (Number.isFinite(defaultPrice) && defaultPrice > 0) {
+      priceInput.value = formatGs(defaultPrice);
+      updateSaleItemSubtotal(row);
+      refreshSaleGrandTotal();
+    }
+  }
+  const nextRow = ensureTrailingBlankSaleRow(row);
+  refreshSaleProductOptions();
+  focusSaleRowProduct(nextRow);
+  requestAnimationFrame(refreshCollapseHeights);
+};
+
 const createSaleItemRow = (item = {}) => {
   if (!saleItems) return null;
   const row = document.createElement("tr");
@@ -2520,6 +2593,13 @@ const createSaleItemRow = (item = {}) => {
         if (duplicate) {
           window.alert("Ese producto ya fue agregado. Ajusta la cantidad en la linea existente.");
           select.value = "";
+        }
+      }
+      const productRow = saleProductIndex.get(select.value);
+      if (priceInput && !String(priceInput.value || "").trim()) {
+        const defaultPrice = Number(productRow?.price || 0);
+        if (Number.isFinite(defaultPrice) && defaultPrice > 0) {
+          priceInput.value = formatGs(defaultPrice);
         }
       }
       updateSaleItemStock(row);
@@ -2578,8 +2658,15 @@ const refreshSaleProductOptions = () => {
     const label = displays !== null
       ? `${row.name} (${formatInteger(displays)} disponibles)`
       : `${row.name} (N/D)`;
+    const product = state.products.find((item) => item.id === row.productId)
+      || state.products.find((item) => normalizeText(item.name) === normalizeText(row.name));
     options.push({ value: optionValue, label, displays });
-    saleProductIndex.set(optionValue, { ...row, displays, optionValue });
+    saleProductIndex.set(optionValue, {
+      ...row,
+      displays,
+      optionValue,
+      price: Number(product?.price || 0)
+    });
   });
   const selects = Array.from(saleItems.querySelectorAll(".sale-item-product"));
   selects.forEach((select) => {
@@ -5073,6 +5160,46 @@ purchaseForm.material.addEventListener("change", () => {
 
 purchaseForm.purchaseUnit.addEventListener("change", updatePurchaseTotal);
 stockRecipeSelect?.addEventListener("change", refreshStockSummary);
+saleForm?.addEventListener("keydown", (event) => {
+  if (!isDesktopSalesKeyboardMode()) return;
+  if (event.key !== "Enter") return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  if (target.tagName === "TEXTAREA") return;
+
+  const saleDateInput = saleForm?.querySelector('input[name="date"]');
+  const saleClientSelect = saleForm?.querySelector('select[name="client"]');
+
+  if (saleDateInput && target === saleDateInput) {
+    event.preventDefault();
+    saleClientSelect?.focus({ preventScroll: false });
+    return;
+  }
+
+  if (saleClientSelect && target === saleClientSelect) {
+    event.preventDefault();
+    moveSalesFocusToFirstProduct();
+    return;
+  }
+
+  const row = target.closest(".sale-item");
+  if (!row) return;
+
+  if (target.classList.contains("sale-item-product")) {
+    const productKey = String(target.value || "").trim();
+    if (!productKey) return;
+    event.preventDefault();
+    focusSaleRowQty(row);
+    return;
+  }
+
+  if (target.classList.contains("sale-item-qty")) {
+    event.preventDefault();
+    handleSaleQtyEnter(row);
+    return;
+  }
+});
+
 stockMaterialsList?.addEventListener("input", (event) => {
   const newStockInput = event.target.closest("[data-raw-material-adjustment-new]");
   if (newStockInput) {
@@ -5288,12 +5415,7 @@ const setCollapseMax = (body) => {
 };
 
 const focusFirstSaleProductField = () => {
-  if (!window.matchMedia("(min-width: 769px)").matches) return;
-  const firstProductSelect = saleItems?.querySelector(".sale-item-product");
-  if (!firstProductSelect) return;
-  requestAnimationFrame(() => {
-    firstProductSelect.focus({ preventScroll: false });
-  });
+  moveSalesFocusToFirstProduct();
 };
 
 const syncExpandableCardState = (body, isOpen) => {
