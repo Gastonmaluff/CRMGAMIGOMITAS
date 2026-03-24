@@ -805,6 +805,57 @@ select:focus {
   gap: 18px;
 }
 
+.finance-overview {
+  gap: 18px;
+}
+
+.finance-overview .overview-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid #d9e1ec;
+  background: linear-gradient(165deg, #ffffff 0%, #f8fafc 100%);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+  padding: 22px 24px;
+  min-height: 190px;
+  gap: 10px;
+}
+
+.finance-overview .overview-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(15, 23, 42, 0.03), transparent 44%);
+  pointer-events: none;
+}
+
+.finance-overview .overview-label,
+.finance-overview .overview-sub,
+.finance-overview .overview-value {
+  position: relative;
+  z-index: 1;
+}
+
+.finance-overview .overview-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #64748b;
+}
+
+.finance-overview .overview-value {
+  font-size: 2.7rem;
+  font-weight: 800;
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+  color: #020617;
+}
+
+.finance-overview .overview-sub {
+  font-size: 0.84rem;
+  color: #64748b;
+}
+
 .production-overview .overview-card {
   position: relative;
   overflow: hidden;
@@ -1530,6 +1581,77 @@ select:focus {
   gap: 14px;
 }
 
+.finance-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.finance-wide-card {
+  grid-column: 1 / -1;
+}
+
+.finance-movement-layout {
+  display: grid;
+  gap: 16px;
+}
+
+.finance-expense-form {
+  margin-bottom: 0;
+  padding: 16px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: #f9fafb;
+}
+
+.finance-form-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.finance-expense-observation {
+  grid-column: 1 / -1;
+}
+
+.finance-movement-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.finance-movement-table {
+  width: 100%;
+  min-width: 1180px;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.finance-movement-table th,
+.finance-movement-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #edf2f7;
+  text-align: left;
+  vertical-align: top;
+}
+
+.finance-movement-table th {
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+  background: #f8fafc;
+  white-space: nowrap;
+}
+
+.finance-movement-table td {
+  color: #1f2937;
+}
+
+.finance-movement-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
 .commercial-history-chart-panel {
   display: grid;
   gap: 10px;
@@ -1662,6 +1784,24 @@ select:focus {
   .desktop-sales-card.is-expanded .sale-items-table {
     min-width: 640px;
   }
+
+  .finance-expense-form {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    column-gap: 16px;
+    row-gap: 12px;
+  }
+
+  .finance-expense-form > .finance-form-heading,
+  .finance-expense-form > .finance-expense-observation,
+  .finance-expense-form > .error,
+  .finance-expense-form > button[type="submit"] {
+    grid-column: 1 / -1;
+  }
+
+  .finance-expense-form > button[type="submit"] {
+    justify-self: start;
+    min-width: 220px;
+  }
 }
 
 @media (min-width: 769px) {
@@ -1694,6 +1834,14 @@ select:focus {
   .commercial-history-filters-row-secondary,
   .commercial-history-filters-row-secondary.mode-hidden {
     grid-template-columns: 1fr;
+  }
+
+  .finance-overview .overview-value {
+    font-size: 2.2rem;
+  }
+
+  .finance-movement-table {
+    min-width: 920px;
   }
 
   .sales-coverage-layout {

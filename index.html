@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CRM Gami Gomitas</title>
-  <link rel="stylesheet" href="styles.css?v=20260324-29" />
+  <link rel="stylesheet" href="styles.css?v=20260324-30" />
 </head>
 <body>
   <div class="app">
@@ -44,6 +44,7 @@
           <button class="tab active" data-tab="production">Produccion</button>
           <button class="tab" data-tab="sales">Ventas</button>
           <button class="tab" data-tab="commercial-history">Historial comercial</button>
+          <button class="tab" data-tab="finance">Finanzas</button>
         </div>
         <div class="dashboard-overview-viewport" id="dashboardOverviewViewport">
           <div class="dashboard-overview-track" id="dashboardOverviewTrack">
@@ -153,6 +154,30 @@
             <div class="overview-label">Ticket promedio</div>
             <div class="overview-value" id="historyMetricTicket">Gs 0</div>
             <div class="overview-sub">promedio por venta</div>
+          </div>
+        </div>
+            </div>
+            <div class="dashboard-overview-slide">
+        <div class="overview-grid finance-overview" id="financeDashboard">
+          <div class="overview-card finance-card">
+            <div class="overview-label">Facturacion del periodo</div>
+            <div class="overview-value" id="financeMetricRevenue">Gs 0</div>
+            <div class="overview-sub">ventas registradas en el periodo actual</div>
+          </div>
+          <div class="overview-card finance-card">
+            <div class="overview-label">Egresos del periodo</div>
+            <div class="overview-value" id="financeMetricExpenses">Gs 0</div>
+            <div class="overview-sub">compras y egresos manuales registrados</div>
+          </div>
+          <div class="overview-card finance-card">
+            <div class="overview-label">Ganancia estimada</div>
+            <div class="overview-value" id="financeMetricEstimatedProfit">Gs 0</div>
+            <div class="overview-sub">facturacion menos costo estimado vendido</div>
+          </div>
+          <div class="overview-card finance-card">
+            <div class="overview-label">Caja neta</div>
+            <div class="overview-value" id="financeMetricNet">Gs 0</div>
+            <div class="overview-sub">resultado neto del periodo actual</div>
           </div>
         </div>
             </div>
@@ -968,6 +993,97 @@
             </div>
           </div>
         </section>
+        <section class="tab-panel" id="finance">
+          <div class="grid finance-grid">
+            <div class="card finance-wide-card">
+              <h2 class="section-title">
+                <span class="section-title-text"><i data-lucide="wallet"></i><span class="section-title-label">Movimiento financiero</span></span>
+                <button class="collapse-toggle open" type="button" data-collapse="financeMovementSection" aria-expanded="true"><span class="chevron">&gt;</span></button>
+              </h2>
+              <div class="collapse-body open" id="financeMovementSection">
+                <div class="finance-movement-layout">
+                  <form id="financeExpenseForm" class="form-grid finance-expense-form">
+                    <div class="finance-form-heading">
+                      <strong>Registrar egreso manual</strong>
+                      <span class="muted">Suma gastos operativos o salidas de caja que no vienen desde ventas o compras.</span>
+                    </div>
+                    <label>
+                      Fecha
+                      <input name="date" type="date" required />
+                    </label>
+                    <label>
+                      Categoria
+                      <select name="category" required>
+                        <option value="">Seleccionar</option>
+                        <option value="Logistica">Logistica</option>
+                        <option value="Servicios">Servicios</option>
+                        <option value="Sueldos">Sueldos</option>
+                        <option value="Marketing">Marketing</option>
+                        <option value="Impuestos">Impuestos</option>
+                        <option value="Mantenimiento">Mantenimiento</option>
+                        <option value="Otros">Otros</option>
+                      </select>
+                    </label>
+                    <label>
+                      Descripcion
+                      <input name="description" type="text" placeholder="Ej: Flete CDE" required />
+                    </label>
+                    <label>
+                      Proveedor / Referencia
+                      <input name="counterparty" type="text" placeholder="Ej: Transportadora del Este" />
+                    </label>
+                    <label>
+                      Monto
+                      <input name="amount" type="number" min="0" step="0.01" placeholder="0" required />
+                    </label>
+                    <label>
+                      Metodo de pago
+                      <select name="paymentMethod">
+                        <option value="">No definido</option>
+                        <option value="Efectivo">Efectivo</option>
+                        <option value="Transferencia">Transferencia</option>
+                        <option value="Tarjeta">Tarjeta</option>
+                      </select>
+                    </label>
+                    <label>
+                      Estado
+                      <select name="status">
+                        <option value="Pagado">Pagado</option>
+                        <option value="Pendiente">Pendiente</option>
+                      </select>
+                    </label>
+                    <label class="finance-expense-observation">
+                      Observacion
+                      <textarea name="observation" rows="3" placeholder="Ej: Pago parcial o detalle interno"></textarea>
+                    </label>
+                    <button class="btn primary" type="submit">Guardar egreso</button>
+                    <div class="error" id="financeExpenseNotice"></div>
+                  </form>
+                  <div class="finance-movement-table-wrap">
+                    <table class="finance-movement-table">
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Tipo de movimiento</th>
+                          <th>Categoria</th>
+                          <th>Descripcion</th>
+                          <th>Cliente / Proveedor</th>
+                          <th>Ingreso</th>
+                          <th>Egreso</th>
+                          <th>Ganancia estimada</th>
+                          <th>Metodo de pago</th>
+                          <th>Estado</th>
+                          <th>Observacion</th>
+                        </tr>
+                      </thead>
+                      <tbody id="financeMovementList"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
           </div>
         </div>
       </section>
@@ -977,7 +1093,7 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260324-40"></script>
+  <script type="module" src="app.js?v=20260324-42"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

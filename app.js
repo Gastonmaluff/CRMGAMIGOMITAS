@@ -89,6 +89,10 @@ const historyMetricSalesCount = document.getElementById("historyMetricSalesCount
 const historyMetricCustomersCount = document.getElementById("historyMetricCustomersCount");
 const historyMetricAmount = document.getElementById("historyMetricAmount");
 const historyMetricTicket = document.getElementById("historyMetricTicket");
+const financeMetricRevenue = document.getElementById("financeMetricRevenue");
+const financeMetricExpenses = document.getElementById("financeMetricExpenses");
+const financeMetricEstimatedProfit = document.getElementById("financeMetricEstimatedProfit");
+const financeMetricNet = document.getElementById("financeMetricNet");
 const productForm = document.getElementById("productForm");
 const clientForm = document.getElementById("clientForm");
 const saleForm = document.getElementById("saleForm");
@@ -100,6 +104,8 @@ const saleGrandTotal = document.getElementById("saleGrandTotal");
 const addSaleItemBtn = document.getElementById("addSaleItemBtn");
 const salesGoalForm = document.getElementById("salesGoalForm");
 const salesGoalNotice = document.getElementById("salesGoalNotice");
+const financeExpenseForm = document.getElementById("financeExpenseForm");
+const financeExpenseNotice = document.getElementById("financeExpenseNotice");
 const addIngredientBtn = document.getElementById("addIngredientBtn");
 const quickClientToggle = document.getElementById("quickClientToggle");
 const quickClientPanel = document.getElementById("quickClientPanel");
@@ -130,6 +136,7 @@ const salesCoverageSection = document.getElementById("coverageSection");
 const salesCoveragePins = document.getElementById("salesCoveragePins");
 const salesCoverageSummary = document.getElementById("salesCoverageSummary");
 const salesCoverageCities = document.getElementById("salesCoverageCities");
+const financeMovementList = document.getElementById("financeMovementList");
 const historyFilters = document.getElementById("historyFilters");
 const historyCustomerSearch = document.getElementById("historyCustomerSearch");
 const historyCustomerResults = document.getElementById("historyCustomerResults");
@@ -167,6 +174,7 @@ const state = {
   clients: [],
   sales: [],
   salesGoals: [],
+  financialExpenses: [],
   finishedStockAdjustments: [],
   rawMaterialAdjustments: []
 };
@@ -430,6 +438,12 @@ const dashboardMetricSnapshot = {
     totalCustomers: 0,
     totalAmount: 0,
     averageTicket: 0
+  },
+  finance: {
+    revenue: 0,
+    expenses: 0,
+    estimatedProfit: 0,
+    net: 0
   }
 };
 let salesGoalProgressFrameId = null;
@@ -624,6 +638,38 @@ const animateCommercialHistoryMetrics = ({ force = false } = {}) => {
   }
 };
 
+const animateFinanceDashboardMetrics = ({ force = false } = {}) => {
+  const snapshot = dashboardMetricSnapshot.finance;
+  if (financeMetricRevenue) {
+    animateMetricNumber(financeMetricRevenue, snapshot.revenue, {
+      force,
+      formatFrame: (value) => `Gs ${formatGs(value)}`,
+      formatFinal: (value) => `Gs ${formatGs(value)}`
+    });
+  }
+  if (financeMetricExpenses) {
+    animateMetricNumber(financeMetricExpenses, snapshot.expenses, {
+      force,
+      formatFrame: (value) => `Gs ${formatGs(value)}`,
+      formatFinal: (value) => `Gs ${formatGs(value)}`
+    });
+  }
+  if (financeMetricEstimatedProfit) {
+    animateMetricNumber(financeMetricEstimatedProfit, snapshot.estimatedProfit, {
+      force,
+      formatFrame: (value) => `Gs ${formatGs(value)}`,
+      formatFinal: (value) => `Gs ${formatGs(value)}`
+    });
+  }
+  if (financeMetricNet) {
+    animateMetricNumber(financeMetricNet, snapshot.net, {
+      force,
+      formatFrame: (value) => `Gs ${formatGs(value)}`,
+      formatFinal: (value) => `Gs ${formatGs(value)}`
+    });
+  }
+};
+
 const animateDashboardMetricsByTab = (tab, { force = false } = {}) => {
   if (tab === "sales") {
     animateSalesDashboardMetrics({ force });
@@ -631,6 +677,10 @@ const animateDashboardMetricsByTab = (tab, { force = false } = {}) => {
   }
   if (tab === "commercial-history") {
     animateCommercialHistoryMetrics({ force });
+    return;
+  }
+  if (tab === "finance") {
+    animateFinanceDashboardMetrics({ force });
     return;
   }
   animateProductionDashboardMetrics({ force });
@@ -1301,6 +1351,181 @@ const projectCoverageCityPoint = (city) => {
     x: COVERAGE_MAP_VIEWBOX.paddingLeft + usableWidth * clampedLngRatio,
     y: COVERAGE_MAP_VIEWBOX.paddingTop + usableHeight * clampedLatRatio
   };
+};
+
+const getCurrentMonthDateRange = () => {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return {
+    start: toDateInputValue(start),
+    end: toDateInputValue(end)
+  };
+};
+
+const isDateWithinRange = (dateValue, startDate, endDate) => {
+  const iso = normalizeDateValue(dateValue);
+  if (!iso) return false;
+  return (!startDate || iso >= startDate) && (!endDate || iso <= endDate);
+};
+
+const getEstimatedDisplayCostForProduct = ({ productId = "", productName = "" } = {}) => {
+  const normalizedName = normalizeText(productName);
+  const recentBatch = state.batches.find((batch) => {
+    if (productId && batch.productId === productId) return true;
+    return normalizedName && normalizeText(batch.productName || "") === normalizedName;
+  });
+  const batchCost = Number(recentBatch?.costPerUnit || 0);
+  if (Number.isFinite(batchCost) && batchCost > 0) return batchCost;
+
+  const product = state.products.find((item) => item.id === productId)
+    || state.products.find((item) => normalizeText(item.name) === normalizedName);
+  const recipe = state.recipes.find((item) => {
+    if (product?.id && item.productId === product.id) return true;
+    const linkedProduct = findProductForRecipe(item);
+    return Boolean(linkedProduct && normalizeText(linkedProduct.name) === normalizeText(product?.name || productName));
+  });
+  const recipeDisplayCost = Number(recipe?.productCostPerDisplay || recipe?.totalDisplayCost || 0);
+  if (Number.isFinite(recipeDisplayCost) && recipeDisplayCost > 0) return recipeDisplayCost;
+  return 0;
+};
+
+const getSaleEstimatedProfit = (sale) => {
+  const estimatedCost = getSaleLineItems(sale).reduce((sum, line) => {
+    const unitCost = getEstimatedDisplayCostForProduct({
+      productId: line.productId || "",
+      productName: line.productName || ""
+    });
+    return sum + (Number(line.quantity || 0) * unitCost);
+  }, 0);
+  return getSaleTotalAmount(sale) - estimatedCost;
+};
+
+const buildFinanceMovementRows = () => {
+  const saleRows = state.sales.map((sale) => {
+    const client = getSaleClientDetails(sale);
+    const saleDate = normalizeDateValue(getSaleDateValue(sale));
+    const lineSummary = getSaleLineItems(sale)
+      .map((line) => `${formatInteger(line.quantity || 0)}x ${line.productName || "Producto"}`)
+      .join(" | ");
+    return {
+      id: `sale-${sale.id}`,
+      sourceType: "sale",
+      date: saleDate,
+      movementType: "Ingreso",
+      category: "Venta",
+      description: lineSummary || "Venta registrada",
+      counterparty: client.name || "Sin cliente",
+      income: getSaleTotalAmount(sale),
+      expense: 0,
+      estimatedProfit: getSaleEstimatedProfit(sale),
+      paymentMethod: sale.payment || "-",
+      status: isCreditSaleRecord(sale) ? "Pendiente" : "Pagado",
+      observation: String(sale.observation || "").trim(),
+      createdAt: sale.createdAt?.seconds || 0
+    };
+  });
+
+  const purchaseRows = state.purchases
+    .filter((purchase) => normalizeText(purchase.type || "") !== "consumo por produccion")
+    .map((purchase) => ({
+    id: `purchase-${purchase.id}`,
+    sourceType: "purchase",
+    date: normalizeDateValue(purchase.date),
+    movementType: "Egreso",
+    category: purchase.type || "Compra materia prima",
+    description: purchase.materialName || "Compra registrada",
+    counterparty: purchase.supplier || purchase.materialName || "-",
+    income: 0,
+    expense: Number(purchase.total || 0),
+    estimatedProfit: 0,
+    paymentMethod: purchase.paymentMethod || "-",
+    status: purchase.status || "Registrado",
+    observation: String(purchase.observation || "").trim(),
+    createdAt: purchase.createdAt?.seconds || 0
+  }));
+
+  const manualExpenseRows = state.financialExpenses.map((expense) => ({
+    id: `expense-${expense.id}`,
+    sourceType: "manual-expense",
+    date: normalizeDateValue(expense.date),
+    movementType: "Egreso",
+    category: expense.category || "Otros",
+    description: expense.description || "Egreso manual",
+    counterparty: expense.counterparty || "-",
+    income: 0,
+    expense: Number(expense.amount || 0),
+    estimatedProfit: 0,
+    paymentMethod: expense.paymentMethod || "-",
+    status: expense.status || "Pagado",
+    observation: String(expense.observation || "").trim(),
+    createdAt: expense.createdAt?.seconds || 0
+  }));
+
+  return [...saleRows, ...purchaseRows, ...manualExpenseRows]
+    .filter((item) => item.date || item.createdAt)
+    .sort((a, b) => {
+      const dateCompare = String(b.date || "").localeCompare(String(a.date || ""));
+      if (dateCompare !== 0) return dateCompare;
+      return Number(b.createdAt || 0) - Number(a.createdAt || 0);
+    });
+};
+
+const computeFinanceSummary = () => {
+  const { start, end } = getCurrentMonthDateRange();
+  const salesInPeriod = state.sales.filter((sale) => isDateWithinRange(getSaleDateValue(sale), start, end));
+  const purchasesInPeriod = state.purchases.filter((purchase) => (
+    normalizeText(purchase.type || "") !== "consumo por produccion"
+    && isDateWithinRange(purchase.date, start, end)
+  ));
+  const expensesInPeriod = state.financialExpenses.filter((expense) => isDateWithinRange(expense.date, start, end));
+  const revenue = salesInPeriod.reduce((sum, sale) => sum + getSaleTotalAmount(sale), 0);
+  const purchaseExpenses = purchasesInPeriod.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0);
+  const manualExpenses = expensesInPeriod.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  const expenses = purchaseExpenses + manualExpenses;
+  const estimatedProfit = salesInPeriod.reduce((sum, sale) => sum + getSaleEstimatedProfit(sale), 0);
+  const net = revenue - expenses;
+  return {
+    periodStart: start,
+    periodEnd: end,
+    revenue,
+    expenses,
+    estimatedProfit,
+    net
+  };
+};
+
+const refreshFinanceDashboard = () => {
+  const summary = computeFinanceSummary();
+  dashboardMetricSnapshot.finance.revenue = Number(summary.revenue || 0);
+  dashboardMetricSnapshot.finance.expenses = Number(summary.expenses || 0);
+  dashboardMetricSnapshot.finance.estimatedProfit = Number(summary.estimatedProfit || 0);
+  dashboardMetricSnapshot.finance.net = Number(summary.net || 0);
+  animateFinanceDashboardMetrics();
+};
+
+const renderFinanceMovement = () => {
+  if (!financeMovementList) return;
+  const rows = buildFinanceMovementRows();
+  if (!rows.length) {
+    financeMovementList.innerHTML = '<tr><td colspan="11" class="muted">Todavia no hay movimientos financieros registrados.</td></tr>';
+    return;
+  }
+  financeMovementList.innerHTML = rows.map((row) => `
+    <tr>
+      <td>${formatDate(row.date)}</td>
+      <td>${escapeHtml(row.movementType)}</td>
+      <td>${escapeHtml(row.category || "-")}</td>
+      <td>${escapeHtml(row.description || "-")}</td>
+      <td>${escapeHtml(row.counterparty || "-")}</td>
+      <td>${row.income > 0 ? `Gs ${formatGs(row.income)}` : "-"}</td>
+      <td>${row.expense > 0 ? `Gs ${formatGs(row.expense)}` : "-"}</td>
+      <td>${Number.isFinite(row.estimatedProfit) ? `Gs ${formatGs(row.estimatedProfit)}` : "-"}</td>
+      <td>${escapeHtml(row.paymentMethod || "-")}</td>
+      <td>${escapeHtml(row.status || "-")}</td>
+      <td>${escapeHtml(row.observation || "-")}</td>
+    </tr>
+  `).join("");
 };
 
 const getCoverageCityByAddress = (address) => {
@@ -3747,10 +3972,11 @@ const syncState = (key, items) => {
   if (["rawMaterials", "purchases", "batches", "rawMaterialAdjustments"].includes(key)) {
     refreshStockSummary();
   }
-  if (["sales", "products", "salesGoals", "rawMaterials", "purchases", "batches", "finishedStockAdjustments", "rawMaterialAdjustments"].includes(key)) {
+  if (["sales", "products", "salesGoals", "rawMaterials", "purchases", "batches", "finishedStockAdjustments", "rawMaterialAdjustments", "financialExpenses"].includes(key)) {
     const stockData = computeStockTotals();
     refreshSalesDashboard(stockData);
     refreshDashboard(stockData);
+    refreshFinanceDashboard();
   }
   if (["batches", "sales", "products", "recipes", "finishedStockAdjustments"].includes(key)) {
     refreshFinishedStock();
@@ -3967,6 +4193,7 @@ const renderAll = () => {
   renderRepurchaseList();
   renderSalesCoverage();
   renderCommercialHistory();
+  renderFinanceMovement();
 
   requestAnimationFrame(refreshCollapseHeights);
   refreshIcons();
@@ -4758,6 +4985,45 @@ salesGoalForm?.addEventListener("submit", async (event) => {
   };
   await saveDoc("sales_goals", salesGoalForm, payload);
   if (salesGoalNotice) salesGoalNotice.textContent = "Objetivo guardado.";
+});
+
+financeExpenseForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const user = auth.currentUser;
+  if (!user) return;
+  const amount = Number(financeExpenseForm.amount.value);
+  if (!financeExpenseForm.date.value) {
+    if (financeExpenseNotice) financeExpenseNotice.textContent = "Completa la fecha del egreso.";
+    return;
+  }
+  if (!financeExpenseForm.category.value) {
+    if (financeExpenseNotice) financeExpenseNotice.textContent = "Selecciona una categoria.";
+    return;
+  }
+  if (!financeExpenseForm.description.value.trim()) {
+    if (financeExpenseNotice) financeExpenseNotice.textContent = "Completa la descripcion del egreso.";
+    return;
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    if (financeExpenseNotice) financeExpenseNotice.textContent = "Ingresa un monto valido mayor que 0.";
+    return;
+  }
+  const payload = {
+    date: financeExpenseForm.date.value,
+    category: financeExpenseForm.category.value,
+    description: financeExpenseForm.description.value.trim(),
+    counterparty: financeExpenseForm.counterparty.value.trim(),
+    amount,
+    paymentMethod: financeExpenseForm.paymentMethod.value || "",
+    status: financeExpenseForm.status.value || "Pagado",
+    observation: financeExpenseForm.observation.value.trim(),
+    userId: user.uid,
+    createdAt: serverTimestamp()
+  };
+  await saveDoc("financial_expenses", financeExpenseForm, payload);
+  resetForm(financeExpenseForm);
+  financeExpenseForm.date.valueAsDate = new Date();
+  if (financeExpenseNotice) financeExpenseNotice.textContent = "";
 });
 
 const startEditRawMaterial = (item) => {
@@ -5861,6 +6127,7 @@ onAuthStateChanged(auth, (user) => {
   listenCollection("clients", "clients", user.uid);
   listenCollection("sales", "sales", user.uid);
   listenCollection("sales_goals", "salesGoals", user.uid);
+  listenCollection("financial_expenses", "financialExpenses", user.uid);
   listenCollection("finished_stock_adjustments", "finishedStockAdjustments", user.uid);
   listenCollection("raw_material_adjustments", "rawMaterialAdjustments", user.uid);
 }, (error) => {
