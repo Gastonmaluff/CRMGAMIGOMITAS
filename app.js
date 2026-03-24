@@ -3027,6 +3027,19 @@ const waitForCondition = async (check, { attempts = 12, delayMs = 35 } = {}) => 
   return check();
 };
 
+const setDashboardTransitionsEnabled = (enabled) => {
+  const transitionValue = enabled ? "" : "none";
+  [
+    dashboardOverviewViewport,
+    dashboardPanelsViewport,
+    dashboardOverviewTrack,
+    dashboardPanelsTrack
+  ].forEach((node) => {
+    if (!node) return;
+    node.style.transition = transitionValue;
+  });
+};
+
 const setActiveTab = (targetTab) => {
   const safeTab = TAB_IDS.includes(targetTab) ? targetTab : (TAB_IDS[0] || "production");
   tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === safeTab));
@@ -5637,11 +5650,11 @@ const scrollSalesCardIntoView = () => {
   const salesBody = document.getElementById("salesSection");
   const salesCard = salesBody?.closest(".card");
   const scrollTarget = salesCard || salesBody || document.getElementById("sales");
-  if (!scrollTarget || typeof scrollTarget.scrollIntoView !== "function") return;
-  scrollTarget.scrollIntoView({
-    behavior: "auto",
-    block: "start",
-    inline: "nearest"
+  if (!scrollTarget) return;
+  const targetTop = Math.max(0, Math.round(scrollTarget.getBoundingClientRect().top + window.scrollY - 12));
+  window.scrollTo({
+    top: targetTop,
+    behavior: "auto"
   });
 };
 
@@ -5651,7 +5664,10 @@ const navigateToSalesShortcut = async () => {
   console.log("F2 pressed");
   try {
     console.log("Switching to Ventas");
+    setDashboardTransitionsEnabled(false);
+    await waitForNextFrame();
     setActiveTab("sales");
+    const salesBody = openExclusiveCollapseSection("salesSection");
     refreshCollapseHeights();
 
     const salesPanelReady = await waitForCondition(() => {
@@ -5666,7 +5682,6 @@ const navigateToSalesShortcut = async () => {
     if (!salesPanelReady) return;
     console.log("Ventas section ready");
 
-    const salesBody = openExclusiveCollapseSection("salesSection");
     const salesCardReady = await waitForCondition(() => {
       refreshCollapseHeights();
       return Boolean(
@@ -5698,6 +5713,7 @@ const navigateToSalesShortcut = async () => {
     refreshCollapseHeights();
     console.log("F2 navigation completed");
   } finally {
+    setDashboardTransitionsEnabled(true);
     await waitForDelay(120);
     isNavigatingToSales = false;
   }
