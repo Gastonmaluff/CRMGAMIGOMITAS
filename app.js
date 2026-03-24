@@ -2484,6 +2484,43 @@ const updateSaleItemStock = (row) => {
 
 const isDesktopSalesKeyboardMode = () => window.matchMedia("(min-width: 769px)").matches;
 
+const clearSalesKeyboardSelectState = (select) => {
+  if (!select) return;
+  delete select.dataset.keyboardPickerOpen;
+  delete select.dataset.keyboardAdvanceTo;
+};
+
+const openSalesKeyboardSelect = (select, advanceTo = "") => {
+  if (!isDesktopSalesKeyboardMode() || !select) return false;
+  if (select.dataset.keyboardPickerOpen === "true") return true;
+  select.dataset.keyboardPickerOpen = "true";
+  select.dataset.keyboardAdvanceTo = advanceTo;
+  try {
+    if (typeof select.showPicker === "function") {
+      select.showPicker();
+      return true;
+    }
+  } catch (error) {
+    console.debug("[sales] showPicker no disponible", error);
+  }
+  try {
+    select.click();
+    return true;
+  } catch (error) {
+    console.debug("[sales] click no disponible para select", error);
+  }
+  clearSalesKeyboardSelectState(select);
+  return false;
+};
+
+const focusSaleClientField = () => {
+  const select = saleForm?.querySelector('select[name="client"]');
+  if (!select) return;
+  requestAnimationFrame(() => {
+    select.focus({ preventScroll: false });
+  });
+};
+
 const focusSaleRowProduct = (row) => {
   const select = row?.querySelector(".sale-item-product");
   if (!select) return;
@@ -2494,6 +2531,15 @@ const focusSaleRowProduct = (row) => {
 
 const focusSaleRowQty = (row) => {
   const input = row?.querySelector(".sale-item-qty");
+  if (!input) return;
+  requestAnimationFrame(() => {
+    input.focus({ preventScroll: false });
+    input.select?.();
+  });
+};
+
+const focusSaleRowPrice = (row) => {
+  const input = row?.querySelector(".sale-item-price");
   if (!input) return;
   requestAnimationFrame(() => {
     input.focus({ preventScroll: false });
@@ -2532,7 +2578,7 @@ const moveSalesFocusToFirstProduct = () => {
   });
 };
 
-const handleSaleQtyEnter = (row) => {
+const handleSalePriceEnter = (row) => {
   if (!isDesktopSalesKeyboardMode() || !row) return;
   const productSelect = row.querySelector(".sale-item-product");
   const qtyInput = row.querySelector(".sale-item-qty");
@@ -2587,6 +2633,7 @@ const createSaleItemRow = (item = {}) => {
       select.dataset.prefillValue = item.productKey;
     }
     select.addEventListener("change", () => {
+      const shouldAdvanceToQty = isDesktopSalesKeyboardMode() && select.dataset.keyboardAdvanceTo === "qty";
       if (select.value) {
         const duplicate = Array.from(saleItems.querySelectorAll(".sale-item-product"))
           .some((other) => other !== select && other.value === select.value);
@@ -2606,7 +2653,14 @@ const createSaleItemRow = (item = {}) => {
       updateSaleItemSubtotal(row);
       refreshSaleGrandTotal();
       refreshSaleProductOptions();
+      if (shouldAdvanceToQty && select.value) {
+        focusSaleRowQty(row);
+      }
+      clearSalesKeyboardSelectState(select);
       requestAnimationFrame(refreshCollapseHeights);
+    });
+    select.addEventListener("blur", () => {
+      clearSalesKeyboardSelectState(select);
     });
   }
   qtyInput?.addEventListener("input", () => {
@@ -2934,6 +2988,13 @@ const updateDashboardVisibility = (activeTab) => {
       );
     }
   });
+};
+
+const setActiveTab = (targetTab) => {
+  const safeTab = TAB_IDS.includes(targetTab) ? targetTab : (TAB_IDS[0] || "production");
+  tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === safeTab));
+  panels.forEach((panel) => panel.classList.toggle("active", panel.id === safeTab));
+  updateDashboardVisibility(safeTab);
 };
 
 const updateSalesGoalForm = (goal) => {
@@ -3856,16 +3917,11 @@ const renderAll = () => {
 const setupTabs = () => {
   tabs.forEach((tab) => {
     tab.addEventListener("click", () => {
-      const targetTab = tab.dataset.tab || "production";
-      tabs.forEach((t) => t.classList.remove("active"));
-      tab.classList.add("active");
-      panels.forEach((p) => p.classList.toggle("active", p.id === targetTab));
-      updateDashboardVisibility(targetTab);
+      setActiveTab(tab.dataset.tab || "production");
     });
   });
   const initialTab = document.querySelector(".tab.active")?.dataset.tab || "production";
-  panels.forEach((p) => p.classList.toggle("active", p.id === initialTab));
-  updateDashboardVisibility(initialTab);
+  setActiveTab(initialTab);
 };
 
 const updateDueDateVisibility = () => {
@@ -5160,6 +5216,17 @@ purchaseForm.material.addEventListener("change", () => {
 
 purchaseForm.purchaseUnit.addEventListener("change", updatePurchaseTotal);
 stockRecipeSelect?.addEventListener("change", refreshStockSummary);
+saleForm?.client?.addEventListener("change", () => {
+  const clientSelect = saleForm.client;
+  const shouldAdvanceToProduct = isDesktopSalesKeyboardMode() && clientSelect?.dataset.keyboardAdvanceTo === "product";
+  if (shouldAdvanceToProduct && clientSelect.value) {
+    moveSalesFocusToFirstProduct();
+  }
+  clearSalesKeyboardSelectState(clientSelect);
+});
+saleForm?.client?.addEventListener("blur", () => {
+  clearSalesKeyboardSelectState(saleForm.client);
+});
 saleForm?.addEventListener("keydown", (event) => {
   if (!isDesktopSalesKeyboardMode()) return;
   if (event.key !== "Enter") return;
@@ -5177,8 +5244,9 @@ saleForm?.addEventListener("keydown", (event) => {
   }
 
   if (saleClientSelect && target === saleClientSelect) {
+    if (saleClientSelect.dataset.keyboardPickerOpen === "true") return;
     event.preventDefault();
-    moveSalesFocusToFirstProduct();
+    openSalesKeyboardSelect(saleClientSelect, "product");
     return;
   }
 
@@ -5186,16 +5254,24 @@ saleForm?.addEventListener("keydown", (event) => {
   if (!row) return;
 
   if (target.classList.contains("sale-item-product")) {
-    const productKey = String(target.value || "").trim();
-    if (!productKey) return;
+    if (target.dataset.keyboardPickerOpen === "true") return;
     event.preventDefault();
-    focusSaleRowQty(row);
+    openSalesKeyboardSelect(target, "qty");
     return;
   }
 
   if (target.classList.contains("sale-item-qty")) {
+    const productKey = String(row.querySelector(".sale-item-product")?.value || "").trim();
+    const quantity = Number(target.value || 0);
+    if (!productKey || !Number.isFinite(quantity) || quantity <= 0) return;
     event.preventDefault();
-    handleSaleQtyEnter(row);
+    focusSaleRowPrice(row);
+    return;
+  }
+
+  if (target.classList.contains("sale-item-price")) {
+    event.preventDefault();
+    handleSalePriceEnter(row);
     return;
   }
 });
@@ -5439,6 +5515,27 @@ const closeSection = (toggle, body) => {
   syncExpandableCardState(body, false);
 };
 
+const openExclusiveCollapseSection = (sectionId) => {
+  let activeBody = null;
+  document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
+    const body = document.getElementById(toggle.dataset.collapse);
+    if (!body) return;
+    if (toggle.dataset.collapse === sectionId) {
+      openSection(toggle, body);
+      activeBody = body;
+      return;
+    }
+    closeSection(toggle, body);
+  });
+  if (sectionId === "coverageSection" && activeBody?.classList.contains("open")) {
+    renderSalesCoverage({ animatePins: true });
+  }
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+  });
+  return activeBody;
+};
+
 document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
   const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
@@ -5474,6 +5571,18 @@ document.addEventListener("click", (event) => {
   }
   requestAnimationFrame(() => {
     refreshCollapseHeights();
+  });
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "F2") return;
+  if (!isDesktopSalesKeyboardMode()) return;
+  if (dashboardSection?.classList.contains("hidden")) return;
+  event.preventDefault();
+  setActiveTab("sales");
+  openExclusiveCollapseSection("salesSection");
+  requestAnimationFrame(() => {
+    focusSaleClientField();
   });
 });
 
