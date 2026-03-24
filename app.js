@@ -2957,6 +2957,7 @@ const syncDashboardSlideHeights = (activeTab) => {
 };
 
 let dashboardResizeObserver = null;
+let isNavigatingToSales = false;
 
 const setupDashboardResizeObserver = () => {
   if (typeof ResizeObserver !== "function") return;
@@ -3006,6 +3007,24 @@ const updateDashboardVisibility = (activeTab) => {
       );
     }
   });
+};
+
+const waitForNextFrame = () => new Promise((resolve) => {
+  requestAnimationFrame(() => resolve());
+});
+
+const waitForDelay = (ms) => new Promise((resolve) => {
+  window.setTimeout(resolve, ms);
+});
+
+const waitForCondition = async (check, { attempts = 12, delayMs = 35 } = {}) => {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (check()) return true;
+    await waitForNextFrame();
+    if (check()) return true;
+    await waitForDelay(delayMs);
+  }
+  return check();
 };
 
 const setActiveTab = (targetTab) => {
@@ -5599,6 +5618,74 @@ const openExclusiveCollapseSection = (sectionId) => {
   return activeBody;
 };
 
+const getSalesShortcutTarget = () => {
+  const clientSelect = saleForm?.querySelector('select[name="client"]');
+  if (clientSelect && !clientSelect.disabled) return clientSelect;
+  const productSelect = saleItems?.querySelector(".sale-item-product");
+  if (productSelect && !productSelect.disabled) return productSelect;
+  return null;
+};
+
+const isElementReadyForFocus = (element) => Boolean(
+  element
+  && element.isConnected
+  && !element.disabled
+  && element.getClientRects().length > 0
+);
+
+const navigateToSalesShortcut = async () => {
+  if (isNavigatingToSales) return;
+  isNavigatingToSales = true;
+  console.log("F2 pressed");
+  try {
+    console.log("Switching to Ventas");
+    setActiveTab("sales");
+    refreshCollapseHeights();
+
+    const salesPanelReady = await waitForCondition(() => {
+      const activeTab = document.querySelector(".tab.active")?.dataset.tab;
+      const salesPanel = document.getElementById("sales");
+      return activeTab === "sales"
+        && dashboardSection?.dataset.view === "sales"
+        && salesPanel?.classList.contains("active")
+        && salesPanel?.getAttribute("aria-hidden") !== "true";
+    }, { attempts: 14, delayMs: 45 });
+
+    if (!salesPanelReady) return;
+    console.log("Ventas section ready");
+
+    const salesBody = openExclusiveCollapseSection("salesSection");
+    const salesCardReady = await waitForCondition(() => {
+      refreshCollapseHeights();
+      return Boolean(
+        salesBody
+        && salesBody.classList.contains("open")
+        && getLayoutHeight(salesBody) > 0
+      );
+    }, { attempts: 14, delayMs: 45 });
+
+    if (!salesCardReady) return;
+    console.log("Ventas card opened");
+
+    const targetReady = await waitForCondition(() => {
+      const target = getSalesShortcutTarget();
+      return isElementReadyForFocus(target);
+    }, { attempts: 16, delayMs: 35 });
+
+    if (targetReady) {
+      console.log("Focusing target input");
+      const target = getSalesShortcutTarget();
+      target?.focus({ preventScroll: false });
+    }
+
+    refreshCollapseHeights();
+    console.log("F2 navigation completed");
+  } finally {
+    await waitForDelay(120);
+    isNavigatingToSales = false;
+  }
+};
+
 document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
   const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
@@ -5641,12 +5728,10 @@ document.addEventListener("keydown", (event) => {
   if (event.key !== "F2") return;
   if (!isDesktopSalesKeyboardMode()) return;
   if (dashboardSection?.classList.contains("hidden")) return;
+  if (event.repeat) return;
+  if (isNavigatingToSales) return;
   event.preventDefault();
-  setActiveTab("sales");
-  openExclusiveCollapseSection("salesSection");
-  requestAnimationFrame(() => {
-    focusSaleClientField();
-  });
+  void navigateToSalesShortcut();
 });
 
 const refreshCollapseHeights = () => {
