@@ -94,6 +94,7 @@ const clientForm = document.getElementById("clientForm");
 const saleForm = document.getElementById("saleForm");
 const saleSubmitButton = saleForm?.querySelector('button[type="submit"]');
 const saleCreditCheckbox = document.getElementById("saleCredit");
+const saleCreditToggle = document.getElementById("saleCreditToggle");
 const saleItems = document.getElementById("saleItems");
 const saleGrandTotal = document.getElementById("saleGrandTotal");
 const addSaleItemBtn = document.getElementById("addSaleItemBtn");
@@ -3941,11 +3942,19 @@ const setupTabs = () => {
   setActiveTab(initialTab);
 };
 
-const updateDueDateVisibility = () => {
+const updateDueDateVisibility = (forceOpen = null) => {
   if (!saleForm || !dueDateField) return;
-  const isCredit = Boolean(saleCreditCheckbox?.checked);
+  const isCredit = forceOpen === null
+    ? Boolean(saleCreditCheckbox?.checked)
+    : Boolean(forceOpen);
+  if (saleCreditCheckbox) {
+    saleCreditCheckbox.checked = isCredit;
+  }
   dueDateField.classList.remove("hidden");
   dueDateField.classList.toggle("open", isCredit);
+  if (saleCreditToggle) {
+    saleCreditToggle.textContent = isCredit ? "Ocultar credito" : "Agregar credito";
+  }
   if (!isCredit) saleForm.dueDate.value = "";
   requestAnimationFrame(() => {
     refreshCollapseHeights();
@@ -5463,7 +5472,13 @@ if (batchProductSelect?.tagName === "SELECT") {
 
 batchForm.quantity.addEventListener("input", updateBatchCostPreview);
 
-saleCreditCheckbox?.addEventListener("change", updateDueDateVisibility);
+saleCreditToggle?.addEventListener("click", () => {
+  const nextState = !Boolean(saleCreditCheckbox?.checked);
+  updateDueDateVisibility(nextState);
+  if (nextState && saleForm?.dueDate) {
+    saleForm.dueDate.focus();
+  }
+});
 saleObservationToggle?.addEventListener("click", () => {
   const nextState = !saleObservationField?.classList.contains("open");
   updateSaleObservationVisibility(nextState);
