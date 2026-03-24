@@ -2530,6 +2530,14 @@ const focusSaleSubmitField = () => {
   });
 };
 
+const focusQuickClientField = (field) => {
+  if (!field) return;
+  requestAnimationFrame(() => {
+    field.focus({ preventScroll: false });
+    field.select?.();
+  });
+};
+
 const focusSaleRowProduct = (row) => {
   const select = row?.querySelector(".sale-item-product");
   if (!select) return;
@@ -4604,7 +4612,10 @@ saleForm.addEventListener("submit", async (event) => {
 const toggleQuickClient = (show) => {
   if (!quickClientPanel) return;
   quickClientPanel.classList.toggle("hidden", !show);
-  if (show && quickClientName) quickClientName.focus();
+  if (show && quickClientNotice) {
+    quickClientNotice.textContent = "";
+  }
+  if (show && quickClientName) focusQuickClientField(quickClientName);
 };
 
 quickClientToggle?.addEventListener("click", () => {
@@ -4615,6 +4626,7 @@ quickClientToggle?.addEventListener("click", () => {
 quickClientCancel?.addEventListener("click", () => {
   if (quickClientNotice) quickClientNotice.textContent = "";
   toggleQuickClient(false);
+  focusSaleClientField();
 });
 
 quickClientSave?.addEventListener("click", async () => {
@@ -4666,6 +4678,54 @@ quickClientSave?.addEventListener("click", async () => {
   toggleQuickClient(false);
   if (isDesktopSalesKeyboardMode()) {
     moveSalesFocusToFirstProduct();
+  }
+});
+
+quickClientPanel?.addEventListener("keydown", (event) => {
+  if (!isDesktopSalesKeyboardMode()) return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    if (quickClientNotice) quickClientNotice.textContent = "";
+    toggleQuickClient(false);
+    focusSaleClientField();
+    return;
+  }
+
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (target === quickClientName) {
+    focusQuickClientField(quickClientRucMain);
+    return;
+  }
+
+  if (target === quickClientRucMain) {
+    focusQuickClientField(quickClientRucDv);
+    return;
+  }
+
+  if (target === quickClientRucDv) {
+    focusQuickClientField(quickClientPhone);
+    return;
+  }
+
+  if (target === quickClientPhone) {
+    focusQuickClientField(quickClientAddress);
+    return;
+  }
+
+  if (target === quickClientAddress) {
+    focusQuickClientField(quickClientSave);
+    return;
+  }
+
+  if (target === quickClientSave) {
+    quickClientSave.click();
   }
 });
 
