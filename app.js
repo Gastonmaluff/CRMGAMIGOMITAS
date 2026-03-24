@@ -92,6 +92,7 @@ const historyMetricTicket = document.getElementById("historyMetricTicket");
 const productForm = document.getElementById("productForm");
 const clientForm = document.getElementById("clientForm");
 const saleForm = document.getElementById("saleForm");
+const saleSubmitButton = saleForm?.querySelector('button[type="submit"]');
 const saleCreditCheckbox = document.getElementById("saleCredit");
 const saleItems = document.getElementById("saleItems");
 const saleGrandTotal = document.getElementById("saleGrandTotal");
@@ -2521,6 +2522,13 @@ const focusSaleClientField = () => {
   });
 };
 
+const focusSaleSubmitField = () => {
+  if (!saleSubmitButton) return;
+  requestAnimationFrame(() => {
+    saleSubmitButton.focus({ preventScroll: false });
+  });
+};
+
 const focusSaleRowProduct = (row) => {
   const select = row?.querySelector(".sale-item-product");
   if (!select) return;
@@ -2599,6 +2607,15 @@ const handleSalePriceEnter = (row) => {
   refreshSaleProductOptions();
   focusSaleRowProduct(nextRow);
   requestAnimationFrame(refreshCollapseHeights);
+};
+
+const isSalesFreeTextField = (target) => {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.tagName === "TEXTAREA") return true;
+  if (target.tagName !== "INPUT") return false;
+  const inputType = String(target.getAttribute("type") || target.type || "").toLowerCase();
+  if (target.classList.contains("sale-item-price")) return false;
+  return ["text", "search", "email", "url", "tel", ""].includes(inputType);
 };
 
 const createSaleItemRow = (item = {}) => {
@@ -4606,6 +4623,9 @@ quickClientSave?.addEventListener("click", async () => {
   if (quickClientAddress) quickClientAddress.value = "";
   if (quickClientNotice) quickClientNotice.textContent = "";
   toggleQuickClient(false);
+  if (isDesktopSalesKeyboardMode()) {
+    moveSalesFocusToFirstProduct();
+  }
 });
 
 salesGoalForm?.addEventListener("submit", async (event) => {
@@ -5229,13 +5249,41 @@ saleForm?.client?.addEventListener("blur", () => {
 });
 saleForm?.addEventListener("keydown", (event) => {
   if (!isDesktopSalesKeyboardMode()) return;
-  if (event.key !== "Enter") return;
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
+
+  if (event.key === "Escape") {
+    clearSalesKeyboardSelectState(saleForm?.client);
+    const row = target.closest(".sale-item");
+    clearSalesKeyboardSelectState(row?.querySelector(".sale-item-product"));
+    if (quickClientPanel && !quickClientPanel.classList.contains("hidden")) {
+      event.preventDefault();
+      if (quickClientNotice) quickClientNotice.textContent = "";
+      toggleQuickClient(false);
+      focusSaleClientField();
+    }
+    return;
+  }
+
+  const saleClientSelect = saleForm?.querySelector('select[name="client"]');
+
+  if (event.key.toLowerCase() === "n" && saleClientSelect && target === saleClientSelect) {
+    event.preventDefault();
+    if (quickClientNotice) quickClientNotice.textContent = "";
+    toggleQuickClient(true);
+    return;
+  }
+
+  if (event.key.toLowerCase() === "r" && !isSalesFreeTextField(target)) {
+    event.preventDefault();
+    focusSaleSubmitField();
+    return;
+  }
+
+  if (event.key !== "Enter") return;
   if (target.tagName === "TEXTAREA") return;
 
   const saleDateInput = saleForm?.querySelector('input[name="date"]');
-  const saleClientSelect = saleForm?.querySelector('select[name="client"]');
 
   if (saleDateInput && target === saleDateInput) {
     event.preventDefault();
