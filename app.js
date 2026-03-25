@@ -110,6 +110,15 @@ const salesGoalForm = document.getElementById("salesGoalForm");
 const salesGoalNotice = document.getElementById("salesGoalNotice");
 const financeExpenseForm = document.getElementById("financeExpenseForm");
 const financeExpenseNotice = document.getElementById("financeExpenseNotice");
+const financeInitialToggle = document.getElementById("financeInitialToggle");
+const financeInitialPanel = document.getElementById("financeInitialPanel");
+const financeInitialForm = document.getElementById("financeInitialForm");
+const financeInitialNotice = document.getElementById("financeInitialNotice");
+const financeInitialHistory = document.getElementById("financeInitialHistory");
+const financeManualAdjustmentToggle = document.getElementById("financeManualAdjustmentToggle");
+const financeManualAdjustmentPanel = document.getElementById("financeManualAdjustmentPanel");
+const financeManualAdjustmentForm = document.getElementById("financeManualAdjustmentForm");
+const financeManualAdjustmentNotice = document.getElementById("financeManualAdjustmentNotice");
 const addIngredientBtn = document.getElementById("addIngredientBtn");
 const quickClientToggle = document.getElementById("quickClientToggle");
 const quickClientPanel = document.getElementById("quickClientPanel");
@@ -143,6 +152,7 @@ const salesCoverageCities = document.getElementById("salesCoverageCities");
 const financeMovementList = document.getElementById("financeMovementList");
 const financeReceivablesList = document.getElementById("financeReceivablesList");
 const financeCategorySummaryList = document.getElementById("financeCategorySummaryList");
+const financeActiveSummary = document.getElementById("financeActiveSummary");
 const historyFilters = document.getElementById("historyFilters");
 const historyCustomerSearch = document.getElementById("historyCustomerSearch");
 const historyCustomerResults = document.getElementById("historyCustomerResults");
@@ -181,6 +191,8 @@ const state = {
   sales: [],
   salesGoals: [],
   financialExpenses: [],
+  financialInitialSettings: [],
+  financialManualAdjustments: [],
   finishedStockAdjustments: [],
   rawMaterialAdjustments: []
 };
@@ -1427,6 +1439,33 @@ const getReceivableStatus = (sale) => {
   return "Pendiente";
 };
 
+const getLatestFinancialStartSetting = () => {
+  return [...state.financialInitialSettings]
+    .sort((a, b) => {
+      const aTime = Number(a.createdAt?.seconds || a.createdAt?._seconds || 0);
+      const bTime = Number(b.createdAt?.seconds || b.createdAt?._seconds || 0);
+      if (bTime !== aTime) return bTime - aTime;
+      return String(b.startDate || "").localeCompare(String(a.startDate || ""));
+    })[0] || null;
+};
+
+const getFinanceAnalysisRange = () => {
+  const fallback = getCurrentMonthDateRange();
+  const latestSetting = getLatestFinancialStartSetting();
+  const today = toDateInputValue(new Date());
+  return {
+    start: normalizeDateValue(latestSetting?.startDate) || fallback.start,
+    end: today,
+    configuredStart: normalizeDateValue(latestSetting?.startDate) || "",
+    setting: latestSetting
+  };
+};
+
+const isDateWithinFinanceAnalysis = (dateValue) => {
+  const range = getFinanceAnalysisRange();
+  return isDateWithinRange(dateValue, range.start, range.end);
+};
+
 const buildFinanceMovementRows = () => {
   const saleRows = state.sales.map((sale) => {
     const client = getSaleClientDetails(sale);
@@ -1489,7 +1528,35 @@ const buildFinanceMovementRows = () => {
     createdAt: expense.createdAt?.seconds || 0
   }));
 
-  return [...saleRows, ...purchaseRows, ...manualExpenseRows]
+  const manualAdjustmentRows = state.financialManualAdjustments.map((adjustment) => {
+    const type = String(adjustment.type || "").trim().toLowerCase();
+    const rawAmount = Number(adjustment.amount || 0);
+    const amount = Number.isFinite(rawAmount) ? rawAmount : 0;
+    const income = type === "ingreso" ? Math.abs(amount) : (type === "correccion" && amount > 0 ? amount : 0);
+    const expense = type === "egreso" ? Math.abs(amount) : (type === "correccion" && amount < 0 ? Math.abs(amount) : 0);
+    return {
+      id: `adjustment-${adjustment.id}`,
+      sourceType: "manual-adjustment",
+      date: normalizeDateValue(adjustment.date),
+      movementType: type === "correccion" ? "Correccion" : "Ajuste manual",
+      category: type === "ingreso"
+        ? "Ingreso manual"
+        : type === "egreso"
+          ? "Egreso manual"
+          : "Correccion financiera",
+      description: adjustment.reason || "Ajuste financiero",
+      counterparty: "Sistema",
+      income,
+      expense,
+      estimatedProfit: 0,
+      paymentMethod: "-",
+      status: "Aplicado",
+      observation: String(adjustment.observation || "").trim(),
+      createdAt: adjustment.createdAt?.seconds || 0
+    };
+  });
+
+  return [...saleRows, ...purchaseRows, ...manualExpenseRows, ...manualAdjustmentRows]
     .filter((item) => item.date || item.createdAt)
     .sort((a, b) => {
       const dateCompare = String(b.date || "").localeCompare(String(a.date || ""));
@@ -1499,57 +1566,82 @@ const buildFinanceMovementRows = () => {
 };
 
 const computeFinanceSummary = () => {
-  const { start, end } = getCurrentMonthDateRange();
+  const { start, end } = getFinanceAnalysisRange();
   const salesInPeriod = state.sales.filter((sale) => isDateWithinRange(getSaleDateValue(sale), start, end));
   const purchasesInPeriod = state.purchases.filter((purchase) => (
     normalizeText(purchase.type || "") !== "consumo por produccion"
     && isDateWithinRange(purchase.date, start, end)
   ));
   const expensesInPeriod = state.financialExpenses.filter((expense) => isDateWithinRange(expense.date, start, end));
+  const adjustmentsInPeriod = state.financialManualAdjustments.filter((adjustment) => isDateWithinRange(adjustment.date, start, end));
   const revenue = salesInPeriod.reduce((sum, sale) => sum + getSaleTotalAmount(sale), 0);
   const collected = salesInPeriod.reduce((sum, sale) => sum + getSaleCollectedAmount(sale), 0);
   const purchaseExpenses = purchasesInPeriod.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0);
   const manualExpenses = expensesInPeriod.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
-  const expenses = purchaseExpenses + manualExpenses;
+  const manualAdjustmentIncome = adjustmentsInPeriod.reduce((sum, adjustment) => {
+    const type = String(adjustment.type || "").trim().toLowerCase();
+    const amount = Number(adjustment.amount || 0);
+    if (type === "ingreso") return sum + Math.abs(amount);
+    if (type === "correccion" && amount > 0) return sum + amount;
+    return sum;
+  }, 0);
+  const manualAdjustmentExpense = adjustmentsInPeriod.reduce((sum, adjustment) => {
+    const type = String(adjustment.type || "").trim().toLowerCase();
+    const amount = Number(adjustment.amount || 0);
+    if (type === "egreso") return sum + Math.abs(amount);
+    if (type === "correccion" && amount < 0) return sum + Math.abs(amount);
+    return sum;
+  }, 0);
+  const expenses = purchaseExpenses + manualExpenses + manualAdjustmentExpense;
   const estimatedProfit = salesInPeriod.reduce((sum, sale) => sum + getSaleEstimatedProfit(sale), 0);
-  const net = collected - expenses;
+  const actualInflow = collected + manualAdjustmentIncome;
+  const net = actualInflow - expenses;
   return {
     periodStart: start,
     periodEnd: end,
     revenue,
-    collected,
+    collected: actualInflow,
     expenses,
     estimatedProfit,
-    net
+    net,
+    manualAdjustmentIncome,
+    manualAdjustmentExpense
   };
 };
 
 const refreshFinanceDashboard = () => {
   const summary = computeFinanceSummary();
+  const hasCutoff = Boolean(getFinanceAnalysisRange().setting);
   dashboardMetricSnapshot.finance.revenue = Number(summary.revenue || 0);
   dashboardMetricSnapshot.finance.expenses = Number(summary.expenses || 0);
   dashboardMetricSnapshot.finance.estimatedProfit = Number(summary.estimatedProfit || 0);
   dashboardMetricSnapshot.finance.net = Number(summary.net || 0);
   if (financeMetricRevenueSub) {
-    financeMetricRevenueSub.textContent = `Cobrado real: Gs ${formatGs(summary.collected || 0)}`;
+    financeMetricRevenueSub.textContent = summary.manualAdjustmentIncome > 0
+      ? `Ingresado realmente (incluye ajustes): Gs ${formatGs(summary.collected || 0)}`
+      : `Ingresado realmente: Gs ${formatGs(summary.collected || 0)}`;
   }
   if (financeMetricExpensesSub) {
-    financeMetricExpensesSub.textContent = "compras y egresos manuales del mes actual";
+    financeMetricExpensesSub.textContent = hasCutoff
+      ? `Desde corte activo | ajustes: Gs ${formatGs(summary.manualAdjustmentExpense || 0)}`
+      : `Incluye ajustes: Gs ${formatGs(summary.manualAdjustmentExpense || 0)}`;
   }
   if (financeMetricEstimatedProfitSub) {
-    financeMetricEstimatedProfitSub.textContent = "sobre toda la facturacion del periodo";
+    financeMetricEstimatedProfitSub.textContent = `Desde ${formatDate(summary.periodStart)} hasta ${formatDate(summary.periodEnd)}`;
   }
   if (financeMetricNetSub) {
-    financeMetricNetSub.textContent = `cobrado real menos egresos: Gs ${formatGs(summary.net || 0)}`;
+    financeMetricNetSub.textContent = hasCutoff
+      ? "Resultado neto real desde el corte financiero"
+      : "Resultado neto real del periodo actual";
   }
   animateFinanceDashboardMetrics();
 };
 
 const renderFinanceMovement = () => {
   if (!financeMovementList) return;
-  const rows = buildFinanceMovementRows();
+  const rows = buildFinanceMovementRows().filter((row) => isDateWithinFinanceAnalysis(row.date));
   if (!rows.length) {
-    financeMovementList.innerHTML = '<tr><td colspan="11" class="muted">Todavia no hay movimientos financieros registrados.</td></tr>';
+    financeMovementList.innerHTML = '<tr><td colspan="11" class="muted">Todavia no hay movimientos financieros dentro del tramo activo.</td></tr>';
     return;
   }
   financeMovementList.innerHTML = rows.map((row) => `
@@ -1572,7 +1664,7 @@ const renderFinanceMovement = () => {
 const renderFinanceReceivables = () => {
   if (!financeReceivablesList) return;
   const receivables = state.sales
-    .filter((sale) => isCreditSaleRecord(sale) && !isSaleCollected(sale))
+    .filter((sale) => isCreditSaleRecord(sale) && !isSaleCollected(sale) && isDateWithinFinanceAnalysis(getSaleDateValue(sale)))
     .map((sale) => ({
       id: sale.id,
       clientName: getSaleClientDetails(sale).name,
@@ -1606,12 +1698,12 @@ const renderFinanceReceivables = () => {
 
 const renderFinanceCategorySummary = () => {
   if (!financeCategorySummaryList) return;
-  const { start, end } = getCurrentMonthDateRange();
+  const { start, end } = getFinanceAnalysisRange();
   const expenseRows = buildFinanceMovementRows()
     .filter((row) => row.expense > 0 && isDateWithinRange(row.date, start, end));
 
   if (!expenseRows.length) {
-    financeCategorySummaryList.innerHTML = '<div class="list-item muted">Todavia no hay egresos en el periodo actual.</div>';
+    financeCategorySummaryList.innerHTML = '<div class="list-item muted">Todavia no hay egresos dentro del tramo financiero activo.</div>';
     return;
   }
 
@@ -1633,6 +1725,89 @@ const renderFinanceCategorySummary = () => {
         <div>Total egresado: <strong>Gs ${formatGs(entry.total)}</strong></div>
       </div>
     `).join("");
+};
+
+const renderFinanceInitialHistory = () => {
+  if (!financeInitialHistory) return;
+  const history = [...state.financialInitialSettings]
+    .sort((a, b) => {
+      const aTime = Number(a.createdAt?.seconds || a.createdAt?._seconds || 0);
+      const bTime = Number(b.createdAt?.seconds || b.createdAt?._seconds || 0);
+      return bTime - aTime;
+    });
+  if (!history.length) {
+    financeInitialHistory.innerHTML = '<div class="list-item muted">Aun no configuraste un inicio financiero real.</div>';
+    return;
+  }
+  financeInitialHistory.innerHTML = history.slice(0, 5).map((entry, index) => {
+    const userLabel = String(entry.userName || entry.userEmail || "").trim() || "Sin usuario";
+    const createdLabel = formatDate(normalizeDateValue(entry.createdAt) || normalizeDateValue(entry.createdAtMs) || "");
+    return `
+      <div class="list-item finance-initial-history-item">
+        <strong>${index === 0 ? "Activo" : "Historico"}</strong>
+        <div>Fecha de corte: ${formatDate(entry.startDate)}</div>
+        <div>Motivo: ${escapeHtml(entry.reason || "-")}</div>
+        <div>Registrado por: ${escapeHtml(userLabel)}</div>
+        <div>Creado: ${createdLabel || "Sin fecha"}</div>
+      </div>
+    `;
+  }).join("");
+};
+
+const renderFinanceActiveSummary = () => {
+  if (!financeActiveSummary) return;
+  const range = getFinanceAnalysisRange();
+  if (!range.setting) {
+    financeActiveSummary.innerHTML = `
+      <strong>Modo financiero actual</strong>
+      <div>Sin ajuste inicial configurado. El analisis usa el mes actual desde ${formatDate(range.start)}.</div>
+    `;
+    return;
+  }
+  const userLabel = String(range.setting.userName || range.setting.userEmail || "").trim() || "Sin usuario";
+  financeActiveSummary.innerHTML = `
+    <strong>Inicio financiero real activo</strong>
+    <div>Desde: <strong>${formatDate(range.start)}</strong></div>
+    <div>Motivo: ${escapeHtml(range.setting.reason || "-")}</div>
+    <div>Registrado por: ${escapeHtml(userLabel)}</div>
+  `;
+};
+
+const toggleFinanceInlinePanel = (panel, shouldOpen) => {
+  if (!panel) return;
+  panel.classList.toggle("hidden", !shouldOpen);
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+  });
+};
+
+const closeFinanceInlinePanels = () => {
+  toggleFinanceInlinePanel(financeInitialPanel, false);
+  toggleFinanceInlinePanel(financeManualAdjustmentPanel, false);
+  if (financeInitialNotice) financeInitialNotice.textContent = "";
+  if (financeManualAdjustmentNotice) financeManualAdjustmentNotice.textContent = "";
+};
+
+const openFinanceInitialPanel = () => {
+  toggleFinanceInlinePanel(financeManualAdjustmentPanel, false);
+  toggleFinanceInlinePanel(financeInitialPanel, true);
+  if (financeInitialForm?.startDate) {
+    financeInitialForm.startDate.value = getFinanceAnalysisRange().configuredStart || toDateInputValue(new Date());
+    requestAnimationFrame(() => {
+      financeInitialForm.startDate.focus({ preventScroll: false });
+    });
+  }
+};
+
+const openFinanceManualAdjustmentPanel = () => {
+  toggleFinanceInlinePanel(financeInitialPanel, false);
+  toggleFinanceInlinePanel(financeManualAdjustmentPanel, true);
+  if (financeManualAdjustmentForm?.date) {
+    financeManualAdjustmentForm.date.value = financeManualAdjustmentForm.date.value || toDateInputValue(new Date());
+    requestAnimationFrame(() => {
+      financeManualAdjustmentForm.date.focus({ preventScroll: false });
+    });
+  }
 };
 
 const getCoverageCityByAddress = (address) => {
@@ -4079,7 +4254,7 @@ const syncState = (key, items) => {
   if (["rawMaterials", "purchases", "batches", "rawMaterialAdjustments"].includes(key)) {
     refreshStockSummary();
   }
-  if (["sales", "products", "recipes", "salesGoals", "rawMaterials", "purchases", "batches", "finishedStockAdjustments", "rawMaterialAdjustments", "financialExpenses"].includes(key)) {
+  if (["sales", "products", "recipes", "salesGoals", "rawMaterials", "purchases", "batches", "finishedStockAdjustments", "rawMaterialAdjustments", "financialExpenses", "financialInitialSettings", "financialManualAdjustments"].includes(key)) {
     const stockData = computeStockTotals();
     refreshSalesDashboard(stockData);
     refreshDashboard(stockData);
@@ -4303,6 +4478,8 @@ const renderAll = () => {
   renderFinanceMovement();
   renderFinanceReceivables();
   renderFinanceCategorySummary();
+  renderFinanceActiveSummary();
+  renderFinanceInitialHistory();
 
   requestAnimationFrame(refreshCollapseHeights);
   refreshIcons();
@@ -5133,6 +5310,106 @@ financeExpenseForm?.addEventListener("submit", async (event) => {
   resetForm(financeExpenseForm);
   financeExpenseForm.date.valueAsDate = new Date();
   if (financeExpenseNotice) financeExpenseNotice.textContent = "";
+});
+
+financeInitialToggle?.addEventListener("click", () => {
+  const isHidden = financeInitialPanel?.classList.contains("hidden");
+  if (!isHidden) {
+    closeFinanceInlinePanels();
+    return;
+  }
+  openFinanceInitialPanel();
+});
+
+financeManualAdjustmentToggle?.addEventListener("click", () => {
+  const isHidden = financeManualAdjustmentPanel?.classList.contains("hidden");
+  if (!isHidden) {
+    closeFinanceInlinePanels();
+    return;
+  }
+  openFinanceManualAdjustmentPanel();
+});
+
+financeInitialForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const user = auth.currentUser;
+  if (!user) return;
+  const startDate = normalizeDateValue(financeInitialForm.startDate.value);
+  const reason = String(financeInitialForm.reason.value || "").trim();
+  if (!startDate) {
+    if (financeInitialNotice) financeInitialNotice.textContent = "Completa la fecha de inicio financiero real.";
+    return;
+  }
+  if (!reason) {
+    if (financeInitialNotice) financeInitialNotice.textContent = "El motivo del corte financiero es obligatorio.";
+    return;
+  }
+  const payload = {
+    startDate,
+    reason,
+    userId: user.uid,
+    userEmail: user.email || "",
+    userName: user.displayName || "",
+    createdAt: serverTimestamp(),
+    createdAtMs: Date.now()
+  };
+  try {
+    await addDoc(collection(db, "financial_initial_settings"), payload);
+    if (financeInitialNotice) financeInitialNotice.textContent = "";
+    closeFinanceInlinePanels();
+  } catch (error) {
+    console.error("No se pudo guardar el ajuste inicial financiero:", error);
+    if (financeInitialNotice) financeInitialNotice.textContent = "No se pudo guardar el ajuste inicial financiero.";
+  }
+});
+
+financeManualAdjustmentForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const user = auth.currentUser;
+  if (!user) return;
+  const date = normalizeDateValue(financeManualAdjustmentForm.date.value);
+  const type = String(financeManualAdjustmentForm.type.value || "").trim().toLowerCase();
+  const amount = Number(financeManualAdjustmentForm.amount.value);
+  const reason = String(financeManualAdjustmentForm.reason.value || "").trim();
+  const observation = String(financeManualAdjustmentForm.observation.value || "").trim();
+  if (!date) {
+    if (financeManualAdjustmentNotice) financeManualAdjustmentNotice.textContent = "Completa la fecha del ajuste.";
+    return;
+  }
+  if (!["ingreso", "egreso", "correccion"].includes(type)) {
+    if (financeManualAdjustmentNotice) financeManualAdjustmentNotice.textContent = "Selecciona un tipo de ajuste valido.";
+    return;
+  }
+  if (!Number.isFinite(amount) || amount === 0) {
+    if (financeManualAdjustmentNotice) financeManualAdjustmentNotice.textContent = "Ingresa un monto valido distinto de 0.";
+    return;
+  }
+  if (!reason) {
+    if (financeManualAdjustmentNotice) financeManualAdjustmentNotice.textContent = "El motivo del ajuste es obligatorio.";
+    return;
+  }
+  const payload = {
+    date,
+    type,
+    amount,
+    reason,
+    observation,
+    userId: user.uid,
+    userEmail: user.email || "",
+    userName: user.displayName || "",
+    createdAt: serverTimestamp(),
+    createdAtMs: Date.now()
+  };
+  try {
+    await addDoc(collection(db, "financial_manual_adjustments"), payload);
+    resetForm(financeManualAdjustmentForm);
+    financeManualAdjustmentForm.date.valueAsDate = new Date();
+    if (financeManualAdjustmentNotice) financeManualAdjustmentNotice.textContent = "";
+    closeFinanceInlinePanels();
+  } catch (error) {
+    console.error("No se pudo guardar el ajuste financiero:", error);
+    if (financeManualAdjustmentNotice) financeManualAdjustmentNotice.textContent = "No se pudo guardar el ajuste financiero.";
+  }
 });
 
 const startEditRawMaterial = (item) => {
@@ -6237,6 +6514,8 @@ onAuthStateChanged(auth, (user) => {
   listenCollection("sales", "sales", user.uid);
   listenCollection("sales_goals", "salesGoals", user.uid);
   listenCollection("financial_expenses", "financialExpenses", user.uid);
+  listenCollection("financial_initial_settings", "financialInitialSettings", user.uid);
+  listenCollection("financial_manual_adjustments", "financialManualAdjustments", user.uid);
   listenCollection("finished_stock_adjustments", "finishedStockAdjustments", user.uid);
   listenCollection("raw_material_adjustments", "rawMaterialAdjustments", user.uid);
 }, (error) => {

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CRM Gami Gomitas</title>
-  <link rel="stylesheet" href="styles.css?v=20260325-31" />
+  <link rel="stylesheet" href="styles.css?v=20260325-32" />
 </head>
 <body>
   <div class="app">
@@ -998,10 +998,69 @@
             <div class="card finance-wide-card">
               <h2 class="section-title">
                 <span class="section-title-text"><i data-lucide="wallet"></i><span class="section-title-label">Movimiento financiero</span></span>
-                <button class="collapse-toggle open" type="button" data-collapse="financeMovementSection" aria-expanded="true"><span class="chevron">&gt;</span></button>
+                <span class="finance-header-actions">
+                  <button class="btn ghost" type="button" id="financeInitialToggle">Ajuste inicial financiero</button>
+                  <button class="btn ghost" type="button" id="financeManualAdjustmentToggle">Ajustar finanzas</button>
+                  <button class="collapse-toggle open" type="button" data-collapse="financeMovementSection" aria-expanded="true"><span class="chevron">&gt;</span></button>
+                </span>
               </h2>
               <div class="collapse-body open" id="financeMovementSection">
                 <div class="finance-movement-layout">
+                  <div class="finance-active-summary list-item" id="financeActiveSummary"></div>
+                  <div class="inline-panel hidden" id="financeInitialPanel">
+                    <form id="financeInitialForm" class="form-grid finance-initial-form">
+                      <div class="finance-form-heading">
+                        <strong>Configurar inicio financiero real</strong>
+                        <span class="muted">Desde esta fecha, el analisis financiero tomara solo movimientos reales.</span>
+                      </div>
+                      <label>
+                        Fecha de inicio financiero real
+                        <input name="startDate" type="date" required />
+                      </label>
+                      <label class="finance-initial-observation">
+                        Observacion / motivo
+                        <textarea name="reason" rows="3" maxlength="220" placeholder="Ej: Inicio real del modulo financiero" required></textarea>
+                      </label>
+                      <button class="btn primary" type="submit">Guardar ajuste inicial</button>
+                      <div class="error" id="financeInitialNotice"></div>
+                    </form>
+                    <div class="list" id="financeInitialHistory"></div>
+                  </div>
+                  <div class="inline-panel hidden" id="financeManualAdjustmentPanel">
+                    <form id="financeManualAdjustmentForm" class="form-grid finance-adjustment-form">
+                      <div class="finance-form-heading">
+                        <strong>Registrar ajuste financiero</strong>
+                        <span class="muted">Usa este ajuste para corregir diferencias reales sin borrar historial previo.</span>
+                      </div>
+                      <label>
+                        Fecha
+                        <input name="date" type="date" required />
+                      </label>
+                      <label>
+                        Tipo
+                        <select name="type" required>
+                          <option value="">Seleccionar</option>
+                          <option value="ingreso">Ingreso</option>
+                          <option value="egreso">Egreso</option>
+                          <option value="correccion">Correccion</option>
+                        </select>
+                      </label>
+                      <label>
+                        Monto
+                        <input name="amount" type="number" step="0.01" placeholder="Ej: 250000 o -250000 para correccion negativa" required />
+                      </label>
+                      <label class="finance-adjustment-reason">
+                        Motivo
+                        <input name="reason" type="text" maxlength="160" placeholder="Ej: Correccion de caja inicial" required />
+                      </label>
+                      <label class="finance-adjustment-observation">
+                        Observacion
+                        <textarea name="observation" rows="3" maxlength="220" placeholder="Opcional"></textarea>
+                      </label>
+                      <button class="btn primary" type="submit">Guardar ajuste</button>
+                      <div class="error" id="financeManualAdjustmentNotice"></div>
+                    </form>
+                  </div>
                   <div class="finance-movement-table-wrap">
                     <table class="finance-movement-table">
                       <thead>
@@ -1116,7 +1175,7 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260325-43"></script>
+  <script type="module" src="app.js?v=20260325-44"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();
