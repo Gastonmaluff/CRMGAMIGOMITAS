@@ -1595,6 +1595,10 @@ select:focus {
   gap: 16px;
 }
 
+.finance-grid .card {
+  min-width: 0;
+}
+
 .finance-expense-form {
   margin-bottom: 0;
   padding: 16px;
@@ -1650,6 +1654,42 @@ select:focus {
 
 .finance-movement-table tbody tr:last-child td {
   border-bottom: none;
+}
+
+.finance-receivable-item,
+.finance-category-item {
+  display: grid;
+  gap: 6px;
+}
+
+.finance-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  border: 1px solid #d1d5db;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.finance-status-badge.is-overdue {
+  background: #fff1f2;
+  border-color: #fda4af;
+  color: #be123c;
+}
+
+.finance-status-badge.is-today {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #c2410c;
+}
+
+.finance-status-badge.is-pending {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
 }
 
 .commercial-history-chart-panel {

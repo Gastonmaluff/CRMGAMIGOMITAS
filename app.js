@@ -93,6 +93,10 @@ const financeMetricRevenue = document.getElementById("financeMetricRevenue");
 const financeMetricExpenses = document.getElementById("financeMetricExpenses");
 const financeMetricEstimatedProfit = document.getElementById("financeMetricEstimatedProfit");
 const financeMetricNet = document.getElementById("financeMetricNet");
+const financeMetricRevenueSub = document.getElementById("financeMetricRevenueSub");
+const financeMetricExpensesSub = document.getElementById("financeMetricExpensesSub");
+const financeMetricEstimatedProfitSub = document.getElementById("financeMetricEstimatedProfitSub");
+const financeMetricNetSub = document.getElementById("financeMetricNetSub");
 const productForm = document.getElementById("productForm");
 const clientForm = document.getElementById("clientForm");
 const saleForm = document.getElementById("saleForm");
@@ -137,6 +141,8 @@ const salesCoveragePins = document.getElementById("salesCoveragePins");
 const salesCoverageSummary = document.getElementById("salesCoverageSummary");
 const salesCoverageCities = document.getElementById("salesCoverageCities");
 const financeMovementList = document.getElementById("financeMovementList");
+const financeReceivablesList = document.getElementById("financeReceivablesList");
+const financeCategorySummaryList = document.getElementById("financeCategorySummaryList");
 const historyFilters = document.getElementById("historyFilters");
 const historyCustomerSearch = document.getElementById("historyCustomerSearch");
 const historyCustomerResults = document.getElementById("historyCustomerResults");
@@ -1401,6 +1407,26 @@ const getSaleEstimatedProfit = (sale) => {
   return getSaleTotalAmount(sale) - estimatedCost;
 };
 
+const isSaleCollected = (sale) => {
+  const paidLabel = normalizeText(sale?.paid || sale?.status || "");
+  if (paidLabel === "si" || paidLabel === "pagado" || paidLabel === "cobrado") return true;
+  return !isCreditSaleRecord(sale);
+};
+
+const getSaleCollectedAmount = (sale) => {
+  if (!isSaleCollected(sale)) return 0;
+  return getSaleTotalAmount(sale);
+};
+
+const getReceivableStatus = (sale) => {
+  const dueDate = normalizeDateValue(sale?.dueDate);
+  const today = toDateInputValue(new Date());
+  if (!dueDate) return "Pendiente";
+  if (dueDate < today) return "Vencido";
+  if (dueDate === today) return "Vence hoy";
+  return "Pendiente";
+};
+
 const buildFinanceMovementRows = () => {
   const saleRows = state.sales.map((sale) => {
     const client = getSaleClientDetails(sale);
@@ -1408,19 +1434,20 @@ const buildFinanceMovementRows = () => {
     const lineSummary = getSaleLineItems(sale)
       .map((line) => `${formatInteger(line.quantity || 0)}x ${line.productName || "Producto"}`)
       .join(" | ");
+    const isCollected = isSaleCollected(sale);
     return {
       id: `sale-${sale.id}`,
       sourceType: "sale",
       date: saleDate,
-      movementType: "Ingreso",
-      category: "Venta",
+      movementType: isCollected ? "Ingreso" : "Venta a credito",
+      category: isCreditSaleRecord(sale) ? "Facturacion a credito" : "Venta contado",
       description: lineSummary || "Venta registrada",
       counterparty: client.name || "Sin cliente",
-      income: getSaleTotalAmount(sale),
+      income: getSaleCollectedAmount(sale),
       expense: 0,
       estimatedProfit: getSaleEstimatedProfit(sale),
       paymentMethod: sale.payment || "-",
-      status: isCreditSaleRecord(sale) ? "Pendiente" : "Pagado",
+      status: isCreditSaleRecord(sale) ? getReceivableStatus(sale) : "Pagado",
       observation: String(sale.observation || "").trim(),
       createdAt: sale.createdAt?.seconds || 0
     };
@@ -1433,7 +1460,7 @@ const buildFinanceMovementRows = () => {
     sourceType: "purchase",
     date: normalizeDateValue(purchase.date),
     movementType: "Egreso",
-    category: purchase.type || "Compra materia prima",
+    category: normalizeText(purchase.type || "") === "ingreso" ? "Materia prima" : (purchase.type || "Materia prima"),
     description: purchase.materialName || "Compra registrada",
     counterparty: purchase.supplier || purchase.materialName || "-",
     income: 0,
@@ -1480,15 +1507,17 @@ const computeFinanceSummary = () => {
   ));
   const expensesInPeriod = state.financialExpenses.filter((expense) => isDateWithinRange(expense.date, start, end));
   const revenue = salesInPeriod.reduce((sum, sale) => sum + getSaleTotalAmount(sale), 0);
+  const collected = salesInPeriod.reduce((sum, sale) => sum + getSaleCollectedAmount(sale), 0);
   const purchaseExpenses = purchasesInPeriod.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0);
   const manualExpenses = expensesInPeriod.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const expenses = purchaseExpenses + manualExpenses;
   const estimatedProfit = salesInPeriod.reduce((sum, sale) => sum + getSaleEstimatedProfit(sale), 0);
-  const net = revenue - expenses;
+  const net = collected - expenses;
   return {
     periodStart: start,
     periodEnd: end,
     revenue,
+    collected,
     expenses,
     estimatedProfit,
     net
@@ -1501,6 +1530,18 @@ const refreshFinanceDashboard = () => {
   dashboardMetricSnapshot.finance.expenses = Number(summary.expenses || 0);
   dashboardMetricSnapshot.finance.estimatedProfit = Number(summary.estimatedProfit || 0);
   dashboardMetricSnapshot.finance.net = Number(summary.net || 0);
+  if (financeMetricRevenueSub) {
+    financeMetricRevenueSub.textContent = `Cobrado real: Gs ${formatGs(summary.collected || 0)}`;
+  }
+  if (financeMetricExpensesSub) {
+    financeMetricExpensesSub.textContent = "compras y egresos manuales del mes actual";
+  }
+  if (financeMetricEstimatedProfitSub) {
+    financeMetricEstimatedProfitSub.textContent = "sobre toda la facturacion del periodo";
+  }
+  if (financeMetricNetSub) {
+    financeMetricNetSub.textContent = `cobrado real menos egresos: Gs ${formatGs(summary.net || 0)}`;
+  }
   animateFinanceDashboardMetrics();
 };
 
@@ -1526,6 +1567,72 @@ const renderFinanceMovement = () => {
       <td>${escapeHtml(row.observation || "-")}</td>
     </tr>
   `).join("");
+};
+
+const renderFinanceReceivables = () => {
+  if (!financeReceivablesList) return;
+  const receivables = state.sales
+    .filter((sale) => isCreditSaleRecord(sale) && !isSaleCollected(sale))
+    .map((sale) => ({
+      id: sale.id,
+      clientName: getSaleClientDetails(sale).name,
+      saleDate: normalizeDateValue(getSaleDateValue(sale)),
+      dueDate: normalizeDateValue(sale.dueDate),
+      amount: getSaleTotalAmount(sale),
+      status: getReceivableStatus(sale)
+    }))
+    .sort((a, b) => {
+      const statusWeight = { "Vencido": 0, "Vence hoy": 1, "Pendiente": 2 };
+      const weightDiff = (statusWeight[a.status] ?? 3) - (statusWeight[b.status] ?? 3);
+      if (weightDiff !== 0) return weightDiff;
+      return String(a.dueDate || "").localeCompare(String(b.dueDate || ""));
+    });
+
+  if (!receivables.length) {
+    financeReceivablesList.innerHTML = '<div class="list-item muted">No hay ventas a credito pendientes de cobro.</div>';
+    return;
+  }
+
+  financeReceivablesList.innerHTML = receivables.map((entry) => `
+    <div class="list-item finance-receivable-item">
+      <strong>${escapeHtml(entry.clientName || "Sin cliente")}</strong>
+      <div>Fecha de venta: ${formatDate(entry.saleDate)}</div>
+      <div>Fecha de cobro: ${entry.dueDate ? formatDate(entry.dueDate) : "Sin fecha"}</div>
+      <div>Monto pendiente: <strong>Gs ${formatGs(entry.amount || 0)}</strong></div>
+      <div>Estado: <span class="finance-status-badge ${entry.status === "Vencido" ? "is-overdue" : entry.status === "Vence hoy" ? "is-today" : "is-pending"}">${entry.status}</span></div>
+    </div>
+  `).join("");
+};
+
+const renderFinanceCategorySummary = () => {
+  if (!financeCategorySummaryList) return;
+  const { start, end } = getCurrentMonthDateRange();
+  const expenseRows = buildFinanceMovementRows()
+    .filter((row) => row.expense > 0 && isDateWithinRange(row.date, start, end));
+
+  if (!expenseRows.length) {
+    financeCategorySummaryList.innerHTML = '<div class="list-item muted">Todavia no hay egresos en el periodo actual.</div>';
+    return;
+  }
+
+  const grouped = expenseRows.reduce((map, row) => {
+    const key = row.category || "Sin categoria";
+    const current = map.get(key) || { category: key, total: 0, count: 0 };
+    current.total += Number(row.expense || 0);
+    current.count += 1;
+    map.set(key, current);
+    return map;
+  }, new Map());
+
+  financeCategorySummaryList.innerHTML = [...grouped.values()]
+    .sort((a, b) => b.total - a.total)
+    .map((entry) => `
+      <div class="list-item finance-category-item">
+        <strong>${escapeHtml(entry.category)}</strong>
+        <div>Cantidad de movimientos: ${formatInteger(entry.count)}</div>
+        <div>Total egresado: <strong>Gs ${formatGs(entry.total)}</strong></div>
+      </div>
+    `).join("");
 };
 
 const getCoverageCityByAddress = (address) => {
@@ -3972,7 +4079,7 @@ const syncState = (key, items) => {
   if (["rawMaterials", "purchases", "batches", "rawMaterialAdjustments"].includes(key)) {
     refreshStockSummary();
   }
-  if (["sales", "products", "salesGoals", "rawMaterials", "purchases", "batches", "finishedStockAdjustments", "rawMaterialAdjustments", "financialExpenses"].includes(key)) {
+  if (["sales", "products", "recipes", "salesGoals", "rawMaterials", "purchases", "batches", "finishedStockAdjustments", "rawMaterialAdjustments", "financialExpenses"].includes(key)) {
     const stockData = computeStockTotals();
     refreshSalesDashboard(stockData);
     refreshDashboard(stockData);
@@ -4194,6 +4301,8 @@ const renderAll = () => {
   renderSalesCoverage();
   renderCommercialHistory();
   renderFinanceMovement();
+  renderFinanceReceivables();
+  renderFinanceCategorySummary();
 
   requestAnimationFrame(refreshCollapseHeights);
   refreshIcons();
@@ -5015,7 +5124,7 @@ financeExpenseForm?.addEventListener("submit", async (event) => {
     counterparty: financeExpenseForm.counterparty.value.trim(),
     amount,
     paymentMethod: financeExpenseForm.paymentMethod.value || "",
-    status: financeExpenseForm.status.value || "Pagado",
+    status: "Pagado",
     observation: financeExpenseForm.observation.value.trim(),
     userId: user.uid,
     createdAt: serverTimestamp()
@@ -6048,7 +6157,7 @@ const navigateToSalesShortcut = async () => {
 document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
   const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
-  if (["salesGoalSection", "productsSection", "clientsSection", "salesSection", "repurchaseSection", "coverageSection"].includes(toggle.dataset.collapse)) {
+  if (["salesGoalSection", "productsSection", "clientsSection", "salesSection", "repurchaseSection", "coverageSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection"].includes(toggle.dataset.collapse)) {
     closeSection(toggle, body);
   } else {
     openSection(toggle, body);
