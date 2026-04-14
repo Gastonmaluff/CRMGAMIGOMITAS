@@ -15,8 +15,6 @@ import {
   updateDoc,
   deleteDoc,
   onSnapshot,
-  query,
-  where,
   serverTimestamp,
   arrayUnion
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
@@ -4266,9 +4264,9 @@ const syncState = (key, items) => {
   }
 };
 
-const listenCollection = (collectionName, key, userId) => {
-  const q = query(collection(db, collectionName), where("userId", "==", userId));
-  const unsubscribe = onSnapshot(q, (snapshot) => {
+// Shared company data should remain visible to any authenticated user.
+const listenCollection = (collectionName, key) => {
+  const unsubscribe = onSnapshot(collection(db, collectionName), (snapshot) => {
     const items = snapshot.docs
       .map((doc) => ({ id: doc.id, ...doc.data() }))
       .sort((a, b) => {
@@ -6505,19 +6503,19 @@ onAuthStateChanged(auth, (user) => {
   }
   setAuthFeedback("");
   showDashboard(user);
-  listenCollection("raw_materials", "rawMaterials", user.uid);
-  listenCollection("raw_purchases", "purchases", user.uid);
-  listenCollection("recipes", "recipes", user.uid);
-  listenCollection("batches", "batches", user.uid);
-  listenCollection("products", "products", user.uid);
-  listenCollection("clients", "clients", user.uid);
-  listenCollection("sales", "sales", user.uid);
-  listenCollection("sales_goals", "salesGoals", user.uid);
-  listenCollection("financial_expenses", "financialExpenses", user.uid);
-  listenCollection("financial_initial_settings", "financialInitialSettings", user.uid);
-  listenCollection("financial_manual_adjustments", "financialManualAdjustments", user.uid);
-  listenCollection("finished_stock_adjustments", "finishedStockAdjustments", user.uid);
-  listenCollection("raw_material_adjustments", "rawMaterialAdjustments", user.uid);
+  listenCollection("raw_materials", "rawMaterials");
+  listenCollection("raw_purchases", "purchases");
+  listenCollection("recipes", "recipes");
+  listenCollection("batches", "batches");
+  listenCollection("products", "products");
+  listenCollection("clients", "clients");
+  listenCollection("sales", "sales");
+  listenCollection("sales_goals", "salesGoals");
+  listenCollection("financial_expenses", "financialExpenses");
+  listenCollection("financial_initial_settings", "financialInitialSettings");
+  listenCollection("financial_manual_adjustments", "financialManualAdjustments");
+  listenCollection("finished_stock_adjustments", "finishedStockAdjustments");
+  listenCollection("raw_material_adjustments", "rawMaterialAdjustments");
 }, (error) => {
   console.error("[auth] observer error", error);
   setAuthFeedback(getAuthMessage(error), "error");
