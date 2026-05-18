@@ -97,6 +97,8 @@ const financeMetricEstimatedProfitSub = document.getElementById("financeMetricEs
 const financeMetricNetSub = document.getElementById("financeMetricNetSub");
 const productForm = document.getElementById("productForm");
 const clientForm = document.getElementById("clientForm");
+const prospectForm = document.getElementById("prospectForm");
+const prospectCancelEdit = document.getElementById("prospectCancelEdit");
 const saleForm = document.getElementById("saleForm");
 const saleSubmitButton = saleForm?.querySelector('button[type="submit"]');
 const saleCreditCheckbox = document.getElementById("saleCredit");
@@ -141,6 +143,18 @@ const stockRecipeSelect = document.getElementById("stockRecipeSelect");
 const rawMaterialAdjustmentHistory = document.getElementById("rawMaterialAdjustmentHistory");
 const productList = document.getElementById("productList");
 const clientList = document.getElementById("clientList");
+const prospectList = document.getElementById("prospectList");
+const prospectSearch = document.getElementById("prospectSearch");
+const prospectCityFilter = document.getElementById("prospectCityFilter");
+const prospectZoneFilter = document.getElementById("prospectZoneFilter");
+const prospectBusinessFilter = document.getElementById("prospectBusinessFilter");
+const prospectStatusFilter = document.getElementById("prospectStatusFilter");
+const prospectPotentialFilter = document.getElementById("prospectPotentialFilter");
+const visitClientSearch = document.getElementById("visitClientSearch");
+const visitClientList = document.getElementById("visitClientList");
+const visitList = document.getElementById("visitList");
+const createVisitListBtn = document.getElementById("createVisitListBtn");
+const openVisitRouteBtn = document.getElementById("openVisitRouteBtn");
 const saleList = document.getElementById("saleList");
 const repurchaseList = document.getElementById("repurchaseList");
 const salesCoverageSection = document.getElementById("coverageSection");
@@ -186,6 +200,7 @@ const state = {
   batches: [],
   products: [],
   clients: [],
+  prospects: [],
   sales: [],
   salesGoals: [],
   financialExpenses: [],
@@ -203,6 +218,19 @@ const commercialHistoryState = {
   searchTerm: "",
   selectedClientId: ""
 };
+const prospectFiltersState = {
+  search: "",
+  city: "",
+  zone: "",
+  businessType: "",
+  status: "",
+  potential: ""
+};
+const visitPlannerState = {
+  selectedKeys: new Set(),
+  activeKeys: []
+};
+const MAX_ROUTE_STOPS = 10;
 const repurchaseNotesOpenState = new Set();
 const repurchaseHistoryOpenState = new Set();
 const clientHistoryOpenState = new Set();
@@ -239,6 +267,38 @@ const REPURCHASE_CONTACT_RESULT_VALUES = new Set(
     .map((option) => option.value)
     .filter(Boolean)
 );
+const PROSPECT_BUSINESS_TYPE_OPTIONS = [
+  { value: "despensa", label: "Despensa" },
+  { value: "supermercado", label: "Supermercado" },
+  { value: "farmacia", label: "Farmacia" },
+  { value: "confiteria", label: "Confiteria" },
+  { value: "mayorista", label: "Mayorista" },
+  { value: "distribuidor", label: "Distribuidor" },
+  { value: "otro", label: "Otro" }
+];
+const PROSPECT_STATUS_OPTIONS = [
+  { value: "nuevo", label: "Nuevo" },
+  { value: "contactado", label: "Contactado" },
+  { value: "visita_pendiente", label: "Visita pendiente" },
+  { value: "visitado", label: "Visitado" },
+  { value: "interesado", label: "Interesado" },
+  { value: "no_interesado", label: "No interesado" },
+  { value: "convertido_cliente", label: "Convertido a cliente" }
+];
+const PROSPECT_POTENTIAL_OPTIONS = [
+  { value: "bajo", label: "Bajo" },
+  { value: "medio", label: "Medio" },
+  { value: "alto", label: "Alto" }
+];
+const VISIT_RESULT_OPTIONS = [
+  { value: "", label: "Seleccionar" },
+  { value: "compro", label: "Compro" },
+  { value: "pidio_precio", label: "Pidio precio" },
+  { value: "reagendar", label: "Reagendar" },
+  { value: "no_interesado", label: "No interesado" },
+  { value: "no_estaba_encargado", label: "No estaba el encargado" },
+  { value: "otro", label: "Otro" }
+];
 const PARAGUAY_COVERAGE_CITIES = [
   { key: "asuncion", label: "Asuncion", lat: -25.2637, lng: -57.5759, aliases: ["asuncion"] },
   { key: "san-lorenzo", label: "San Lorenzo", lat: -25.3397, lng: -57.5088, aliases: ["san lorenzo"] },
@@ -4040,6 +4100,113 @@ const updateBatchCostPreview = () => {
 
 const normalizeText = (value) => (value || "").trim().toLowerCase();
 const digitsOnly = (value) => String(value || "").replace(/\D+/g, "");
+const getOptionLabel = (options, value, fallback = "Sin definir") => {
+  const normalized = normalizeText(value);
+  const match = options.find((option) => option.value === normalized);
+  return match?.label || fallback;
+};
+
+const normalizeOptionValue = (options, value, fallback = "") => {
+  const normalized = normalizeText(value);
+  return options.some((option) => option.value === normalized) ? normalized : fallback;
+};
+
+const normalizeProspectPhone = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const normalized = normalizePhoneForStorage(raw);
+  if (normalized !== null) return normalized;
+  return raw;
+};
+
+const parseOptionalCoordinate = (value) => {
+  const raw = String(value ?? "").replace(",", ".").trim();
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const hasCoordinates = (item) => Number.isFinite(Number(item?.latitude)) && Number.isFinite(Number(item?.longitude));
+
+const buildGoogleMapsLocationUrl = (item) => {
+  const link = String(item?.mapsLink || "").trim();
+  if (link) return link;
+  if (hasCoordinates(item)) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${Number(item.latitude)},${Number(item.longitude)}`)}`;
+  }
+  const addressParts = [item?.address, item?.zone, item?.city].filter(Boolean).join(", ");
+  if (addressParts) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressParts)}`;
+  }
+  return "";
+};
+
+const getRouteStopValue = (item) => {
+  if (hasCoordinates(item)) return `${Number(item.latitude)},${Number(item.longitude)}`;
+  const addressParts = [item?.address, item?.zone, item?.city].filter(Boolean).join(", ");
+  if (addressParts) return addressParts;
+  return String(item?.mapsLink || "").trim();
+};
+
+const buildGoogleMapsRouteUrl = (items) => {
+  const stops = items
+    .map((item) => getRouteStopValue(item))
+    .filter(Boolean)
+    .slice(0, MAX_ROUTE_STOPS);
+  if (!stops.length) return "";
+  if (stops.length === 1) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(stops[0])}`;
+  }
+  const destination = stops[stops.length - 1];
+  const waypoints = stops.slice(0, -1);
+  const params = new URLSearchParams({
+    api: "1",
+    travelmode: "driving",
+    destination
+  });
+  if (waypoints.length) params.set("waypoints", waypoints.join("|"));
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+};
+
+const buildProspectStatusOptions = (selectedValue = "") => PROSPECT_STATUS_OPTIONS
+  .map((option) => `<option value="${option.value}"${option.value === selectedValue ? " selected" : ""}>${option.label}</option>`)
+  .join("");
+
+const buildVisitResultOptions = (selectedValue = "") => VISIT_RESULT_OPTIONS
+  .map((option) => `<option value="${option.value}"${option.value === selectedValue ? " selected" : ""}>${option.label}</option>`)
+  .join("");
+
+const getVisitKey = (type, id) => `${type}:${id}`;
+
+const getVisitEntityByKey = (key) => {
+  const [type, id] = String(key || "").split(":");
+  if (!type || !id) return null;
+  if (type === "prospect") {
+    const prospect = state.prospects.find((item) => item.id === id);
+    return prospect ? { type, id, item: prospect, name: prospect.name || "Prospecto" } : null;
+  }
+  if (type === "client") {
+    const client = state.clients.find((item) => item.id === id);
+    return client ? { type, id, item: client, name: client.name || "Cliente" } : null;
+  }
+  return null;
+};
+
+const getActiveVisitEntities = () => visitPlannerState.activeKeys
+  .map((key) => getVisitEntityByKey(key))
+  .filter(Boolean);
+
+const pruneVisitPlannerState = () => {
+  const validKeys = new Set([
+    ...state.prospects.map((item) => getVisitKey("prospect", item.id)),
+    ...state.clients.map((item) => getVisitKey("client", item.id))
+  ]);
+  Array.from(visitPlannerState.selectedKeys).forEach((key) => {
+    if (!validKeys.has(key)) visitPlannerState.selectedKeys.delete(key);
+  });
+  visitPlannerState.activeKeys = visitPlannerState.activeKeys.filter((key) => validKeys.has(key));
+};
+
 const formatClientName = (value) => {
   const normalized = String(value || "").replace(/\s+/g, " ").trim();
   if (!normalized) return "";
@@ -4240,6 +4407,10 @@ const syncState = (key, items) => {
       commercialHistoryState.selectedClientId = "";
       if (historyClientFilter) historyClientFilter.value = "";
     }
+    pruneVisitPlannerState();
+  }
+  if (key === "prospects") {
+    pruneVisitPlannerState();
   }
   if (key === "salesGoals") {
     updateSalesGoalForm(items[0]);
@@ -4278,6 +4449,178 @@ const listenCollection = (collectionName, key) => {
     renderAll();
   });
   unsubscribers.push(unsubscribe);
+};
+
+const getFilteredProspects = () => {
+  const search = normalizeText(prospectFiltersState.search);
+  const city = normalizeText(prospectFiltersState.city);
+  const zone = normalizeText(prospectFiltersState.zone);
+  const businessType = normalizeText(prospectFiltersState.businessType);
+  const status = normalizeText(prospectFiltersState.status);
+  const potential = normalizeText(prospectFiltersState.potential);
+  return state.prospects.filter((item) => {
+    if (search) {
+      const haystack = normalizeText([item.name, item.phone, item.address].filter(Boolean).join(" "));
+      if (!haystack.includes(search)) return false;
+    }
+    if (city && !normalizeText(item.city).includes(city)) return false;
+    if (zone && !normalizeText(item.zone).includes(zone)) return false;
+    if (businessType && normalizeText(item.businessType) !== businessType) return false;
+    if (status && normalizeText(item.status) !== status) return false;
+    if (potential && normalizeText(item.potential) !== potential) return false;
+    return true;
+  });
+};
+
+const renderProspectList = () => {
+  if (!prospectList) return;
+  const prospects = getFilteredProspects();
+  if (!prospects.length) {
+    prospectList.innerHTML = '<div class="list-item muted">Sin prospectos para los filtros actuales.</div>';
+    return;
+  }
+  prospectList.innerHTML = prospects.map((item) => {
+    const visitKey = getVisitKey("prospect", item.id);
+    const selected = visitPlannerState.selectedKeys.has(visitKey);
+    const status = normalizeOptionValue(PROSPECT_STATUS_OPTIONS, item.status, "nuevo");
+    const potential = normalizeOptionValue(PROSPECT_POTENTIAL_OPTIONS, item.potential);
+    const mapsUrl = buildGoogleMapsLocationUrl(item);
+    const whatsappLink = buildWhatsAppLink(item.phone, item.name);
+    const meta = [
+      item.contactName ? `<span><b>Contacto</b>${escapeHtml(item.contactName)}</span>` : "",
+      item.phone ? `<span><b>Tel</b>${escapeHtml(item.phone)}</span>` : "",
+      item.city ? `<span><b>Ciudad</b>${escapeHtml(item.city)}</span>` : "",
+      item.zone ? `<span><b>Zona</b>${escapeHtml(item.zone)}</span>` : "",
+      item.address ? `<span><b>Dir</b>${escapeHtml(item.address)}</span>` : "",
+      item.businessType ? `<span><b>Rubro</b>${getOptionLabel(PROSPECT_BUSINESS_TYPE_OPTIONS, item.businessType)}</span>` : ""
+    ].filter(Boolean).join("");
+    return `
+      <div class="list-item prospect-item" data-prospect-id="${item.id}">
+        <div class="prospect-item-head">
+          <label class="visit-check">
+            <input type="checkbox" data-visit-select="prospect" data-visit-id="${item.id}" ${selected ? "checked" : ""} />
+            <span>${escapeHtml(item.name || "Sin nombre")}</span>
+          </label>
+          <div class="prospect-badges">
+            <span class="prospect-status status-${status}">${getOptionLabel(PROSPECT_STATUS_OPTIONS, status)}</span>
+            ${potential ? `<span class="prospect-potential potential-${potential}">${getOptionLabel(PROSPECT_POTENTIAL_OPTIONS, potential)}</span>` : ""}
+          </div>
+        </div>
+        <div class="client-item-details prospect-details">
+          ${meta || '<span class="muted">Sin datos comerciales cargados</span>'}
+        </div>
+        <div class="prospect-followup">
+          ${item.nextAction ? `<span><b>Proxima accion</b>${escapeHtml(item.nextAction)}</span>` : ""}
+          ${item.nextActionDate ? `<span><b>Fecha</b>${formatDate(item.nextActionDate)}</span>` : ""}
+        </div>
+        ${item.observations ? `<div class="muted">Obs: ${escapeHtml(item.observations)}</div>` : ""}
+        <div class="prospect-inline-status">
+          <label>
+            Estado
+            <select data-prospect-status="${item.id}">
+              ${buildProspectStatusOptions(status)}
+            </select>
+          </label>
+        </div>
+        <div class="list-actions prospect-actions">
+          ${whatsappLink ? `<button class="btn ghost" type="button" data-whatsapp-link="${whatsappLink}">WhatsApp</button>` : ""}
+          ${mapsUrl ? `<button class="btn ghost" type="button" data-open-maps="${escapeHtml(mapsUrl)}">Abrir en Google Maps</button>` : ""}
+          <button class="btn ghost" type="button" data-convert-prospect="${item.id}" ${status === "convertido_cliente" ? "disabled" : ""}>Convertir a cliente</button>
+          <button class="btn ghost" type="button" data-edit-prospect="${item.id}">Editar</button>
+          <button class="btn ghost danger" type="button" data-delete-prospect="${item.id}">Eliminar</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+};
+
+const renderVisitClientList = () => {
+  if (!visitClientList) return;
+  const search = normalizeText(visitClientSearch?.value || "");
+  const clients = state.clients
+    .filter((item) => {
+      if (!search) return true;
+      const haystack = normalizeText([item.name, item.phone, item.address, item.city, item.zone].filter(Boolean).join(" "));
+      return haystack.includes(search);
+    })
+    .slice(0, 40);
+  if (!clients.length) {
+    visitClientList.innerHTML = '<div class="list-item muted">Sin clientes para mostrar.</div>';
+    return;
+  }
+  visitClientList.innerHTML = clients.map((item) => {
+    const visitKey = getVisitKey("client", item.id);
+    const selected = visitPlannerState.selectedKeys.has(visitKey);
+    const mapsUrl = buildGoogleMapsLocationUrl(item);
+    return `
+      <div class="list-item visit-client-item">
+        <label class="visit-check">
+          <input type="checkbox" data-visit-select="client" data-visit-id="${item.id}" ${selected ? "checked" : ""} />
+          <span>${escapeHtml(item.name || "Sin nombre")}</span>
+        </label>
+        <div class="client-item-details">
+          ${item.phone ? `<span><b>Tel</b>${escapeHtml(item.phone)}</span>` : ""}
+          ${item.city ? `<span><b>Ciudad</b>${escapeHtml(item.city)}</span>` : ""}
+          ${item.zone ? `<span><b>Zona</b>${escapeHtml(item.zone)}</span>` : ""}
+          ${item.address ? `<span><b>Dir</b>${escapeHtml(item.address)}</span>` : ""}
+        </div>
+        ${mapsUrl ? `<div class="list-actions"><button class="btn ghost" type="button" data-open-maps="${escapeHtml(mapsUrl)}">Abrir en Google Maps</button></div>` : ""}
+      </div>
+    `;
+  }).join("");
+};
+
+const renderVisitList = () => {
+  if (!visitList) return;
+  const entities = getActiveVisitEntities();
+  if (!entities.length) {
+    visitList.innerHTML = '<div class="list-item muted">Selecciona prospectos o clientes y crea una lista de visitas.</div>';
+    return;
+  }
+  visitList.innerHTML = entities.map((entity, index) => {
+    const item = entity.item;
+    const lastVisit = item.visitLast || {};
+    const result = String(lastVisit.result || "").trim();
+    const observation = escapeHtml(lastVisit.observation || "");
+    const mapsUrl = buildGoogleMapsLocationUrl(item);
+    return `
+      <div class="list-item visit-item" data-visit-key="${entity.type}:${entity.id}">
+        <div class="visit-item-head">
+          <strong>${index + 1}. ${escapeHtml(entity.name)}</strong>
+          <span>${entity.type === "prospect" ? "Prospecto" : "Cliente"}</span>
+        </div>
+        <div class="client-item-details">
+          ${item.phone ? `<span><b>Tel</b>${escapeHtml(item.phone)}</span>` : ""}
+          ${item.address ? `<span><b>Dir</b>${escapeHtml(item.address)}</span>` : ""}
+          ${item.city ? `<span><b>Ciudad</b>${escapeHtml(item.city)}</span>` : ""}
+          ${item.zone ? `<span><b>Zona</b>${escapeHtml(item.zone)}</span>` : ""}
+        </div>
+        <div class="visit-result-grid">
+          <label>
+            Resultado de visita
+            <select data-visit-result>
+              ${buildVisitResultOptions(result)}
+            </select>
+          </label>
+          <label>
+            Observacion
+            <textarea data-visit-observation rows="2">${observation}</textarea>
+          </label>
+        </div>
+        <div class="list-actions">
+          <button class="btn ghost" type="button" data-mark-visited="${entity.type}:${entity.id}">Marcar como visitado</button>
+          ${mapsUrl ? `<button class="btn ghost" type="button" data-open-maps="${escapeHtml(mapsUrl)}">Abrir en Google Maps</button>` : ""}
+        </div>
+      </div>
+    `;
+  }).join("");
+};
+
+const renderProspectsWorkspace = () => {
+  pruneVisitPlannerState();
+  renderProspectList();
+  renderVisitClientList();
+  renderVisitList();
 };
 
 const renderAll = () => {
@@ -4420,14 +4763,25 @@ const renderAll = () => {
 
   renderList(clientList, state.clients, (item) => {
     const historyOpen = clientHistoryOpenState.has(item.id);
+    const mapsUrl = buildGoogleMapsLocationUrl(item);
+    const clientDetails = [
+      item.ruc ? `<span><b>RUC</b>${escapeHtml(item.ruc)}</span>` : "",
+      item.phone ? `<span><b>Tel</b>${escapeHtml(item.phone)}</span>` : "",
+      item.city ? `<span><b>Ciudad</b>${escapeHtml(item.city)}</span>` : "",
+      item.zone ? `<span><b>Zona</b>${escapeHtml(item.zone)}</span>` : "",
+      item.address ? `<span><b>Dir</b>${escapeHtml(item.address)}</span>` : ""
+    ].filter(Boolean).join("");
     return `
     <div class="list-item client-item">
-      <strong>${item.name}</strong>
-      ${item.ruc ? `RUC: ${item.ruc}` : ""}
-      ${item.phone ? ` | Tel: ${item.phone}` : ""}
-      ${item.address ? ` | Dir: ${item.address}` : ""}
-      ${item.notes ? `<div class="muted">Notas: ${item.notes}</div>` : ""}
-      <div class="list-actions">
+      <div class="client-item-main">
+        <strong>${escapeHtml(item.name)}</strong>
+        ${item.notes ? `<div class="muted">Notas: ${escapeHtml(item.notes)}</div>` : ""}
+      </div>
+      <div class="client-item-details">
+        ${clientDetails || '<span class="muted">Sin datos comerciales cargados</span>'}
+      </div>
+      <div class="list-actions client-item-actions">
+        ${mapsUrl ? `<button class="btn ghost" type="button" data-open-maps="${escapeHtml(mapsUrl)}">Maps</button>` : ""}
         <button class="btn ghost" type="button" data-toggle-client-history="${item.id}">Historial</button>
         <button class="btn ghost" type="button" data-edit-client="${item.id}">Editar</button>
         <button class="btn ghost danger" type="button" data-delete-client="${item.id}">Eliminar</button>
@@ -4470,6 +4824,7 @@ const renderAll = () => {
     `;
   });
 
+  renderProspectsWorkspace();
   renderRepurchaseList();
   renderSalesCoverage();
   renderCommercialHistory();
@@ -4975,12 +5330,65 @@ clientForm.addEventListener("submit", async (event) => {
     ruc,
     phone,
     address: clientForm.address.value.trim(),
+    city: String(clientForm.city?.value || "").trim(),
+    zone: String(clientForm.zone?.value || "").trim(),
+    latitude: parseOptionalCoordinate(clientForm.latitude?.value),
+    longitude: parseOptionalCoordinate(clientForm.longitude?.value),
+    mapsLink: String(clientForm.mapsLink?.value || "").trim(),
     notes: String(clientForm.notes?.value || "").trim(),
     userId: user.uid,
     createdAt: serverTimestamp()
   };
   await saveDoc("clients", clientForm, payload);
   resetForm(clientForm);
+});
+
+const resetProspectForm = () => {
+  if (!prospectForm) return;
+  resetForm(prospectForm);
+  if (prospectForm.nextActionDate) prospectForm.nextActionDate.value = "";
+  prospectForm.dataset.editId = "";
+  setSubmitLabel(prospectForm, "");
+  prospectCancelEdit?.classList.add("hidden");
+};
+
+const getProspectPayloadFromForm = () => {
+  const status = normalizeOptionValue(PROSPECT_STATUS_OPTIONS, prospectForm.status?.value, "nuevo");
+  return {
+    name: formatClientName(prospectForm.name.value),
+    contactName: String(prospectForm.contactName?.value || "").trim(),
+    phone: normalizeProspectPhone(prospectForm.phone?.value || ""),
+    city: String(prospectForm.city?.value || "").trim(),
+    zone: String(prospectForm.zone?.value || "").trim(),
+    address: String(prospectForm.address?.value || "").trim(),
+    businessType: normalizeOptionValue(PROSPECT_BUSINESS_TYPE_OPTIONS, prospectForm.businessType?.value),
+    status,
+    potential: normalizeOptionValue(PROSPECT_POTENTIAL_OPTIONS, prospectForm.potential?.value),
+    observations: String(prospectForm.observations?.value || "").trim(),
+    nextAction: String(prospectForm.nextAction?.value || "").trim(),
+    nextActionDate: normalizeDateValue(prospectForm.nextActionDate?.value || ""),
+    latitude: parseOptionalCoordinate(prospectForm.latitude?.value),
+    longitude: parseOptionalCoordinate(prospectForm.longitude?.value),
+    mapsLink: String(prospectForm.mapsLink?.value || "").trim()
+  };
+};
+
+prospectForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const user = auth.currentUser;
+  if (!user) return;
+  const payload = getProspectPayloadFromForm();
+  if (!payload.name) {
+    window.alert("Completa el nombre del local.");
+    return;
+  }
+  prospectForm.name.value = payload.name;
+  await saveDoc("prospects", prospectForm, {
+    ...payload,
+    userId: user.uid,
+    createdAt: serverTimestamp()
+  });
+  resetProspectForm();
 });
 
 saleForm.addEventListener("submit", async (event) => {
@@ -5497,9 +5905,37 @@ const startEditClient = (item) => {
   if (clientForm.rucDv) clientForm.rucDv.value = rucParts.dv;
   clientForm.phone.value = getLocalPhoneInputValue(item.phone);
   clientForm.address.value = item.address || "";
+  if (clientForm.city) clientForm.city.value = item.city || "";
+  if (clientForm.zone) clientForm.zone.value = item.zone || "";
+  if (clientForm.latitude) clientForm.latitude.value = item.latitude ?? "";
+  if (clientForm.longitude) clientForm.longitude.value = item.longitude ?? "";
+  if (clientForm.mapsLink) clientForm.mapsLink.value = item.mapsLink || "";
   if (clientForm.notes) clientForm.notes.value = item.notes || "";
   clientForm.dataset.editId = item.id;
   setSubmitLabel(clientForm, "Actualizar cliente");
+};
+
+const startEditProspect = (item) => {
+  if (!prospectForm) return;
+  prospectForm.name.value = item.name || "";
+  prospectForm.contactName.value = item.contactName || "";
+  prospectForm.phone.value = item.phone || "";
+  prospectForm.city.value = item.city || "";
+  prospectForm.zone.value = item.zone || "";
+  prospectForm.address.value = item.address || "";
+  prospectForm.businessType.value = normalizeOptionValue(PROSPECT_BUSINESS_TYPE_OPTIONS, item.businessType);
+  prospectForm.status.value = normalizeOptionValue(PROSPECT_STATUS_OPTIONS, item.status, "nuevo");
+  prospectForm.potential.value = normalizeOptionValue(PROSPECT_POTENTIAL_OPTIONS, item.potential);
+  prospectForm.observations.value = item.observations || "";
+  prospectForm.nextAction.value = item.nextAction || "";
+  prospectForm.nextActionDate.value = normalizeDateValue(item.nextActionDate || "");
+  prospectForm.latitude.value = item.latitude ?? "";
+  prospectForm.longitude.value = item.longitude ?? "";
+  prospectForm.mapsLink.value = item.mapsLink || "";
+  prospectForm.dataset.editId = item.id;
+  setSubmitLabel(prospectForm, "Actualizar prospecto");
+  prospectCancelEdit?.classList.remove("hidden");
+  prospectForm.scrollIntoView({ behavior: "smooth", block: "start" });
 };
 
 const startEditSale = (item) => {
@@ -5533,6 +5969,84 @@ const startEditSale = (item) => {
 };
 
 const confirmDelete = (label) => window.confirm(`Eliminar ${label}?`);
+
+const convertProspectToClient = async (prospect) => {
+  const user = auth.currentUser;
+  if (!user || !prospect?.id) return;
+  const clientRef = doc(collection(db, "clients"));
+  const prospectRef = doc(db, "prospects", prospect.id);
+  const convertedAt = toDateInputValue(new Date());
+  const originNote = [
+    `Origen: prospecto "${prospect.name || "sin nombre"}"`,
+    prospect.contactName ? `Contacto: ${prospect.contactName}` : "",
+    prospect.businessType ? `Rubro: ${getOptionLabel(PROSPECT_BUSINESS_TYPE_OPTIONS, prospect.businessType)}` : "",
+    prospect.potential ? `Potencial: ${getOptionLabel(PROSPECT_POTENTIAL_OPTIONS, prospect.potential)}` : "",
+    prospect.observations ? `Observaciones: ${prospect.observations}` : ""
+  ].filter(Boolean).join("\n");
+  const normalizedPhone = normalizePhoneForStorage(prospect.phone) || normalizeProspectPhone(prospect.phone);
+  const batch = writeBatch(db);
+  batch.set(clientRef, {
+    name: formatClientName(prospect.name || "") || prospect.name || "Cliente sin nombre",
+    ruc: "",
+    phone: normalizedPhone || "",
+    address: prospect.address || "",
+    city: prospect.city || "",
+    zone: prospect.zone || "",
+    latitude: Number.isFinite(Number(prospect.latitude)) ? Number(prospect.latitude) : null,
+    longitude: Number.isFinite(Number(prospect.longitude)) ? Number(prospect.longitude) : null,
+    mapsLink: prospect.mapsLink || "",
+    notes: originNote,
+    source: {
+      type: "prospect",
+      prospectId: prospect.id,
+      convertedAt
+    },
+    userId: user.uid,
+    createdAt: serverTimestamp()
+  });
+  batch.update(prospectRef, {
+    status: "convertido_cliente",
+    convertedClientId: clientRef.id,
+    convertedAt,
+    conversionObservation: `Convertido a cliente el ${formatDate(convertedAt)}.`,
+    updatedAt: serverTimestamp()
+  });
+  await batch.commit();
+};
+
+const getProspectStatusAfterVisit = (currentStatus, result) => {
+  if (result === "no_interesado") return "no_interesado";
+  if (result === "reagendar") return "visita_pendiente";
+  if (result === "compro" || result === "pidio_precio") return "interesado";
+  return normalizeOptionValue(PROSPECT_STATUS_OPTIONS, currentStatus, "visitado") === "convertido_cliente"
+    ? "convertido_cliente"
+    : "visitado";
+};
+
+const saveVisitResult = async (visitKey, result, observation) => {
+  const entity = getVisitEntityByKey(visitKey);
+  if (!entity) return;
+  const user = auth.currentUser;
+  const visitedAt = toDateInputValue(new Date());
+  const historyEntry = {
+    date: visitedAt,
+    result: normalizeOptionValue(VISIT_RESULT_OPTIONS, result),
+    observation: String(observation || "").trim(),
+    userName: String(user?.displayName || "").trim(),
+    userEmail: String(user?.email || "").trim(),
+    createdAtMs: Date.now()
+  };
+  const collectionName = entity.type === "prospect" ? "prospects" : "clients";
+  const payload = {
+    visitLast: historyEntry,
+    visitHistory: arrayUnion(historyEntry),
+    updatedAt: serverTimestamp()
+  };
+  if (entity.type === "prospect") {
+    payload.status = getProspectStatusAfterVisit(entity.item.status, historyEntry.result);
+  }
+  await updateDoc(doc(db, collectionName, entity.id), payload);
+};
 
 rawMaterialList.addEventListener("click", async (event) => {
   const editId = event.target.dataset.editRawMaterial;
@@ -5716,6 +6230,13 @@ finishedStockList?.addEventListener("click", async (event) => {
 });
 
 clientList.addEventListener("click", async (event) => {
+  const mapsBtn = event.target.closest("[data-open-maps]");
+  if (mapsBtn) {
+    event.stopPropagation();
+    const link = String(mapsBtn.dataset.openMaps || "").trim();
+    if (link) window.open(link, "_blank", "noopener,noreferrer");
+    return;
+  }
   const toggleHistoryId = event.target.closest("[data-toggle-client-history]")?.dataset.toggleClientHistory;
   if (toggleHistoryId) {
     const safeId = String(toggleHistoryId).trim();
@@ -5736,6 +6257,79 @@ clientList.addEventListener("click", async (event) => {
   }
   if (deleteId && confirmDelete("cliente")) {
     await deleteDoc(doc(db, "clients", deleteId));
+  }
+});
+
+prospectList?.addEventListener("click", async (event) => {
+  const mapsBtn = event.target.closest("[data-open-maps]");
+  if (mapsBtn) {
+    event.stopPropagation();
+    const link = String(mapsBtn.dataset.openMaps || "").trim();
+    if (link) window.open(link, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  const whatsappBtn = event.target.closest("[data-whatsapp-link]");
+  if (whatsappBtn) {
+    const link = String(whatsappBtn.dataset.whatsappLink || "").trim();
+    if (link) window.open(link, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  const convertId = event.target.closest("[data-convert-prospect]")?.dataset.convertProspect;
+  if (convertId) {
+    const prospect = state.prospects.find((item) => item.id === convertId);
+    if (!prospect) return;
+    if (!window.confirm(`Convertir "${prospect.name || "prospecto"}" a cliente?`)) return;
+    try {
+      await convertProspectToClient(prospect);
+    } catch (error) {
+      console.error("No se pudo convertir prospecto:", error);
+      window.alert("No se pudo convertir el prospecto. Intenta nuevamente.");
+    }
+    return;
+  }
+
+  const editId = event.target.closest("[data-edit-prospect]")?.dataset.editProspect;
+  if (editId) {
+    const item = state.prospects.find((prospect) => prospect.id === editId);
+    if (item) startEditProspect(item);
+    return;
+  }
+
+  const deleteId = event.target.closest("[data-delete-prospect]")?.dataset.deleteProspect;
+  if (deleteId && confirmDelete("prospecto")) {
+    await deleteDoc(doc(db, "prospects", deleteId));
+  }
+});
+
+visitClientList?.addEventListener("click", (event) => {
+  const mapsBtn = event.target.closest("[data-open-maps]");
+  if (!mapsBtn) return;
+  const link = String(mapsBtn.dataset.openMaps || "").trim();
+  if (link) window.open(link, "_blank", "noopener,noreferrer");
+});
+
+visitList?.addEventListener("click", async (event) => {
+  const mapsBtn = event.target.closest("[data-open-maps]");
+  if (mapsBtn) {
+    const link = String(mapsBtn.dataset.openMaps || "").trim();
+    if (link) window.open(link, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  const markBtn = event.target.closest("[data-mark-visited]");
+  if (!markBtn) return;
+  const visitKey = String(markBtn.dataset.markVisited || "").trim();
+  const row = markBtn.closest(".visit-item");
+  const result = String(row?.querySelector("[data-visit-result]")?.value || "").trim();
+  const observation = String(row?.querySelector("[data-visit-observation]")?.value || "").trim();
+  try {
+    await saveVisitResult(visitKey, result, observation);
+    renderProspectsWorkspace();
+  } catch (error) {
+    console.error("No se pudo guardar resultado de visita:", error);
+    window.alert("No se pudo guardar el resultado de la visita.");
   }
 });
 
@@ -5967,6 +6561,99 @@ historyPeriodClients?.addEventListener("click", (event) => {
   const selectBtn = event.target.closest("[data-select-history-client]");
   if (!selectBtn) return;
   selectCommercialHistoryClient(selectBtn.dataset.selectHistoryClient);
+});
+
+const updateProspectFilterState = () => {
+  prospectFiltersState.search = prospectSearch?.value || "";
+  prospectFiltersState.city = prospectCityFilter?.value || "";
+  prospectFiltersState.zone = prospectZoneFilter?.value || "";
+  prospectFiltersState.businessType = prospectBusinessFilter?.value || "";
+  prospectFiltersState.status = prospectStatusFilter?.value || "";
+  prospectFiltersState.potential = prospectPotentialFilter?.value || "";
+};
+
+[prospectSearch, prospectCityFilter, prospectZoneFilter, prospectBusinessFilter, prospectStatusFilter, prospectPotentialFilter]
+  .forEach((input) => {
+    input?.addEventListener("input", () => {
+      updateProspectFilterState();
+      renderProspectList();
+      requestAnimationFrame(refreshCollapseHeights);
+    });
+    input?.addEventListener("change", () => {
+      updateProspectFilterState();
+      renderProspectList();
+      requestAnimationFrame(refreshCollapseHeights);
+    });
+  });
+
+visitClientSearch?.addEventListener("input", () => {
+  renderVisitClientList();
+  requestAnimationFrame(refreshCollapseHeights);
+});
+
+prospectCancelEdit?.addEventListener("click", () => {
+  resetProspectForm();
+});
+
+createVisitListBtn?.addEventListener("click", () => {
+  const selected = Array.from(visitPlannerState.selectedKeys).slice(0, MAX_ROUTE_STOPS);
+  if (!selected.length) {
+    window.alert("Selecciona al menos un prospecto o cliente.");
+    return;
+  }
+  visitPlannerState.activeKeys = selected;
+  renderVisitList();
+  requestAnimationFrame(refreshCollapseHeights);
+});
+
+openVisitRouteBtn?.addEventListener("click", () => {
+  const activeEntities = getActiveVisitEntities();
+  const selectedEntities = Array.from(visitPlannerState.selectedKeys)
+    .map((key) => getVisitEntityByKey(key))
+    .filter(Boolean);
+  const entities = activeEntities.length ? activeEntities : selectedEntities;
+  const routeUrl = buildGoogleMapsRouteUrl(entities.map((entity) => entity.item));
+  if (!routeUrl) {
+    window.alert("Carga direccion, latitud/longitud o link de Maps para abrir la ruta.");
+    return;
+  }
+  window.open(routeUrl, "_blank", "noopener,noreferrer");
+});
+
+document.addEventListener("change", async (event) => {
+  const visitInput = event.target.closest("[data-visit-select]");
+  if (visitInput) {
+    const key = getVisitKey(visitInput.dataset.visitSelect, visitInput.dataset.visitId);
+    if (visitInput.checked && !visitPlannerState.selectedKeys.has(key) && visitPlannerState.selectedKeys.size >= MAX_ROUTE_STOPS) {
+      visitInput.checked = false;
+      window.alert(`Selecciona hasta ${MAX_ROUTE_STOPS} paradas por ruta.`);
+      return;
+    }
+    if (visitInput.checked) {
+      visitPlannerState.selectedKeys.add(key);
+    } else {
+      visitPlannerState.selectedKeys.delete(key);
+      visitPlannerState.activeKeys = visitPlannerState.activeKeys.filter((itemKey) => itemKey !== key);
+    }
+    renderProspectsWorkspace();
+    requestAnimationFrame(refreshCollapseHeights);
+    return;
+  }
+
+  const statusInput = event.target.closest("[data-prospect-status]");
+  if (!statusInput) return;
+  const prospectId = String(statusInput.dataset.prospectStatus || "").trim();
+  const status = normalizeOptionValue(PROSPECT_STATUS_OPTIONS, statusInput.value, "nuevo");
+  if (!prospectId) return;
+  try {
+    await updateDoc(doc(db, "prospects", prospectId), {
+      status,
+      updatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    console.error("No se pudo actualizar estado comercial:", error);
+    window.alert("No se pudo actualizar el estado del prospecto.");
+  }
 });
 
 purchaseForm.quantity.addEventListener("input", () => {
@@ -6265,7 +6952,7 @@ saleItems?.addEventListener("click", (event) => {
   });
 });
 
-[clientForm?.name, quickClientName].forEach((input) => {
+[clientForm?.name, quickClientName, prospectForm?.name].forEach((input) => {
   if (!input) return;
   input.addEventListener("blur", () => {
     input.value = formatClientName(input.value);
@@ -6432,7 +7119,7 @@ const navigateToSalesShortcut = async () => {
 document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
   const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
-  if (["salesGoalSection", "productsSection", "clientsSection", "salesSection", "repurchaseSection", "coverageSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection"].includes(toggle.dataset.collapse)) {
+  if (["salesGoalSection", "productsSection", "clientsSection", "prospectsSection", "salesSection", "repurchaseSection", "coverageSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection"].includes(toggle.dataset.collapse)) {
     closeSection(toggle, body);
   } else {
     openSection(toggle, body);
@@ -6509,6 +7196,7 @@ onAuthStateChanged(auth, (user) => {
   listenCollection("batches", "batches");
   listenCollection("products", "products");
   listenCollection("clients", "clients");
+  listenCollection("prospects", "prospects");
   listenCollection("sales", "sales");
   listenCollection("sales_goals", "salesGoals");
   listenCollection("financial_expenses", "financialExpenses");
