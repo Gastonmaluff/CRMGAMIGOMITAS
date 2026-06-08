@@ -8,11 +8,14 @@
   <title>CRM Gami Gomitas</title>
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
   <link rel="icon" type="image/png" href="apple-touch-icon.png" />
-  <link rel="stylesheet" href="styles.css?v=20260512-01" />
+  <link rel="stylesheet" href="styles.css?v=20260608-01" />
 </head>
 <body>
   <div class="app">
     <header class="topbar">
+      <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Abrir menu" aria-controls="appSidebar" aria-expanded="false" style="display: none;">
+        <i data-lucide="menu"></i>
+      </button>
       <div class="brand">
         <img class="brand-logo" src="IMG_8867.PNG" alt="MiMar Alimentos" />
       </div>
@@ -22,7 +25,24 @@
       </div>
     </header>
 
-    <main>
+    <div class="app-shell auth-mode">
+      <aside class="app-sidebar" id="appSidebar" aria-label="Navegacion principal">
+        <nav class="sidebar-nav">
+          <button class="sidebar-link active" type="button" data-app-section="dashboard"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></button>
+          <button class="sidebar-link" type="button" data-app-section="sales"><i data-lucide="shopping-cart"></i><span>Ventas</span></button>
+          <button class="sidebar-link" type="button" data-app-section="clients"><i data-lucide="users"></i><span>Clientes</span></button>
+          <button class="sidebar-link" type="button" data-app-section="prospects"><i data-lucide="map"></i><span>Prospectos</span></button>
+          <button class="sidebar-link" type="button" data-app-section="repurchase"><i data-lucide="repeat"></i><span>Recompra de clientes</span></button>
+          <button class="sidebar-link" type="button" data-app-section="production"><i data-lucide="clipboard-check"></i><span>Produccion</span></button>
+          <button class="sidebar-link" type="button" data-app-section="products"><i data-lucide="package"></i><span>Productos</span></button>
+          <button class="sidebar-link" type="button" data-app-section="raw-materials"><i data-lucide="droplet"></i><span>Materias primas</span></button>
+          <button class="sidebar-link" type="button" data-app-section="stock"><i data-lucide="layers"></i><span>Stock</span></button>
+          <button class="sidebar-link" type="button" data-app-section="reports"><i data-lucide="line-chart"></i><span>Reportes</span></button>
+          <button class="sidebar-link" type="button" data-app-section="settings"><i data-lucide="settings"></i><span>Configuracion</span></button>
+        </nav>
+      </aside>
+      <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+      <main class="app-main" id="appMain">
       <section class="auth" id="authSection">
         <div class="card auth-card">
           <h1>Ingresar</h1>
@@ -303,6 +323,9 @@
                   <button class="btn chip" type="button" data-unit="L">L</button>
                   <button class="btn chip" type="button" data-unit="ml">ml</button>
                   <button class="btn chip" type="button" data-unit="unidad">unidad</button>
+                  <button class="btn chip" type="button" data-unit="caja">caja</button>
+                  <button class="btn chip" type="button" data-unit="paquete">paquete</button>
+                  <button class="btn chip" type="button" data-unit="rollo">rollo</button>
                 </div>
                 <label>
                   Costo por esa cantidad
@@ -328,7 +351,11 @@
                   <input name="name" required />
                 </label>
                 <label>
-                  Unidad (kg, g, L)
+                  Categoria
+                  <input name="category" placeholder="Ej: Insumo, empaque, saborizante" />
+                </label>
+                <label>
+                  Unidad de compra
                   <input id="rawMaterialUnit" name="unit" required type="hidden" />
                 </label>
                 <div class="unit-group" data-target="rawMaterialUnit">
@@ -337,21 +364,39 @@
                   <button class="btn chip" type="button" data-unit="L">L</button>
                   <button class="btn chip" type="button" data-unit="ml">ml</button>
                   <button class="btn chip" type="button" data-unit="unidad">unidad</button>
+                  <button class="btn chip" type="button" data-unit="caja">caja</button>
+                  <button class="btn chip" type="button" data-unit="paquete">paquete</button>
+                  <button class="btn chip" type="button" data-unit="rollo">rollo</button>
                 </div>
                 <label>
-                  Costo de referencia (por unidad base)
-                  <input name="referenceCost" type="number" step="0.01" />
+                  Costo de compra
+                  <input name="referenceCostTotal" type="number" step="0.01" />
+                </label>
+                <label>
+                  Cantidad comprada
+                  <input name="referenceQuantity" type="number" step="0.01" value="1" />
+                </label>
+                <label>
+                  Costo unitario calculado
+                  <input name="referenceCost" type="number" step="0.01" readonly />
                 </label>
                 <label>
                   Stock minimo (opcional)
                   <input name="minStock" type="number" step="0.01" />
                 </label>
-                <input name="referenceQuantity" type="hidden" value="1" />
                 <input name="legacyReferenceQuantity" type="hidden" />
                 <input name="legacyReferenceCostTotal" type="hidden" />
                 <label>
                   Proveedor (opcional)
                   <input name="supplier" />
+                </label>
+                <label>
+                  Fecha de ultima compra
+                  <input name="lastPurchaseDate" type="date" />
+                </label>
+                <label>
+                  Observaciones
+                  <textarea name="observations" rows="3"></textarea>
                 </label>
                 <button class="btn primary" type="submit">Guardar materia prima</button>
                 </form>
@@ -401,6 +446,9 @@
                     <button class="btn chip" type="button" data-unit="L">L</button>
                     <button class="btn chip" type="button" data-unit="ml">ml</button>
                     <button class="btn chip" type="button" data-unit="unidad">unidad</button>
+                    <button class="btn chip" type="button" data-unit="caja">caja</button>
+                    <button class="btn chip" type="button" data-unit="paquete">paquete</button>
+                    <button class="btn chip" type="button" data-unit="rollo">rollo</button>
                   </div>
                   <label>
                     Costo unitario (precio actual)
@@ -1363,13 +1411,14 @@
           </div>
         </div>
       </section>
-    </main>
+      </main>
+    </div>
   </div>
 
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260512-01"></script>
+  <script type="module" src="app.js?v=20260608-01"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

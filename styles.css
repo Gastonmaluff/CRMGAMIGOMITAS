@@ -11,6 +11,8 @@
   --border-dark: #d1d5db;
   --shadow: 0 10px 20px rgba(17, 24, 39, 0.08);
   --radius: 14px;
+  --sidebar-width: 248px;
+  --topbar-height: 62px;
   --dashboard-block-gap: 28px;
   --dashboard-block-gap-mobile: 24px;
 }
@@ -29,7 +31,7 @@ body {
 }
 
 .app {
-  max-width: 1200px;
+  max-width: 1440px;
   margin: 0 auto;
   padding: 28px 18px 80px;
   overflow-x: hidden;
@@ -48,6 +50,108 @@ body {
   padding: 10px 16px;
   border-bottom: 1px solid var(--border);
   box-shadow: 0 4px 10px rgba(17, 24, 39, 0.06);
+}
+
+.sidebar-toggle {
+  display: none;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.sidebar-toggle svg {
+  width: 20px;
+  height: 20px;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.app-shell.auth-mode {
+  display: block;
+}
+
+.app-shell.auth-mode .app-sidebar,
+.app-shell.auth-mode .sidebar-backdrop {
+  display: none;
+}
+
+.app-sidebar {
+  position: sticky;
+  top: calc(var(--topbar-height) + 18px);
+  z-index: 15;
+  align-self: start;
+}
+
+.sidebar-nav {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: #374151;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-link svg {
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.sidebar-link span {
+  min-width: 0;
+}
+
+.sidebar-link:hover,
+.sidebar-link.active {
+  background: #f9fafb;
+  border-color: var(--border);
+  color: var(--ink);
+}
+
+.sidebar-link.active {
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.sidebar-link.active svg {
+  color: var(--ink);
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+.app-main {
+  min-width: 0;
 }
 
 .brand {
@@ -625,7 +729,7 @@ select:focus {
 }
 
 .tabs {
-  display: grid;
+  display: none;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
   margin-bottom: 18px;
@@ -678,6 +782,18 @@ select:focus {
 
 .tab-panel.active {
   display: block;
+}
+
+.app-section-hidden {
+  display: none !important;
+}
+
+.dashboard[data-app-section="dashboard"] .dashboard-panels-viewport {
+  display: none;
+}
+
+.dashboard:not([data-app-section="dashboard"]) .dashboard-overview-viewport {
+  display: none;
 }
 
 .dashboard-overview-viewport,
@@ -2699,6 +2815,54 @@ select:focus {
 }
 
 @media (max-width: 720px) {
+  .app {
+    padding: 16px 12px 64px;
+  }
+
+  .app-shell {
+    display: block;
+  }
+
+  .sidebar-toggle {
+    display: inline-flex;
+  }
+
+  .app-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(86vw, 310px);
+    z-index: 60;
+    padding: 14px;
+    background: #ffffff;
+    border-right: 1px solid var(--border);
+    box-shadow: 18px 0 36px rgba(17, 24, 39, 0.16);
+    transform: translateX(-105%);
+    transition: transform 0.22s ease;
+    overflow-y: auto;
+  }
+
+  .app-shell.sidebar-open .app-sidebar {
+    transform: translateX(0);
+  }
+
+  .sidebar-nav {
+    border: none;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(17, 24, 39, 0.32);
+    display: none;
+  }
+
+  .app-shell.sidebar-open .sidebar-backdrop {
+    display: block;
+  }
+
   .tabs {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 10px;
@@ -2710,7 +2874,7 @@ select:focus {
   }
 
   .topbar {
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
     padding: 8px 12px;
     margin-bottom: 16px;
@@ -2721,10 +2885,13 @@ select:focus {
   }
 
   .user-area {
-    width: 100%;
-    justify-content: center;
+    justify-content: flex-end;
     flex-wrap: wrap;
     gap: 6px;
+  }
+
+  .user-email {
+    display: none;
   }
 
   .dashboard-overview-viewport {

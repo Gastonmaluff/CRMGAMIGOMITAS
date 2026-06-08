@@ -47,6 +47,25 @@ const logoutBtn = document.getElementById("logoutBtn");
 const tabs = document.querySelectorAll(".tab");
 const panels = document.querySelectorAll(".tab-panel");
 const TAB_IDS = Array.from(tabs).map((tab) => tab.dataset.tab).filter(Boolean);
+const appShell = document.querySelector(".app-shell");
+const appSidebar = document.getElementById("appSidebar");
+const sidebarToggle = document.getElementById("sidebarToggle");
+const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+const sidebarLinks = document.querySelectorAll(".sidebar-link[data-app-section]");
+const APP_SECTION_CONFIG = {
+  dashboard: { tab: "production", collapses: [], label: "Dashboard" },
+  sales: { tab: "sales", collapses: ["salesSection"], label: "Ventas" },
+  clients: { tab: "sales", collapses: ["clientsSection"], label: "Clientes" },
+  prospects: { tab: "sales", collapses: ["prospectsSection"], label: "Prospectos" },
+  repurchase: { tab: "sales", collapses: ["repurchaseSection"], label: "Recompra de clientes" },
+  production: { tab: "production", collapses: ["prodToday"], label: "Produccion" },
+  products: { tab: "production", collapses: ["recipeSection"], label: "Productos" },
+  "raw-materials": { tab: "production", collapses: ["rawMaterialSection", "stockSection"], label: "Materias primas" },
+  stock: { tab: "production", collapses: ["finishedStockSection", "stockSummarySection"], label: "Stock" },
+  reports: { tab: "commercial-history", collapses: [], label: "Reportes" },
+  settings: { tab: "finance", collapses: ["salesGoalSection", "coverageSection", "financeMovementSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection"], label: "Configuracion" }
+};
+let activeAppSection = "dashboard";
 
 const rawMaterialForm = document.getElementById("rawMaterialForm");
 const purchaseForm = document.getElementById("purchaseForm");
@@ -339,6 +358,9 @@ const showAuth = () => {
   authSection.style.display = "grid";
   dashboardSection.style.display = "none";
   userArea.style.display = "none";
+  appShell?.classList.add("auth-mode");
+  if (sidebarToggle) sidebarToggle.style.display = "none";
+  closeSidebar();
 };
 
 const showDashboard = (user) => {
@@ -346,6 +368,8 @@ const showDashboard = (user) => {
   dashboardSection.style.display = "block";
   userArea.style.display = "flex";
   userEmail.textContent = user.email || "";
+  appShell?.classList.remove("auth-mode");
+  if (sidebarToggle) sidebarToggle.style.display = "";
   requestAnimationFrame(() => {
     refreshCollapseHeights();
   });
@@ -1181,8 +1205,10 @@ const saveDoc = async (collectionName, form, payload) => {
   if (editId) {
     const { createdAt, ...rest } = payload;
     await updateDoc(doc(db, collectionName, editId), { ...rest, updatedAt: serverTimestamp() });
+    return editId;
   } else {
-    await addDoc(collection(db, collectionName), payload);
+    const docRef = await addDoc(collection(db, collectionName), payload);
+    return docRef.id;
   }
 };
 
@@ -1461,7 +1487,8 @@ const getEstimatedDisplayCostForProduct = ({ productId = "", productName = "" } 
     const linkedProduct = findProductForRecipe(item);
     return Boolean(linkedProduct && normalizeText(linkedProduct.name) === normalizeText(product?.name || productName));
   });
-  const recipeDisplayCost = Number(recipe?.productCostPerDisplay || recipe?.totalDisplayCost || 0);
+  const recipeTotals = recipe ? calculateRecipeCurrentTotals(recipe) : null;
+  const recipeDisplayCost = Number(recipeTotals?.totalDisplayCost || recipe?.productCostPerDisplay || recipe?.totalDisplayCost || 0);
   if (Number.isFinite(recipeDisplayCost) && recipeDisplayCost > 0) return recipeDisplayCost;
   return 0;
 };
@@ -4058,6 +4085,13 @@ const renderRecipeDraft = () => {
   }
   const totals = calculateRecipeTotals();
   const recipeName = recipeForm.name.value.trim() || "Formula";
+  const matchedProduct = state.products.find((item) => normalizeText(item.name) === normalizeText(recipeName));
+  const salePrice = Number(matchedProduct?.price || 0);
+  const grossMargin = salePrice > 0 && totals.totalDisplayCost !== null ? salePrice - totals.totalDisplayCost : null;
+  const grossMarginPct = grossMargin !== null && salePrice > 0 ? (grossMargin / salePrice) * 100 : null;
+  const costPerEnvelope = totals.totalDisplayCost !== null && totals.wrapCount > 0
+    ? totals.totalDisplayCost / totals.wrapCount
+    : null;
   const yieldLabel = totals.yieldQuantity && totals.yieldUnit
     ? `${formatNumber(totals.yieldQuantity)} ${totals.yieldUnit}`
     : "Definir rendimiento";
@@ -4065,8 +4099,12 @@ const renderRecipeDraft = () => {
     <div class="list-item">
       <strong>${recipeName} rinde ${yieldLabel}</strong>
       <div>Costo formula total: Gs ${formatGs(totals.totalCost)}</div>
+      <div>Costo por unidad producida: Gs ${formatGs(totals.costPerUnit)}</div>
       <div>Costo de formula por kg: ${totals.costPerKg !== null ? `Gs ${formatGs(totals.costPerKg)}` : "Definir rendimiento en kg o g"}</div>
+      <div>Costo por sobre: ${costPerEnvelope !== null ? `Gs ${formatGs(costPerEnvelope)}` : "Definir empaques por display"}</div>
       <div>Costo por display de 360 g: ${totals.totalDisplayCost !== null ? `Gs ${formatGs(totals.totalDisplayCost)}` : "Definir rendimiento en kg o g"}</div>
+      <div>Margen bruto estimado: ${grossMargin !== null ? `Gs ${formatGs(grossMargin)}` : "Vincular un producto con precio de venta"}</div>
+      <div>Rentabilidad estimada: ${grossMarginPct !== null ? `${formatNumber(grossMarginPct)}%` : "Vincular un producto con precio de venta"}</div>
     </div>
   `;
 };
@@ -4080,7 +4118,7 @@ const updateRecipeIngredientFields = () => {
     return;
   }
   setUnitGroupValue("recipeIngredientUnit", material.unit || "");
-  recipeForm.unitCost.value = Math.round(Number(material.price || 0)).toString();
+  recipeForm.unitCost.value = Math.round(getMaterialUnitCost(material)).toString();
 };
 
 const updateBatchCostPreview = () => {
@@ -4092,7 +4130,8 @@ const updateBatchCostPreview = () => {
     batchForm.unitCost.value = "";
     return;
   }
-  const costPerUnit = Number(recipe.costPerUnit || 0);
+  const currentTotals = calculateRecipeCurrentTotals(recipe);
+  const costPerUnit = Number(currentTotals.costPerUnit || recipe.costPerUnit || 0);
   const totalCost = costPerUnit * quantity;
   batchForm.unitCost.value = costPerUnit ? Math.round(costPerUnit).toString() : "";
   batchForm.totalCost.value = totalCost ? Math.round(totalCost).toString() : "";
@@ -4315,23 +4354,27 @@ const buildRecipeSummary = (item) => {
   const yieldLabel = item.yieldQuantity && item.yieldUnit
     ? `${formatNumber(item.yieldQuantity)} ${item.yieldUnit}`
     : "Definir rendimiento";
-  const totalCost = Number(item.totalCost || 0);
-  const yieldQty = Number(item.yieldQuantity || 0);
-  const yieldUnit = item.yieldUnit || "";
-  let costPerKg = Number(item.costPerKg || 0);
-  if (!costPerKg && yieldQty > 0) {
-    if (yieldUnit === "kg") costPerKg = totalCost / yieldQty;
-    if (yieldUnit === "g") costPerKg = (totalCost / yieldQty) * 1000;
-  }
-  const packaging = item.packaging || {};
-  const packagingCost = Number(packaging.packagingCost || 0) ||
-    (Number(packaging.boxCost || 0) + Number(packaging.wrapCost || 0) * Number(packaging.wrapCount || 0));
-  const totalDisplayCost = costPerKg ? costPerKg * 0.36 + packagingCost : 0;
+  const totals = calculateRecipeCurrentTotals(item);
+  const product = findProductForRecipe(item);
+  const salePrice = Number(product?.price || 0);
+  const displayCost = Number(totals.totalDisplayCost || 0);
+  const grossMargin = salePrice > 0 && displayCost > 0 ? salePrice - displayCost : null;
+  const grossMarginPct = grossMargin !== null && salePrice > 0 ? (grossMargin / salePrice) * 100 : null;
+  const wrapCount = Number(totals.wrapCount || item.packaging?.wrapCount || 12);
+  const costPerEnvelope = displayCost > 0 && wrapCount > 0 ? displayCost / wrapCount : null;
+  const formulaStatus = (item.ingredients || []).length
+    ? "Formula vinculada"
+    : "Sin formula vinculada";
   return `
     <div>Rinde: ${yieldLabel}</div>
-    <div>Costo total: Gs ${formatGs(totalCost)}</div>
-    <div>Costo por kg: ${costPerKg ? `Gs ${formatGs(costPerKg)}` : "Definir rendimiento en kg o g"}</div>
-    <div>Costo por display (360 g): ${costPerKg ? `Gs ${formatGs(totalDisplayCost)}` : "Definir rendimiento en kg o g"}</div>
+    <div>Estado: ${formulaStatus}</div>
+    <div>Costo total actual: Gs ${formatGs(totals.totalCost)}</div>
+    <div>Costo por unidad: Gs ${formatGs(totals.costPerUnit)}</div>
+    <div>Costo por kg: ${totals.costPerKg !== null ? `Gs ${formatGs(totals.costPerKg)}` : "Definir rendimiento en kg o g"}</div>
+    <div>Costo por sobre: ${costPerEnvelope !== null ? `Gs ${formatGs(costPerEnvelope)}` : "Definir display y empaques"}</div>
+    <div>Costo por display/caja: ${displayCost ? `Gs ${formatGs(displayCost)}` : "Definir rendimiento en kg o g"}</div>
+    <div>Margen bruto estimado: ${grossMargin !== null ? `Gs ${formatGs(grossMargin)}` : "Vincular precio de venta"}</div>
+    <div>Rentabilidad: ${grossMarginPct !== null ? `${formatNumber(grossMarginPct)}%` : "Vincular precio de venta"}</div>
   `;
 };
 
@@ -4362,6 +4405,67 @@ const normalizeQuantity = (quantity, fromUnit, toUnit) => {
   return quantity * factor;
 };
 
+const getMaterialUnitCost = (material) => {
+  const values = [
+    material?.price,
+    material?.referenceCost,
+    material?.unitPrice
+  ];
+  const match = values.map(Number).find((value) => Number.isFinite(value) && value > 0);
+  return match || 0;
+};
+
+const getIngredientWithCurrentCost = (ing) => {
+  const material = state.rawMaterials.find((item) => item.id === ing.materialId);
+  const unit = ing.unit || material?.unit || ing.unitBase || "";
+  const unitBase = material?.unit || ing.unitBase || unit;
+  const quantity = Number(ing.quantity || 0);
+  const normalized = normalizeQuantity(quantity, unit, unitBase);
+  const quantityBase = Number(ing.quantityBase || 0) || normalized || quantity;
+  const unitCost = getMaterialUnitCost(material) || Number(ing.unitCost || 0);
+  return {
+    ...ing,
+    materialName: material?.name || ing.materialName || "Materia prima",
+    quantity,
+    unit,
+    quantityBase,
+    unitBase,
+    unitCost,
+    totalCost: quantityBase * unitCost,
+    costSource: material ? "current" : "stored"
+  };
+};
+
+const calculateRecipeCurrentTotals = (recipe) => {
+  const ingredients = (recipe?.ingredients || []).map(getIngredientWithCurrentCost);
+  const totalCost = ingredients.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
+  const yieldQuantity = Number(recipe?.yieldQuantity || 0);
+  const yieldUnit = recipe?.yieldUnit || "";
+  const costPerUnit = yieldQuantity > 0 ? totalCost / yieldQuantity : 0;
+  let costPerKg = null;
+  if (yieldQuantity > 0 && yieldUnit === "kg") costPerKg = costPerUnit;
+  if (yieldQuantity > 0 && yieldUnit === "g") costPerKg = costPerUnit * 1000;
+  const packaging = recipe?.packaging || {};
+  const boxCost = Number(packaging.boxCost || 0);
+  const wrapCost = Number(packaging.wrapCost || 0);
+  const wrapCount = Number(packaging.wrapCount || 0);
+  const packagingCost = Number(packaging.packagingCost || 0) || (boxCost + wrapCost * wrapCount);
+  const productCostPerDisplay = costPerKg !== null ? costPerKg * 0.36 : null;
+  const totalDisplayCost = productCostPerDisplay !== null ? productCostPerDisplay + packagingCost : null;
+  return {
+    ingredients,
+    totalCost,
+    costPerUnit,
+    costPerKg,
+    packagingCost,
+    productCostPerDisplay,
+    totalDisplayCost,
+    boxCost,
+    wrapCost,
+    wrapCount
+  };
+};
+
 const updatePurchaseTotal = () => {
   const quantity = Number(purchaseForm.quantity.value);
   const totalCost = Number(purchaseForm.totalCost.value);
@@ -4373,9 +4477,24 @@ const updatePurchaseTotal = () => {
   const rawUnit = purchaseForm.purchaseUnit.value;
   const baseUnit = material?.unit || rawUnit;
   const normalized = material ? normalizeQuantity(quantity, rawUnit, baseUnit) : quantity;
+  if (normalized === null) {
+    purchaseForm.unitPrice.value = "";
+    return;
+  }
   const baseQuantity = normalized ?? quantity;
   const unitPriceBase = baseQuantity ? totalCost / baseQuantity : 0;
   purchaseForm.unitPrice.value = Number.isNaN(unitPriceBase) ? "" : Math.round(unitPriceBase).toString();
+};
+
+const updateRawMaterialUnitCost = () => {
+  if (!rawMaterialForm?.referenceCost || !rawMaterialForm?.referenceCostTotal || !rawMaterialForm?.referenceQuantity) return;
+  const quantity = Number(rawMaterialForm.referenceQuantity.value);
+  const totalCost = Number(rawMaterialForm.referenceCostTotal.value);
+  if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(totalCost)) {
+    rawMaterialForm.referenceCost.value = "";
+    return;
+  }
+  rawMaterialForm.referenceCost.value = Math.round(totalCost / quantity).toString();
 };
 
 const syncState = (key, items) => {
@@ -4631,11 +4750,14 @@ const renderAll = () => {
     return `
       <div class="list-item ${status.alertClass}">
         <strong>${item.name}</strong>
-        Unidad: ${item.unit} | Costo referencia: Gs ${formatGs(item.referenceCost || item.price)}
+        ${item.category ? `<div>Categoria: ${escapeHtml(item.category)}</div>` : ""}
+        Unidad: ${item.unit} | Costo unitario vigente: Gs ${formatGs(item.price ?? item.referenceCost)}
         <div>Disponible: ${formatNumber(available)} ${item.unit}</div>
         ${item.minStock ? `<div>Stock minimo: ${formatNumber(item.minStock)} ${item.unit}</div>` : ""}
         <div class="status-tag ${status.tagClass}">${status.label}</div>
         ${item.supplier ? `<div>Proveedor: ${item.supplier}</div>` : ""}
+        ${item.lastPurchaseDate ? `<div>Ultima compra: ${formatDate(item.lastPurchaseDate)}</div>` : ""}
+        ${item.observations ? `<div class="muted">Obs: ${escapeHtml(item.observations)}</div>` : ""}
         <div class="list-actions">
           <button class="btn ghost" type="button" data-edit-raw-material="${item.id}">Editar</button>
           <button class="btn ghost danger" type="button" data-delete-raw-material="${item.id}">Eliminar</button>
@@ -4848,6 +4970,101 @@ const setupTabs = () => {
   setActiveTab(initialTab);
 };
 
+const closeSidebar = () => {
+  appShell?.classList.remove("sidebar-open");
+  sidebarToggle?.setAttribute("aria-expanded", "false");
+};
+
+const toggleSidebar = () => {
+  const isOpen = appShell?.classList.toggle("sidebar-open");
+  sidebarToggle?.setAttribute("aria-expanded", isOpen ? "true" : "false");
+};
+
+const classifyAppSectionCards = () => {
+  const sectionByCollapse = {
+    prodToday: "production",
+    finishedStockSection: "stock",
+    stockSummarySection: "stock",
+    stockSection: "raw-materials",
+    rawMaterialSection: "raw-materials",
+    recipeSection: "products",
+    salesSection: "sales",
+    clientsSection: "clients",
+    prospectsSection: "prospects",
+    productsSection: "products",
+    salesGoalSection: "sales",
+    repurchaseSection: "repurchase",
+    coverageSection: "sales"
+  };
+  Object.entries(sectionByCollapse).forEach(([collapseId, section]) => {
+    const card = document.getElementById(collapseId)?.closest(".card");
+    if (card) card.dataset.appSection = section;
+  });
+};
+
+const applyAppSectionCardVisibility = (section) => {
+  const config = APP_SECTION_CONFIG[section] || APP_SECTION_CONFIG.dashboard;
+  panels.forEach((panel) => {
+    const isActivePanel = panel.id === config.tab;
+    panel.querySelectorAll(".card[data-app-section]").forEach((card) => {
+      const shouldHide = isActivePanel && card.dataset.appSection !== section;
+      card.classList.toggle("app-section-hidden", shouldHide);
+    });
+  });
+};
+
+const syncAppSectionCollapses = (section) => {
+  const config = APP_SECTION_CONFIG[section] || APP_SECTION_CONFIG.dashboard;
+  const allowed = new Set(config.collapses || []);
+  document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
+    const body = document.getElementById(toggle.dataset.collapse);
+    if (!body) return;
+    const card = body.closest(".card");
+    const isRelevant = allowed.has(toggle.dataset.collapse) && !card?.classList.contains("app-section-hidden");
+    if (isRelevant) {
+      openSection(toggle, body);
+    } else if (section !== "reports" && section !== "settings") {
+      closeSection(toggle, body);
+    }
+  });
+};
+
+const setActiveAppSection = (section) => {
+  const safeSection = APP_SECTION_CONFIG[section] ? section : "dashboard";
+  activeAppSection = safeSection;
+  const config = APP_SECTION_CONFIG[safeSection];
+  if (dashboardSection) dashboardSection.dataset.appSection = safeSection;
+  sidebarLinks.forEach((link) => {
+    const isActive = link.dataset.appSection === safeSection;
+    link.classList.toggle("active", isActive);
+    link.setAttribute("aria-current", isActive ? "page" : "false");
+  });
+  setActiveTab(config.tab);
+  applyAppSectionCardVisibility(safeSection);
+  syncAppSectionCollapses(safeSection);
+  closeSidebar();
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+    if (safeSection === "sales") focusFirstSaleProductField();
+    if (config.collapses?.includes("coverageSection")) renderSalesCoverage({ animatePins: true });
+  });
+};
+
+const setupSidebarNavigation = () => {
+  classifyAppSectionCards();
+  sidebarToggle?.addEventListener("click", toggleSidebar);
+  sidebarBackdrop?.addEventListener("click", closeSidebar);
+  sidebarLinks.forEach((link) => {
+    link.addEventListener("click", () => {
+      setActiveAppSection(link.dataset.appSection || "dashboard");
+    });
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeSidebar();
+  });
+  setActiveAppSection(activeAppSection);
+};
+
 const updateDueDateVisibility = (forceOpen = null) => {
   if (!saleForm || !dueDateField) return;
   const isCredit = forceOpen === null
@@ -4999,26 +5216,50 @@ rawMaterialForm.addEventListener("submit", async (event) => {
     window.alert("Selecciona una unidad para la materia prima.");
     return;
   }
-  const referenceCost = Number(rawMaterialForm.referenceCost.value);
+  updateRawMaterialUnitCost();
   const referenceQuantity = Number(rawMaterialForm.referenceQuantity.value) || 1;
+  const referenceCostTotal = Number(rawMaterialForm.referenceCostTotal.value);
+  const referenceCost = Number(rawMaterialForm.referenceCost.value);
   const price = Number.isNaN(referenceCost) ? 0 : referenceCost;
   const minStock = rawMaterialForm.minStock.value ? Number(rawMaterialForm.minStock.value) : null;
   const legacyReferenceQuantity = rawMaterialForm.legacyReferenceQuantity.value;
   const legacyReferenceCostTotal = rawMaterialForm.legacyReferenceCostTotal.value;
+  const editId = rawMaterialForm.dataset.editId || "";
   const payload = {
     name: rawMaterialForm.name.value.trim(),
+    category: rawMaterialForm.category?.value.trim() || "",
     unit: rawMaterialForm.unit.value.trim(),
     price,
     referenceQuantity,
+    referenceCostTotal: Number.isNaN(referenceCostTotal) ? 0 : referenceCostTotal,
     referenceCost: Number.isNaN(referenceCost) ? 0 : referenceCost,
     minStock,
     supplier: rawMaterialForm.supplier.value.trim(),
+    lastPurchaseDate: rawMaterialForm.lastPurchaseDate?.value || "",
+    observations: rawMaterialForm.observations?.value.trim() || "",
     userId: user.uid,
     createdAt: serverTimestamp()
   };
   if (legacyReferenceQuantity) payload.legacyReferenceQuantity = Number(legacyReferenceQuantity);
   if (legacyReferenceCostTotal) payload.legacyReferenceCostTotal = Number(legacyReferenceCostTotal);
-  await saveDoc("raw_materials", rawMaterialForm, payload);
+  const materialDocId = await saveDoc("raw_materials", rawMaterialForm, payload);
+  if (!editId && materialDocId && referenceQuantity > 0 && price > 0) {
+    await addDoc(collection(db, "raw_purchases"), {
+      materialId: materialDocId,
+      materialName: payload.name,
+      unit: payload.unit,
+      quantityPurchased: referenceQuantity,
+      unitPurchased: payload.unit,
+      date: payload.lastPurchaseDate || toDateInputValue(new Date()),
+      quantity: referenceQuantity,
+      unitPrice: price,
+      total: Number.isNaN(referenceCostTotal) ? price * referenceQuantity : referenceCostTotal,
+      supplier: payload.supplier,
+      type: "ingreso inicial",
+      userId: user.uid,
+      createdAt: serverTimestamp()
+    });
+  }
   resetForm(rawMaterialForm);
   setUnitGroupValue("rawMaterialUnit", rawMaterialForm.unit.value);
 });
@@ -5038,6 +5279,10 @@ purchaseForm.addEventListener("submit", async (event) => {
   const totalCost = Number(purchaseForm.totalCost.value);
   const unitRaw = purchaseForm.purchaseUnit.value;
   const normalized = normalizeQuantity(quantityRaw, unitRaw, material.unit);
+  if (normalized === null) {
+    window.alert(`No se puede convertir ${unitRaw} a ${material.unit}. Usa la misma unidad base de la materia prima.`);
+    return;
+  }
   const quantityBase = normalized ?? quantityRaw;
   const unitPriceBase = quantityBase ? totalCost / quantityBase : 0;
   const payload = {
@@ -5055,6 +5300,14 @@ purchaseForm.addEventListener("submit", async (event) => {
     createdAt: serverTimestamp()
   };
   await saveDoc("raw_purchases", purchaseForm, payload);
+  await updateDoc(doc(db, "raw_materials", materialId), {
+    price: unitPriceBase,
+    referenceCost: unitPriceBase,
+    referenceCostTotal: totalCost,
+    referenceQuantity: quantityBase,
+    lastPurchaseDate: purchaseForm.date.value,
+    updatedAt: serverTimestamp()
+  });
   resetForm(purchaseForm);
 });
 
@@ -5065,8 +5318,12 @@ addIngredientBtn.addEventListener("click", () => {
   const quantity = Number(recipeForm.quantity.value);
   if (!material || !quantity) return;
   const unit = recipeForm.unit.value.trim() || material.unit;
-  const unitCost = Number(material.price || 0);
+  const unitCost = getMaterialUnitCost(material);
   const normalized = normalizeQuantity(quantity, unit, material.unit);
+  if (normalized === null) {
+    window.alert(`No se puede convertir ${unit} a ${material.unit}. Usa una unidad compatible con la materia prima.`);
+    return;
+  }
   const quantityBase = normalized ?? quantity;
   const totalCost = quantityBase * unitCost;
   recipeDraft.ingredients.push({
@@ -5191,9 +5448,10 @@ batchForm.addEventListener("submit", async (event) => {
     return;
   }
   const ratio = quantityProduced / Number(recipe.yieldQuantity || 1);
+  const currentRecipeTotals = calculateRecipeCurrentTotals(recipe);
   const { availabilityMap } = computeStockTotals();
   const shortages = [];
-  const materialsToConsume = (recipe.ingredients || []).map((ing) => {
+  const materialsToConsume = currentRecipeTotals.ingredients.map((ing) => {
     const material = state.rawMaterials.find((m) => m.id === ing.materialId);
     const baseUnit = material?.unit || ing.unitBase || ing.unit;
     const baseRequired = Number(ing.quantityBase || 0) ||
@@ -5210,7 +5468,7 @@ batchForm.addEventListener("submit", async (event) => {
       materialName: ing.materialName,
       unit: baseUnit,
       quantity: required,
-      unitCost: Number(ing.unitCost || material?.price || 0)
+      unitCost: getMaterialUnitCost(material) || Number(ing.unitCost || 0)
     };
   });
 
@@ -5221,7 +5479,7 @@ batchForm.addEventListener("submit", async (event) => {
     return;
   }
 
-  const costPerUnit = Number(recipe.costPerUnit || 0);
+  const costPerUnit = Number(currentRecipeTotals.costPerUnit || recipe.costPerUnit || 0);
   const totalCost = costPerUnit * quantityProduced;
   const materialsUsed = materialsToConsume.map((item) => ({
     materialId: item.materialId,
@@ -5820,13 +6078,19 @@ financeManualAdjustmentForm?.addEventListener("submit", async (event) => {
 
 const startEditRawMaterial = (item) => {
   rawMaterialForm.name.value = item.name || "";
+  if (rawMaterialForm.category) rawMaterialForm.category.value = item.category || "";
   setUnitGroupValue("rawMaterialUnit", item.unit || "");
-  rawMaterialForm.referenceQuantity.value = 1;
+  rawMaterialForm.referenceQuantity.value = item.referenceQuantity ?? 1;
+  if (rawMaterialForm.referenceCostTotal) {
+    rawMaterialForm.referenceCostTotal.value = item.referenceCostTotal ?? item.legacyReferenceCostTotal ?? "";
+  }
   rawMaterialForm.referenceCost.value = item.price ?? item.referenceCost ?? "";
   rawMaterialForm.minStock.value = item.minStock ?? "";
   rawMaterialForm.legacyReferenceQuantity.value = item.referenceQuantity ?? "";
   rawMaterialForm.legacyReferenceCostTotal.value = item.referenceCost ?? "";
   rawMaterialForm.supplier.value = item.supplier || "";
+  if (rawMaterialForm.lastPurchaseDate) rawMaterialForm.lastPurchaseDate.value = item.lastPurchaseDate || "";
+  if (rawMaterialForm.observations) rawMaterialForm.observations.value = item.observations || "";
   rawMaterialForm.dataset.editId = item.id;
   setSubmitLabel(rawMaterialForm, "Actualizar materia prima");
 };
@@ -5852,7 +6116,7 @@ const startEditRecipe = (item) => {
   recipeForm.dataset.editId = item.id;
   recipeDraft.ingredients = (item.ingredients || []).map((ing) => {
     const material = state.rawMaterials.find((m) => m.id === ing.materialId);
-    const unitCost = material ? Number(material.price || 0) : Number(ing.unitCost || 0);
+    const unitCost = material ? getMaterialUnitCost(material) : Number(ing.unitCost || 0);
     const quantity = Number(ing.quantity || 0);
     const unit = ing.unit || material?.unit || "";
     const unitBase = material?.unit || ing.unitBase || unit;
@@ -6664,6 +6928,9 @@ purchaseForm.totalCost.addEventListener("input", () => {
   updatePurchaseTotal();
 });
 
+rawMaterialForm.referenceCostTotal?.addEventListener("input", updateRawMaterialUnitCost);
+rawMaterialForm.referenceQuantity?.addEventListener("input", updateRawMaterialUnitCost);
+
 purchaseForm.material.addEventListener("change", () => {
   const material = state.rawMaterials.find((item) => item.id === purchaseForm.material.value);
   if (material) {
@@ -7063,7 +7330,7 @@ const navigateToSalesShortcut = async () => {
     console.log("Switching to Ventas");
     setDashboardTransitionsEnabled(false);
     await waitForNextFrame();
-    setActiveTab("sales");
+    setActiveAppSection("sales");
     const salesBody = openExclusiveCollapseSection("salesSection");
     refreshCollapseHeights();
 
@@ -7125,6 +7392,8 @@ document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) =>
     openSection(toggle, body);
   }
 });
+
+setupSidebarNavigation();
 
 document.addEventListener("click", (event) => {
   const toggle = event.target.closest(".collapse-toggle[data-collapse]");
