@@ -701,6 +701,98 @@ body {
   color: var(--muted);
 }
 
+/* Botones de ubicacion en formularios */
+.location-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0 2px;
+}
+
+/* Modal selector de ubicacion */
+.loc-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.loc-modal[hidden] {
+  display: none;
+}
+
+.loc-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 40, 22, 0.45);
+}
+
+.loc-modal-card {
+  position: relative;
+  z-index: 1;
+  width: min(820px, 100%);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(8, 40, 22, 0.3);
+  overflow: hidden;
+}
+
+.loc-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.loc-modal-head h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--green-900);
+}
+
+.loc-modal-hint {
+  margin: 0;
+  padding: 10px 18px 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.loc-modal-map {
+  margin: 12px 18px;
+  height: min(440px, 56vh);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #0f3d22;
+}
+
+.loc-modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 0 18px 16px;
+}
+
+.loc-coords {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.loc-modal-actions {
+  display: flex;
+  gap: 8px;
+}
+
 @media (max-width: 720px) {
   .map-canvas {
     height: 62vh;

@@ -8946,7 +8946,143 @@ const setupCommercialMap = () => {
   document.addEventListener("visibilitychange", () => { if (!document.hidden) resizeCommercialMap(120); });
 };
 
+/* ---- Selector de ubicacion en formularios (Clientes/Prospectos) ---- */
+let locPickerMap = null;
+let locPickerMarker = null;
+let locPickerLatLng = null;
+let locTargetForm = "";
+
+const getLocFormInputs = (formName) => {
+  const form = document.getElementById(formName === "client" ? "clientForm" : "prospectForm");
+  if (!form) return null;
+  return {
+    lat: form.querySelector('[name="latitude"]'),
+    lng: form.querySelector('[name="longitude"]')
+  };
+};
+
+const updateLocPickerCoords = (lng, lat) => {
+  locPickerLatLng = { lng, lat };
+  const el = document.getElementById("locationPickerCoords");
+  if (el) el.textContent = `Lat: ${lat.toFixed(6)}  ·  Lng: ${lng.toFixed(6)}`;
+};
+
+const setLocPickerMarker = (lng, lat) => {
+  if (!locPickerMap) return;
+  if (!locPickerMarker) {
+    locPickerMarker = new maplibregl.Marker({ draggable: true, color: "#16a34a" });
+    locPickerMarker.on("dragend", () => {
+      const p = locPickerMarker.getLngLat();
+      updateLocPickerCoords(p.lng, p.lat);
+    });
+  }
+  locPickerMarker.setLngLat([lng, lat]).addTo(locPickerMap);
+  updateLocPickerCoords(lng, lat);
+};
+
+const openLocationPicker = (formName) => {
+  const modal = document.getElementById("locationPickerModal");
+  const mapEl = document.getElementById("locationPickerMap");
+  if (!modal || !mapEl) return;
+  if (!window.maplibregl) { window.alert("No se pudo cargar el mapa. Revisa tu conexion."); return; }
+  locTargetForm = formName;
+  const inputs = getLocFormInputs(formName);
+  const curLat = mapToNumber(inputs?.lat?.value);
+  const curLng = mapToNumber(inputs?.lng?.value);
+  const hasCur = curLat !== null && curLng !== null;
+  const center = hasCur ? [curLng, curLat] : CDE_CENTER;
+  modal.hidden = false;
+  if (!locPickerMap) {
+    try {
+      locPickerMap = new maplibregl.Map({ container: mapEl, style: MAP_STYLES.streets, center, zoom: hasCur ? 15 : 11 });
+      locPickerMap.addControl(new maplibregl.NavigationControl(), "top-right");
+      locPickerMap.on("click", (e) => setLocPickerMarker(e.lngLat.lng, e.lngLat.lat));
+    } catch (error) {
+      console.error("[loc-picker]", error);
+      window.alert("Este navegador no puede mostrar el mapa interactivo.");
+      return;
+    }
+  } else {
+    locPickerMap.jumpTo({ center, zoom: hasCur ? 15 : 11 });
+  }
+  locPickerLatLng = hasCur ? { lng: curLng, lat: curLat } : null;
+  window.setTimeout(() => {
+    try { locPickerMap.resize(); } catch (e) { /* noop */ }
+    if (hasCur) {
+      setLocPickerMarker(curLng, curLat);
+    } else {
+      if (locPickerMarker) locPickerMarker.remove();
+      const el = document.getElementById("locationPickerCoords");
+      if (el) el.textContent = "Toca el mapa para elegir la ubicacion.";
+    }
+  }, 90);
+};
+
+const closeLocationPicker = () => {
+  const modal = document.getElementById("locationPickerModal");
+  if (modal) modal.hidden = true;
+};
+
+const useCurrentLocationForForm = (formName) => {
+  const inputs = getLocFormInputs(formName);
+  if (!inputs?.lat || !inputs?.lng) return;
+  if (!navigator.geolocation) { window.alert("Tu navegador no soporta geolocalizacion."); return; }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      inputs.lat.value = pos.coords.latitude.toFixed(6);
+      inputs.lng.value = pos.coords.longitude.toFixed(6);
+      window.alert("Ubicacion actual cargada. Podes ajustarla con 'Seleccionar en el mapa'.");
+    },
+    (error) => {
+      window.alert(error?.code === 1
+        ? "Permiso de ubicacion denegado. Activalo en el navegador para usar esta funcion."
+        : "No se pudo obtener tu ubicacion. Intenta de nuevo.");
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+};
+
+const setupLocationPicker = () => {
+  document.querySelectorAll(".location-tools").forEach((row) => {
+    const formName = row.dataset.locForm;
+    row.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-loc-action]");
+      if (!btn) return;
+      const action = btn.dataset.locAction;
+      if (action === "current") {
+        useCurrentLocationForForm(formName);
+      } else if (action === "pick") {
+        openLocationPicker(formName);
+      } else if (action === "verify") {
+        const inputs = getLocFormInputs(formName);
+        if (mapToNumber(inputs?.lat?.value) === null || mapToNumber(inputs?.lng?.value) === null) {
+          window.alert("Carga latitud y longitud (o usa 'Seleccionar en el mapa') antes de verificar.");
+          return;
+        }
+        openLocationPicker(formName);
+      }
+    });
+  });
+  const modal = document.getElementById("locationPickerModal");
+  modal?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-loc-close]")) closeLocationPicker();
+  });
+  document.getElementById("locationPickerConfirm")?.addEventListener("click", () => {
+    if (!locPickerLatLng) { window.alert("Selecciona un punto en el mapa primero."); return; }
+    const inputs = getLocFormInputs(locTargetForm);
+    if (inputs?.lat && inputs?.lng) {
+      inputs.lat.value = locPickerLatLng.lat.toFixed(6);
+      inputs.lng.value = locPickerLatLng.lng.toFixed(6);
+    }
+    closeLocationPicker();
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeLocationPicker();
+  });
+};
+
 setupCommercialMap();
+setupLocationPicker();
 
 onAuthStateChanged(auth, (user) => {
   console.log("[auth] state changed", user ? user.uid : "signed-out");

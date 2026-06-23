@@ -888,6 +888,11 @@
                   Link de Google Maps
                   <input name="mapsLink" type="url" placeholder="https://maps.google.com/..." />
                 </label>
+                <div class="location-tools" data-loc-form="client">
+                  <button class="btn ghost btn-xs" type="button" data-loc-action="current">Usar mi ubicacion actual</button>
+                  <button class="btn ghost btn-xs" type="button" data-loc-action="pick">Seleccionar en el mapa</button>
+                  <button class="btn ghost btn-xs" type="button" data-loc-action="verify">Verificar en el mapa</button>
+                </div>
                 <label>
                   Notas del cliente
                   <textarea name="notes" placeholder="Ej: Prefiere contacto por la tarde"></textarea>
@@ -1071,6 +1076,11 @@
                         Link de Google Maps
                         <input name="mapsLink" type="url" placeholder="https://maps.google.com/..." />
                       </label>
+                      <div class="location-tools prospect-wide-field" data-loc-form="prospect">
+                        <button class="btn ghost btn-xs" type="button" data-loc-action="current">Usar mi ubicacion actual</button>
+                        <button class="btn ghost btn-xs" type="button" data-loc-action="pick">Seleccionar en el mapa</button>
+                        <button class="btn ghost btn-xs" type="button" data-loc-action="verify">Verificar en el mapa</button>
+                      </div>
 
                       <div class="form-section-title">Seguimiento</div>
                       <label>
@@ -1708,6 +1718,25 @@
         </div>
       </section>
       </main>
+    </div>
+  </div>
+
+  <div class="loc-modal" id="locationPickerModal" hidden>
+    <div class="loc-modal-backdrop" data-loc-close></div>
+    <div class="loc-modal-card">
+      <div class="loc-modal-head">
+        <h3>Seleccionar ubicacion</h3>
+        <button class="icon-btn" type="button" data-loc-close aria-label="Cerrar"><i data-lucide="x"></i></button>
+      </div>
+      <p class="loc-modal-hint">Tocá el mapa o arrastrá el marcador para fijar la ubicacion exacta del negocio.</p>
+      <div class="loc-modal-map" id="locationPickerMap"></div>
+      <div class="loc-modal-foot">
+        <span class="loc-coords" id="locationPickerCoords">Sin ubicacion seleccionada</span>
+        <div class="loc-modal-actions">
+          <button class="btn ghost" type="button" data-loc-close>Cancelar</button>
+          <button class="btn primary" type="button" id="locationPickerConfirm">Confirmar ubicacion</button>
+        </div>
+      </div>
     </div>
   </div>
 
