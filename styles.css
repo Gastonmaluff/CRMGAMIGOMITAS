@@ -2771,8 +2771,8 @@ select:focus {
   }
 
   .clients-workspace-card.is-expanded #clientForm {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    align-items: end;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    align-items: start;
     column-gap: 14px;
     row-gap: 12px;
     margin-bottom: 16px;
@@ -2808,9 +2808,18 @@ select:focus {
   }
 
   .clients-workspace-card.is-expanded .client-item-actions {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
     justify-self: stretch;
+    align-content: start;
+  }
+
+  .clients-workspace-card.is-expanded .client-item-actions .btn {
+    flex: 1 1 auto;
+    min-width: 64px;
+    padding: 7px 10px;
+    font-size: 0.82rem;
   }
 
   .clients-workspace-card.is-expanded .followup-history-panel {
