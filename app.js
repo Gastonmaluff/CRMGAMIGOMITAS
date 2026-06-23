@@ -204,6 +204,7 @@ const visitClientsCount = document.getElementById("visitClientsCount");
 const prospectFormHeading = document.getElementById("prospectFormHeading");
 const saleList = document.getElementById("saleList");
 const repurchaseList = document.getElementById("repurchaseList");
+const repurchaseSummary = document.getElementById("repurchaseSummary");
 const salesCoverageSection = document.getElementById("coverageSection");
 const salesCoveragePins = document.getElementById("salesCoveragePins");
 const salesCoverageSummary = document.getElementById("salesCoverageSummary");
@@ -2728,6 +2729,25 @@ const buildRepurchaseFollowups = () => {
     });
 };
 
+const renderRepurchaseSummary = (followups) => {
+  if (!repurchaseSummary) return;
+  const overdue = followups.filter((f) => f.statusClass === "overdue").length;
+  const today = followups.filter((f) => f.statusClass === "today").length;
+  const upcoming = followups.filter((f) => f.statusClass === "upcoming").length;
+  const cards = [
+    { label: "En seguimiento", value: followups.length, cls: "" },
+    { label: "Atrasados", value: overdue, cls: overdue ? "is-danger" : "" },
+    { label: "Vencen hoy", value: today, cls: today ? "is-warn" : "" },
+    { label: "Proximos", value: upcoming, cls: "" }
+  ];
+  repurchaseSummary.innerHTML = cards.map((c) => `
+    <div class="prospect-indicator ${c.cls}">
+      <span class="prospect-indicator-value">${formatInteger(c.value)}</span>
+      <span class="prospect-indicator-label">${c.label}</span>
+    </div>
+  `).join("");
+};
+
 const renderRepurchaseList = () => {
   if (!repurchaseList) return;
   const validClientIds = new Set(state.clients.map((client) => client.id));
@@ -2738,6 +2758,7 @@ const renderRepurchaseList = () => {
     if (!validClientIds.has(clientId)) repurchaseHistoryOpenState.delete(clientId);
   });
   const followups = buildRepurchaseFollowups();
+  renderRepurchaseSummary(followups);
   if (!followups.length) {
     repurchaseList.innerHTML = '<div class="list-item muted">Sin clientes con seguimiento activo.</div>';
     return;
