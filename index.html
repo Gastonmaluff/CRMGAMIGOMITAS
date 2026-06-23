@@ -8,7 +8,7 @@
   <title>CRM Gami Gomitas</title>
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
   <link rel="icon" type="image/png" href="apple-touch-icon.png" />
-  <link rel="stylesheet" href="styles.css?v=20260623-02" />
+  <link rel="stylesheet" href="styles.css?v=20260623-03" />
 </head>
 <body>
   <div class="app">
@@ -816,36 +816,32 @@
             <div class="card desktop-expandable-card commercial-workspace-card prospects-workspace-card">
               <h2 class="section-title"><span class="section-title-text"><i data-lucide="map"></i><span class="section-title-label">Prospectos</span></span> <button class="collapse-toggle" type="button" data-collapse="prospectsSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="prospectsSection">
-                <div class="prospects-layout">
-                  <form id="prospectForm" class="form-grid prospect-form">
-                    <label>
-                      Nombre del local
-                      <input name="name" required />
-                    </label>
-                    <label>
-                      Contacto/responsable
-                      <input name="contactName" />
-                    </label>
-                    <label>
-                      Telefono/WhatsApp
-                      <input name="phone" inputmode="tel" />
-                    </label>
-                    <label>
-                      Ciudad
-                      <input name="city" />
-                    </label>
-                    <label>
-                      Barrio/zona
-                      <input name="zone" />
-                    </label>
-                    <label>
-                      Direccion
-                      <input name="address" />
-                    </label>
-                    <label>
-                      Rubro/tipo de negocio
-                      <select name="businessType">
-                        <option value="">Seleccionar</option>
+                <div class="prospects-workspace">
+                  <div class="page-header prospects-header">
+                    <div class="page-header-text">
+                      <h1 class="page-title">Prospectos</h1>
+                      <p class="page-desc">Organiza potenciales clientes, contactos y proximas visitas comerciales.</p>
+                    </div>
+                    <div class="page-header-actions">
+                      <button class="btn primary" type="button" id="newProspectBtn"><i data-lucide="plus"></i> Nuevo prospecto</button>
+                      <button class="btn ghost" type="button" id="createVisitListBtn">Crear jornada de visitas</button>
+                      <button class="btn ghost" type="button" id="openVisitRouteBtn">Ver mapa / ruta</button>
+                      <button class="btn ghost" type="button" id="exportProspectsBtn">Exportar</button>
+                    </div>
+                  </div>
+
+                  <div class="prospect-indicators" id="prospectIndicators"></div>
+
+                  <div class="prospect-toolbar">
+                    <div class="prospect-toolbar-search">
+                      <i data-lucide="search"></i>
+                      <input id="prospectSearch" type="search" placeholder="Buscar negocio, contacto, telefono o direccion" />
+                    </div>
+                    <div class="prospect-toolbar-filters">
+                      <input id="prospectCityFilter" placeholder="Ciudad" />
+                      <input id="prospectZoneFilter" placeholder="Barrio/zona" />
+                      <select id="prospectBusinessFilter" aria-label="Rubro">
+                        <option value="">Rubro: todos</option>
                         <option value="despensa">Despensa</option>
                         <option value="supermercado">Supermercado</option>
                         <option value="farmacia">Farmacia</option>
@@ -854,10 +850,8 @@
                         <option value="distribuidor">Distribuidor</option>
                         <option value="otro">Otro</option>
                       </select>
-                    </label>
-                    <label>
-                      Estado comercial
-                      <select name="status">
+                      <select id="prospectStatusFilter" aria-label="Estado">
+                        <option value="">Estado: todos</option>
                         <option value="nuevo">Nuevo</option>
                         <option value="contactado">Contactado</option>
                         <option value="visita_pendiente">Visita pendiente</option>
@@ -866,64 +860,78 @@
                         <option value="no_interesado">No interesado</option>
                         <option value="convertido_cliente">Convertido a cliente</option>
                       </select>
-                    </label>
-                    <label>
-                      Potencial estimado
-                      <select name="potential">
-                        <option value="">Seleccionar</option>
+                      <select id="prospectPotentialFilter" aria-label="Potencial">
+                        <option value="">Potencial: todos</option>
                         <option value="bajo">Bajo</option>
                         <option value="medio">Medio</option>
                         <option value="alto">Alto</option>
                       </select>
-                    </label>
-                    <label class="prospect-wide-field">
-                      Observaciones
-                      <textarea name="observations" rows="3"></textarea>
-                    </label>
-                    <label>
-                      Proxima accion
-                      <input name="nextAction" />
-                    </label>
-                    <label>
-                      Fecha de proxima accion
-                      <input name="nextActionDate" type="date" />
-                    </label>
-                    <label>
-                      Latitud
-                      <input name="latitude" type="number" step="any" inputmode="decimal" />
-                    </label>
-                    <label>
-                      Longitud
-                      <input name="longitude" type="number" step="any" inputmode="decimal" />
-                    </label>
-                    <label class="prospect-wide-field">
-                      Link de Google Maps
-                      <input name="mapsLink" type="url" placeholder="https://maps.google.com/..." />
-                    </label>
-                    <div class="prospect-form-actions">
-                      <button class="btn primary" type="submit">Guardar prospecto</button>
-                      <button class="btn ghost hidden" type="button" id="prospectCancelEdit">Cancelar edicion</button>
+                      <select id="prospectLocationFilter" aria-label="Ubicacion">
+                        <option value="">Ubicacion: todas</option>
+                        <option value="with">Con ubicacion</option>
+                        <option value="without">Sin ubicacion</option>
+                      </select>
+                      <button class="btn ghost" type="button" id="clearProspectFilters">Limpiar</button>
                     </div>
-                  </form>
+                  </div>
 
-                  <div class="prospect-tools">
-                    <div class="prospect-filters">
+                  <div class="prospect-bulkbar hidden" id="prospectBulkbar">
+                    <span id="prospectSelectedCount">0 seleccionados</span>
+                    <button class="btn ghost btn-xs" type="button" id="prospectBulkVisit">Agregar a visitas</button>
+                    <button class="btn ghost btn-xs" type="button" id="prospectClearSelection">Quitar seleccion</button>
+                  </div>
+
+                  <div class="prospect-table-wrap">
+                    <table class="data-table prospects-table">
+                      <thead>
+                        <tr>
+                          <th class="col-check"><input type="checkbox" id="prospectSelectAll" aria-label="Seleccionar todos" /></th>
+                          <th>Negocio</th>
+                          <th>Contacto</th>
+                          <th>Telefono</th>
+                          <th>Rubro</th>
+                          <th>Ciudad</th>
+                          <th>Zona</th>
+                          <th>Estado</th>
+                          <th>Potencial</th>
+                          <th>Proxima accion</th>
+                          <th>Fecha</th>
+                          <th class="col-loc">Ubic.</th>
+                          <th class="col-actions">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody id="prospectList"></tbody>
+                    </table>
+                  </div>
+
+                  <div class="collapsible-panel" id="visitClientsPanel">
+                    <button class="collapsible-head" type="button" id="visitClientsToggle" aria-expanded="false" aria-controls="visitClientsBody">
+                      <span class="collapsible-head-label"><i data-lucide="users"></i> Clientes para visitas <span class="count-badge" id="visitClientsCount">0</span></span>
+                      <i data-lucide="chevron-down" class="collapsible-chevron"></i>
+                    </button>
+                    <div class="collapsible-body" id="visitClientsBody" hidden>
+                      <input class="prospect-client-search" id="visitClientSearch" type="search" placeholder="Buscar cliente" />
+                      <div class="visit-client-list" id="visitClientList"></div>
+                    </div>
+                  </div>
+
+                  <div class="visit-panel" id="visitPanel">
+                    <div class="section-subtitle">Jornada de visitas</div>
+                    <div class="list visit-list" id="visitList"></div>
+                  </div>
+
+                  <div class="prospect-form-panel" id="prospectFormPanel">
+                    <h3 class="prospect-form-heading" id="prospectFormHeading">Nuevo prospecto</h3>
+                    <form id="prospectForm" class="prospect-form-grid">
+                      <div class="form-section-title">Informacion del negocio</div>
                       <label>
-                        Buscar
-                        <input id="prospectSearch" type="search" placeholder="Nombre, telefono o direccion" />
+                        Nombre del negocio
+                        <input name="name" required />
                       </label>
                       <label>
-                        Ciudad
-                        <input id="prospectCityFilter" />
-                      </label>
-                      <label>
-                        Barrio/zona
-                        <input id="prospectZoneFilter" />
-                      </label>
-                      <label>
-                        Rubro
-                        <select id="prospectBusinessFilter">
-                          <option value="">Todos</option>
+                        Rubro/tipo de negocio
+                        <select name="businessType">
+                          <option value="">Seleccionar</option>
                           <option value="despensa">Despensa</option>
                           <option value="supermercado">Supermercado</option>
                           <option value="farmacia">Farmacia</option>
@@ -934,9 +942,55 @@
                         </select>
                       </label>
                       <label>
-                        Estado
-                        <select id="prospectStatusFilter">
-                          <option value="">Todos</option>
+                        Potencial estimado
+                        <select name="potential">
+                          <option value="">Seleccionar</option>
+                          <option value="bajo">Bajo</option>
+                          <option value="medio">Medio</option>
+                          <option value="alto">Alto</option>
+                        </select>
+                      </label>
+
+                      <div class="form-section-title">Contacto</div>
+                      <label>
+                        Contacto/responsable
+                        <input name="contactName" />
+                      </label>
+                      <label>
+                        Telefono/WhatsApp
+                        <input name="phone" inputmode="tel" />
+                      </label>
+
+                      <div class="form-section-title">Ubicacion</div>
+                      <label>
+                        Direccion
+                        <input name="address" />
+                      </label>
+                      <label>
+                        Ciudad
+                        <input name="city" />
+                      </label>
+                      <label>
+                        Barrio/zona
+                        <input name="zone" />
+                      </label>
+                      <label>
+                        Latitud
+                        <input name="latitude" type="number" step="any" inputmode="decimal" />
+                      </label>
+                      <label>
+                        Longitud
+                        <input name="longitude" type="number" step="any" inputmode="decimal" />
+                      </label>
+                      <label class="prospect-wide-field">
+                        Link de Google Maps
+                        <input name="mapsLink" type="url" placeholder="https://maps.google.com/..." />
+                      </label>
+
+                      <div class="form-section-title">Seguimiento</div>
+                      <label>
+                        Estado comercial
+                        <select name="status">
                           <option value="nuevo">Nuevo</option>
                           <option value="contactado">Contactado</option>
                           <option value="visita_pendiente">Visita pendiente</option>
@@ -947,37 +1001,23 @@
                         </select>
                       </label>
                       <label>
-                        Potencial
-                        <select id="prospectPotentialFilter">
-                          <option value="">Todos</option>
-                          <option value="bajo">Bajo</option>
-                          <option value="medio">Medio</option>
-                          <option value="alto">Alto</option>
-                        </select>
+                        Proxima accion
+                        <input name="nextAction" />
                       </label>
-                    </div>
+                      <label>
+                        Fecha de proxima accion
+                        <input name="nextActionDate" type="date" />
+                      </label>
+                      <label class="prospect-wide-field">
+                        Observaciones
+                        <textarea name="observations" rows="3"></textarea>
+                      </label>
 
-                    <div class="prospect-visit-toolbar">
-                      <button class="btn ghost" type="button" id="createVisitListBtn">Crear lista de visitas</button>
-                      <button class="btn ghost" type="button" id="openVisitRouteBtn">Abrir ruta en Google Maps</button>
-                    </div>
-
-                    <div class="prospect-results-grid">
-                      <div>
-                        <div class="section-subtitle">Prospectos</div>
-                        <div class="list scroll prospect-list" id="prospectList"></div>
+                      <div class="prospect-form-actions">
+                        <button class="btn primary" type="submit">Guardar prospecto</button>
+                        <button class="btn ghost hidden" type="button" id="prospectCancelEdit">Cancelar edicion</button>
                       </div>
-                      <div>
-                        <div class="section-subtitle">Clientes para visitas</div>
-                        <input class="prospect-client-search" id="visitClientSearch" type="search" placeholder="Buscar cliente" />
-                        <div class="list scroll prospect-client-list" id="visitClientList"></div>
-                      </div>
-                    </div>
-
-                    <div class="visit-panel">
-                      <div class="section-subtitle">Lista de visitas</div>
-                      <div class="list visit-list" id="visitList"></div>
-                    </div>
+                    </form>
                   </div>
                 </div>
               </div>
@@ -1580,7 +1620,7 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260623-02"></script>
+  <script type="module" src="app.js?v=20260623-03"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

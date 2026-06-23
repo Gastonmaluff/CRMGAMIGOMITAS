@@ -188,6 +188,20 @@ const visitClientList = document.getElementById("visitClientList");
 const visitList = document.getElementById("visitList");
 const createVisitListBtn = document.getElementById("createVisitListBtn");
 const openVisitRouteBtn = document.getElementById("openVisitRouteBtn");
+const prospectLocationFilter = document.getElementById("prospectLocationFilter");
+const prospectIndicators = document.getElementById("prospectIndicators");
+const prospectSelectAll = document.getElementById("prospectSelectAll");
+const clearProspectFiltersBtn = document.getElementById("clearProspectFilters");
+const newProspectBtn = document.getElementById("newProspectBtn");
+const exportProspectsBtn = document.getElementById("exportProspectsBtn");
+const prospectBulkbar = document.getElementById("prospectBulkbar");
+const prospectSelectedCount = document.getElementById("prospectSelectedCount");
+const prospectBulkVisitBtn = document.getElementById("prospectBulkVisit");
+const prospectClearSelectionBtn = document.getElementById("prospectClearSelection");
+const visitClientsToggle = document.getElementById("visitClientsToggle");
+const visitClientsBody = document.getElementById("visitClientsBody");
+const visitClientsCount = document.getElementById("visitClientsCount");
+const prospectFormHeading = document.getElementById("prospectFormHeading");
 const saleList = document.getElementById("saleList");
 const repurchaseList = document.getElementById("repurchaseList");
 const salesCoverageSection = document.getElementById("coverageSection");
@@ -257,7 +271,8 @@ const prospectFiltersState = {
   zone: "",
   businessType: "",
   status: "",
-  potential: ""
+  potential: "",
+  location: ""
 };
 const visitPlannerState = {
   selectedKeys: new Set(),
@@ -4599,9 +4614,10 @@ const getFilteredProspects = () => {
   const businessType = normalizeText(prospectFiltersState.businessType);
   const status = normalizeText(prospectFiltersState.status);
   const potential = normalizeText(prospectFiltersState.potential);
+  const location = prospectFiltersState.location;
   return state.prospects.filter((item) => {
     if (search) {
-      const haystack = normalizeText([item.name, item.phone, item.address].filter(Boolean).join(" "));
+      const haystack = normalizeText([item.name, item.contactName, item.phone, item.address].filter(Boolean).join(" "));
       if (!haystack.includes(search)) return false;
     }
     if (city && !normalizeText(item.city).includes(city)) return false;
@@ -4609,8 +4625,157 @@ const getFilteredProspects = () => {
     if (businessType && normalizeText(item.businessType) !== businessType) return false;
     if (status && normalizeText(item.status) !== status) return false;
     if (potential && normalizeText(item.potential) !== potential) return false;
+    if (location) {
+      const hasLocation = Boolean(buildGoogleMapsLocationUrl(item));
+      if (location === "with" && !hasLocation) return false;
+      if (location === "without" && hasLocation) return false;
+    }
     return true;
   });
+};
+
+const PROSPECT_INDICATOR_DEFS = [
+  { key: "total", label: "Total" },
+  { key: "nuevo", label: "Nuevos" },
+  { key: "por_contactar", label: "Por contactar" },
+  { key: "visita_pendiente", label: "Visitas pendientes" },
+  { key: "interesado", label: "Interesados" },
+  { key: "sin_accion", label: "Sin proxima accion" },
+  { key: "convertido", label: "Convertidos" }
+];
+
+const renderProspectIndicators = () => {
+  if (!prospectIndicators) return;
+  const inactive = new Set(["convertido_cliente", "no_interesado", "descartado"]);
+  const counts = {
+    total: state.prospects.length,
+    nuevo: 0,
+    por_contactar: 0,
+    visita_pendiente: 0,
+    interesado: 0,
+    sin_accion: 0,
+    convertido: 0
+  };
+  state.prospects.forEach((item) => {
+    const status = normalizeOptionValue(PROSPECT_STATUS_OPTIONS, item.status, "nuevo");
+    if (status === "nuevo") counts.nuevo += 1;
+    if (status === "nuevo" || status === "contactado") counts.por_contactar += 1;
+    if (status === "visita_pendiente") counts.visita_pendiente += 1;
+    if (status === "interesado") counts.interesado += 1;
+    if (status === "convertido_cliente") counts.convertido += 1;
+    if (!normalizeDateValue(item.nextActionDate) && !item.nextAction && !inactive.has(status)) counts.sin_accion += 1;
+  });
+  prospectIndicators.innerHTML = PROSPECT_INDICATOR_DEFS.map((def) => `
+    <div class="prospect-indicator ${def.key === "sin_accion" && counts.sin_accion ? "is-warn" : ""}">
+      <span class="prospect-indicator-value">${formatInteger(counts[def.key])}</span>
+      <span class="prospect-indicator-label">${def.label}</span>
+    </div>
+  `).join("");
+};
+
+const renderProspectList = () => {
+  if (!prospectList) return;
+  const prospects = getFilteredProspects();
+  if (!prospects.length) {
+    prospectList.innerHTML = '<tr class="empty-row"><td colspan="13">Sin prospectos para los filtros actuales.</td></tr>';
+    syncProspectSelectAll();
+    return;
+  }
+  prospectList.innerHTML = prospects.map((item) => {
+    const visitKey = getVisitKey("prospect", item.id);
+    const selected = visitPlannerState.selectedKeys.has(visitKey);
+    const status = normalizeOptionValue(PROSPECT_STATUS_OPTIONS, item.status, "nuevo");
+    const potential = normalizeOptionValue(PROSPECT_POTENTIAL_OPTIONS, item.potential);
+    const mapsUrl = buildGoogleMapsLocationUrl(item);
+    const whatsappLink = buildWhatsAppLink(item.phone, item.name);
+    const nextAction = item.nextAction ? escapeHtml(item.nextAction) : '<span class="muted">-</span>';
+    const nextDate = item.nextActionDate ? formatDate(item.nextActionDate) : '<span class="muted">-</span>';
+    const locCell = mapsUrl
+      ? `<a class="table-loc-link" href="${escapeHtml(mapsUrl)}" target="_blank" rel="noopener noreferrer" title="Abrir en Google Maps"><i data-lucide="map-pin"></i></a>`
+      : '<span class="muted" title="Sin ubicacion">-</span>';
+    return `
+      <tr class="prospect-row ${selected ? "is-selected" : ""}" data-prospect-id="${item.id}">
+        <td class="col-check"><input type="checkbox" data-visit-select="prospect" data-visit-id="${item.id}" ${selected ? "checked" : ""} aria-label="Seleccionar prospecto" /></td>
+        <td class="cell-strong">${escapeHtml(item.name || "Sin nombre")}</td>
+        <td>${item.contactName ? escapeHtml(item.contactName) : '<span class="muted">-</span>'}</td>
+        <td>${item.phone ? escapeHtml(item.phone) : '<span class="muted">-</span>'}</td>
+        <td>${item.businessType ? getOptionLabel(PROSPECT_BUSINESS_TYPE_OPTIONS, item.businessType) : '<span class="muted">-</span>'}</td>
+        <td>${item.city ? escapeHtml(item.city) : '<span class="muted">-</span>'}</td>
+        <td>${item.zone ? escapeHtml(item.zone) : '<span class="muted">-</span>'}</td>
+        <td><span class="prospect-status status-${status}">${getOptionLabel(PROSPECT_STATUS_OPTIONS, status)}</span></td>
+        <td>${potential ? `<span class="prospect-potential potential-${potential}">${getOptionLabel(PROSPECT_POTENTIAL_OPTIONS, potential)}</span>` : '<span class="muted">-</span>'}</td>
+        <td>${nextAction}</td>
+        <td>${nextDate}</td>
+        <td class="col-loc">${locCell}</td>
+        <td class="col-actions">
+          <div class="table-actions">
+            ${whatsappLink ? `<button class="icon-btn" type="button" data-whatsapp-link="${whatsappLink}" title="WhatsApp"><i data-lucide="message-circle"></i></button>` : ""}
+            ${mapsUrl ? `<button class="icon-btn" type="button" data-open-maps="${escapeHtml(mapsUrl)}" title="Abrir en Google Maps"><i data-lucide="map-pin"></i></button>` : ""}
+            <button class="icon-btn" type="button" data-edit-prospect="${item.id}" title="Editar"><i data-lucide="pencil"></i></button>
+            <button class="icon-btn icon-btn-success" type="button" data-convert-prospect="${item.id}" ${status === "convertido_cliente" ? "disabled" : ""} title="Convertir a cliente"><i data-lucide="user-plus"></i></button>
+            <button class="icon-btn icon-btn-danger" type="button" data-delete-prospect="${item.id}" title="Eliminar"><i data-lucide="trash-2"></i></button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+  syncProspectSelectAll();
+  refreshIcons();
+};
+
+const syncProspectSelectAll = () => {
+  const total = updateProspectSelectionUi();
+  if (!prospectSelectAll) return;
+  const visible = getFilteredProspects();
+  const allSelected = visible.length > 0 && visible.every((item) => visitPlannerState.selectedKeys.has(getVisitKey("prospect", item.id)));
+  prospectSelectAll.checked = allSelected;
+  prospectSelectAll.indeterminate = !allSelected && total > 0;
+};
+
+const updateProspectSelectionUi = () => {
+  const count = visitPlannerState.selectedKeys.size;
+  if (prospectBulkbar) prospectBulkbar.classList.toggle("hidden", count === 0);
+  if (prospectSelectedCount) prospectSelectedCount.textContent = `${count} seleccionado${count === 1 ? "" : "s"}`;
+  return count;
+};
+
+const exportProspectsToCsv = () => {
+  const prospects = getFilteredProspects();
+  if (!prospects.length) {
+    window.alert("No hay prospectos para exportar con los filtros actuales.");
+    return;
+  }
+  const headers = ["Negocio", "Contacto", "Telefono", "Rubro", "Ciudad", "Zona", "Direccion", "Estado", "Potencial", "Proxima accion", "Fecha proxima accion", "Latitud", "Longitud", "Maps"];
+  const escapeCsv = (value) => {
+    const text = String(value ?? "");
+    return /[",\n;]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const rows = prospects.map((item) => [
+    item.name || "",
+    item.contactName || "",
+    item.phone || "",
+    item.businessType ? getOptionLabel(PROSPECT_BUSINESS_TYPE_OPTIONS, item.businessType) : "",
+    item.city || "",
+    item.zone || "",
+    item.address || "",
+    getOptionLabel(PROSPECT_STATUS_OPTIONS, normalizeOptionValue(PROSPECT_STATUS_OPTIONS, item.status, "nuevo")),
+    item.potential ? getOptionLabel(PROSPECT_POTENTIAL_OPTIONS, item.potential) : "",
+    item.nextAction || "",
+    normalizeDateValue(item.nextActionDate) || "",
+    item.latitude ?? "",
+    item.longitude ?? "",
+    item.mapsLink || ""
+  ].map(escapeCsv).join(","));
+  const csv = [headers.join(","), ...rows].join("\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `prospectos-${toDateInputValue(new Date())}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 };
 
 const renderProspectList = () => {
@@ -4894,9 +5059,11 @@ const renderRawMaterialControlCenter = () => {
 
 const renderProspectsWorkspace = () => {
   pruneVisitPlannerState();
+  renderProspectIndicators();
   renderProspectList();
   renderVisitClientList();
   renderVisitList();
+  if (visitClientsCount) visitClientsCount.textContent = formatInteger(state.clients.length);
 };
 
 /* ===================== Dashboard comercial ===================== */
@@ -6233,6 +6400,7 @@ const resetProspectForm = () => {
   prospectForm.dataset.editId = "";
   setSubmitLabel(prospectForm, "");
   prospectCancelEdit?.classList.add("hidden");
+  if (prospectFormHeading) prospectFormHeading.textContent = "Nuevo prospecto";
 };
 
 const getProspectPayloadFromForm = () => {
@@ -6830,7 +6998,8 @@ const startEditProspect = (item) => {
   prospectForm.dataset.editId = item.id;
   setSubmitLabel(prospectForm, "Actualizar prospecto");
   prospectCancelEdit?.classList.remove("hidden");
-  prospectForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (prospectFormHeading) prospectFormHeading.textContent = `Editar: ${item.name || "prospecto"}`;
+  (document.getElementById("prospectFormPanel") || prospectForm).scrollIntoView({ behavior: "smooth", block: "start" });
 };
 
 const startEditSale = (item) => {
@@ -7469,9 +7638,10 @@ const updateProspectFilterState = () => {
   prospectFiltersState.businessType = prospectBusinessFilter?.value || "";
   prospectFiltersState.status = prospectStatusFilter?.value || "";
   prospectFiltersState.potential = prospectPotentialFilter?.value || "";
+  prospectFiltersState.location = prospectLocationFilter?.value || "";
 };
 
-[prospectSearch, prospectCityFilter, prospectZoneFilter, prospectBusinessFilter, prospectStatusFilter, prospectPotentialFilter]
+[prospectSearch, prospectCityFilter, prospectZoneFilter, prospectBusinessFilter, prospectStatusFilter, prospectPotentialFilter, prospectLocationFilter]
   .forEach((input) => {
     input?.addEventListener("input", () => {
       updateProspectFilterState();
@@ -7484,6 +7654,65 @@ const updateProspectFilterState = () => {
       requestAnimationFrame(refreshCollapseHeights);
     });
   });
+
+clearProspectFiltersBtn?.addEventListener("click", () => {
+  [prospectSearch, prospectCityFilter, prospectZoneFilter, prospectBusinessFilter, prospectStatusFilter, prospectPotentialFilter, prospectLocationFilter]
+    .forEach((input) => { if (input) input.value = ""; });
+  updateProspectFilterState();
+  renderProspectList();
+  requestAnimationFrame(refreshCollapseHeights);
+});
+
+newProspectBtn?.addEventListener("click", () => {
+  resetProspectForm();
+  document.getElementById("prospectFormPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  requestAnimationFrame(() => prospectForm?.name?.focus());
+});
+
+prospectSelectAll?.addEventListener("change", () => {
+  const visible = getFilteredProspects();
+  if (prospectSelectAll.checked) {
+    visible.forEach((item) => {
+      const key = getVisitKey("prospect", item.id);
+      if (visitPlannerState.selectedKeys.size < MAX_ROUTE_STOPS) visitPlannerState.selectedKeys.add(key);
+    });
+  } else {
+    visible.forEach((item) => visitPlannerState.selectedKeys.delete(getVisitKey("prospect", item.id)));
+  }
+  renderProspectsWorkspace();
+  requestAnimationFrame(refreshCollapseHeights);
+});
+
+prospectClearSelectionBtn?.addEventListener("click", () => {
+  visitPlannerState.selectedKeys.clear();
+  visitPlannerState.activeKeys = [];
+  renderProspectsWorkspace();
+  requestAnimationFrame(refreshCollapseHeights);
+});
+
+prospectBulkVisitBtn?.addEventListener("click", () => {
+  const selected = Array.from(visitPlannerState.selectedKeys).slice(0, MAX_ROUTE_STOPS);
+  if (!selected.length) {
+    window.alert("Selecciona al menos un prospecto.");
+    return;
+  }
+  visitPlannerState.activeKeys = selected;
+  renderVisitList();
+  document.getElementById("visitPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  requestAnimationFrame(refreshCollapseHeights);
+});
+
+exportProspectsBtn?.addEventListener("click", () => {
+  exportProspectsToCsv();
+});
+
+visitClientsToggle?.addEventListener("click", () => {
+  const expanded = visitClientsToggle.getAttribute("aria-expanded") === "true";
+  visitClientsToggle.setAttribute("aria-expanded", expanded ? "false" : "true");
+  if (visitClientsBody) visitClientsBody.hidden = expanded;
+  visitClientsToggle.closest(".collapsible-panel")?.classList.toggle("open", !expanded);
+  requestAnimationFrame(refreshCollapseHeights);
+});
 
 visitClientSearch?.addEventListener("input", () => {
   renderVisitClientList();
