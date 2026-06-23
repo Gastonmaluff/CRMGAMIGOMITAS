@@ -4423,6 +4423,12 @@ select:focus {
   display: none;
 }
 
+/* El atributo [hidden] siempre debe ocultar, aunque la clase defina display:flex/grid.
+   (Sin esto, .map-fallback y .collapsible-body quedaban siempre visibles.) */
+[hidden] {
+  display: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .dashboard-overview-viewport,
   .dashboard-panels-viewport,
