@@ -4899,6 +4899,329 @@ const renderProspectsWorkspace = () => {
   renderVisitList();
 };
 
+/* ===================== Dashboard comercial ===================== */
+const commercialDashboardState = { period: "month" };
+let commercialSalesChart = null;
+
+const getCommercialPeriodRange = (period) => {
+  const todayIso = toDateInputValue(new Date());
+  const now = new Date();
+  if (period === "today") {
+    const prev = addDaysToDateValue(todayIso, -1);
+    return { startDate: todayIso, endDate: todayIso, prevStart: prev, prevEnd: prev, label: "Hoy" };
+  }
+  if (period === "week") {
+    const start = addDaysToDateValue(todayIso, -6);
+    const prevEnd = addDaysToDateValue(start, -1);
+    const prevStart = addDaysToDateValue(prevEnd, -6);
+    return { startDate: start, endDate: todayIso, prevStart, prevEnd, label: "Ultimos 7 dias" };
+  }
+  if (period === "prev-month") {
+    const r = getPreviousMonthRange();
+    const ps = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+    const pe = new Date(now.getFullYear(), now.getMonth() - 1, 0);
+    return { ...r, prevStart: toDateInputValue(ps), prevEnd: toDateInputValue(pe), label: "Mes anterior" };
+  }
+  const r = getCurrentMonthRange();
+  const pr = getPreviousMonthRange();
+  return { ...r, prevStart: pr.startDate, prevEnd: pr.endDate, label: "Este mes" };
+};
+
+const getSalesInRange = (startDate, endDate) => state.sales.filter((sale) => {
+  const d = getSaleDateValue(sale);
+  return d && d >= startDate && d <= endDate;
+});
+
+const getClientCommercialKey = (sale) => sale.clientId
+  ? `id:${sale.clientId}`
+  : `name:${normalizeText(sale.clientName || "")}`;
+
+const isRecordInRange = (value, startDate, endDate) => {
+  const d = normalizeDateValue(value);
+  return d && d >= startDate && d <= endDate;
+};
+
+const renderCommercialKpis = (range) => {
+  const row = document.getElementById("commercialKpiRow");
+  if (!row) return;
+  const sales = getSalesInRange(range.startDate, range.endDate);
+  const prevSales = getSalesInRange(range.prevStart, range.prevEnd);
+  const totalAmount = sales.reduce((sum, s) => sum + getSaleTotalAmount(s), 0);
+  const prevAmount = prevSales.reduce((sum, s) => sum + getSaleTotalAmount(s), 0);
+  const count = sales.length;
+  const ticket = count ? totalAmount / count : 0;
+  const buyers = new Set(sales.map(getClientCommercialKey).filter((k) => k && k !== "name:")).size;
+  const newClients = state.clients.filter((c) => isRecordInRange(c.createdAt, range.startDate, range.endDate)).length;
+  const followups = buildRepurchaseFollowups();
+  const repurchasePending = followups.filter((f) => f.statusClass === "overdue" || f.statusClass === "today").length;
+  const newProspects = state.prospects.filter((p) => isRecordInRange(p.createdAt, range.startDate, range.endDate)).length;
+  const visitsPending = state.prospects.filter((p) => p.status === "visita_pendiente").length;
+
+  let variation = "";
+  if (prevAmount > 0) {
+    const pct = Math.round(((totalAmount - prevAmount) / prevAmount) * 100);
+    const cls = pct >= 0 ? "up" : "down";
+    const arrow = pct >= 0 ? "▲" : "▼";
+    variation = `<div class="kpi-sub ${cls}">${arrow} ${Math.abs(pct)}% vs periodo previo</div>`;
+  } else {
+    variation = `<div class="kpi-sub">Sin datos del periodo previo</div>`;
+  }
+
+  const cards = [
+    { label: "Ventas del periodo", value: `Gs ${formatGs(totalAmount)}`, extra: variation, accent: "kpi-accent" },
+    { label: "Cantidad de ventas", value: formatInteger(count), sub: "ventas registradas" },
+    { label: "Ticket promedio", value: `Gs ${formatGs(ticket)}`, sub: "por venta" },
+    { label: "Clientes que compraron", value: formatInteger(buyers), sub: "clientes distintos" },
+    { label: "Nuevos clientes", value: formatInteger(newClients), sub: "altas del periodo" },
+    { label: "Recompra pendiente", value: formatInteger(repurchasePending), sub: "vencidas o de hoy", accent: repurchasePending ? "kpi-warn" : "" },
+    { label: "Prospectos nuevos", value: formatInteger(newProspects), sub: "cargados en el periodo" },
+    { label: "Visitas pendientes", value: formatInteger(visitsPending), sub: "prospectos por visitar" }
+  ];
+
+  row.innerHTML = cards.map((c) => `
+    <div class="kpi-card ${c.accent || ""}">
+      <div class="kpi-label">${c.label}</div>
+      <div class="kpi-value">${c.value}</div>
+      ${c.extra || (c.sub ? `<div class="kpi-sub">${c.sub}</div>` : "")}
+    </div>
+  `).join("");
+};
+
+const renderCommercialTopProducts = (range) => {
+  const tbody = document.querySelector("#commercialTopProductsTable tbody");
+  if (!tbody) return;
+  const sales = getSalesInRange(range.startDate, range.endDate);
+  const byProduct = new Map();
+  let totalRevenue = 0;
+  sales.forEach((sale) => {
+    getSaleLineItems(sale).forEach((line) => {
+      const name = String(line.productName || "Sin nombre").trim() || "Sin nombre";
+      const key = line.productId || `name:${normalizeText(name)}`;
+      const units = Number(line.quantity || 0);
+      const revenue = Number.isFinite(Number(line.total))
+        ? Number(line.total)
+        : units * Number(line.unitPrice || 0);
+      totalRevenue += revenue;
+      const current = byProduct.get(key) || { name, units: 0, revenue: 0 };
+      current.units += units;
+      current.revenue += revenue;
+      byProduct.set(key, current);
+    });
+  });
+  const rows = Array.from(byProduct.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 6);
+  if (!rows.length) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="4">Sin ventas en el periodo</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map((r) => {
+    const share = totalRevenue > 0 ? Math.round((r.revenue / totalRevenue) * 100) : 0;
+    return `<tr>
+      <td>${escapeHtml(r.name)}</td>
+      <td class="num">${formatNumber(r.units)}</td>
+      <td class="num">Gs ${formatGs(r.revenue)}</td>
+      <td class="num">${share}%</td>
+    </tr>`;
+  }).join("");
+};
+
+const renderCommercialTopClients = (range) => {
+  const tbody = document.querySelector("#commercialTopClientsTable tbody");
+  if (!tbody) return;
+  const sales = getSalesInRange(range.startDate, range.endDate);
+  const byClient = new Map();
+  sales.forEach((sale) => {
+    const key = getClientCommercialKey(sale);
+    if (!key || key === "name:") return;
+    const name = sale.clientName || getSaleClientDetails(sale).name || "Sin cliente";
+    const date = getSaleDateValue(sale);
+    const current = byClient.get(key) || { name, total: 0, count: 0, lastDate: "" };
+    current.total += getSaleTotalAmount(sale);
+    current.count += 1;
+    if (date > current.lastDate) current.lastDate = date;
+    byClient.set(key, current);
+  });
+  const rows = Array.from(byClient.values()).sort((a, b) => b.total - a.total).slice(0, 6);
+  if (!rows.length) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="4">Sin ventas en el periodo</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map((r) => `<tr>
+    <td>${escapeHtml(r.name)}</td>
+    <td class="num">Gs ${formatGs(r.total)}</td>
+    <td class="num">${formatInteger(r.count)}</td>
+    <td>${r.lastDate ? formatDate(r.lastDate) : "-"}</td>
+  </tr>`).join("");
+};
+
+const renderCommercialCoverage = (range) => {
+  const tbody = document.querySelector("#commercialCoverageTable tbody");
+  if (!tbody) return;
+  const sales = getSalesInRange(range.startDate, range.endDate);
+  const byCity = new Map();
+  const cityOf = (raw) => {
+    const c = String(raw || "").trim();
+    return c || "Sin ciudad";
+  };
+  const ensure = (city) => {
+    if (!byCity.has(city)) byCity.set(city, { city, sales: 0, revenue: 0, clients: 0, prospects: 0 });
+    return byCity.get(city);
+  };
+  sales.forEach((sale) => {
+    const linked = state.clients.find((c) => c.id === sale.clientId);
+    const city = cityOf(linked?.city || sale.city);
+    const entry = ensure(city);
+    entry.sales += 1;
+    entry.revenue += getSaleTotalAmount(sale);
+  });
+  state.clients.forEach((c) => { ensure(cityOf(c.city)).clients += 1; });
+  state.prospects.forEach((p) => { ensure(cityOf(p.city)).prospects += 1; });
+  const rows = Array.from(byCity.values())
+    .sort((a, b) => b.revenue - a.revenue || b.clients - a.clients)
+    .slice(0, 8);
+  if (!rows.length) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="5">Sin datos de cobertura</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map((r) => `<tr>
+    <td>${escapeHtml(r.city)}</td>
+    <td class="num">${formatInteger(r.sales)}</td>
+    <td class="num">Gs ${formatGs(r.revenue)}</td>
+    <td class="num">${formatInteger(r.clients)}</td>
+    <td class="num">${formatInteger(r.prospects)}</td>
+  </tr>`).join("");
+};
+
+const renderCommercialFollowups = () => {
+  const repurchaseEl = document.getElementById("commercialRepurchaseList");
+  const prospectsEl = document.getElementById("commercialProspectsList");
+  if (repurchaseEl) {
+    const followups = buildRepurchaseFollowups()
+      .filter((f) => f.statusClass === "overdue" || f.statusClass === "today")
+      .slice(0, 6);
+    repurchaseEl.innerHTML = followups.length
+      ? followups.map((f) => {
+        const tag = f.statusClass === "overdue"
+          ? `<span class="followup-tag overdue">${f.overdueDays}d vencida</span>`
+          : `<span class="followup-tag today">Hoy</span>`;
+        return `<div class="followup-row"><span class="followup-name">${escapeHtml(f.clientName)}</span>${tag}</div>`;
+      }).join("")
+      : `<div class="empty-hint">Sin recompras vencidas. Buen trabajo.</div>`;
+  }
+  if (prospectsEl) {
+    const inactiveStatuses = new Set(["convertido_cliente", "no_interesado", "descartado"]);
+    const pending = state.prospects
+      .filter((p) => !normalizeDateValue(p.nextActionDate) && !inactiveStatuses.has(p.status))
+      .slice(0, 6);
+    prospectsEl.innerHTML = pending.length
+      ? pending.map((p) => {
+        const city = String(p.city || "").trim();
+        return `<div class="followup-row"><span class="followup-name">${escapeHtml(p.name || "Prospecto")}</span><span class="followup-tag upcoming">${escapeHtml(city || "Sin ciudad")}</span></div>`;
+      }).join("")
+      : `<div class="empty-hint">Todos los prospectos tienen proxima accion.</div>`;
+  }
+};
+
+const renderCommercialSalesChart = (range) => {
+  const canvas = document.getElementById("commercialSalesChart");
+  const meta = document.getElementById("commercialEvolutionMeta");
+  if (!canvas || typeof window.Chart !== "function") return;
+  const visible = canvas.offsetParent !== null;
+  if (!visible) {
+    if (commercialSalesChart) { commercialSalesChart.destroy(); commercialSalesChart = null; }
+    return;
+  }
+  const sales = getSalesInRange(range.startDate, range.endDate);
+  const totals = new Map();
+  const startDay = toIsoDayNumber(range.startDate);
+  const endDay = toIsoDayNumber(range.endDate);
+  const labels = [];
+  const data = [];
+  if (startDay !== null && endDay !== null && endDay - startDay <= 92) {
+    for (let day = startDay; day <= endDay; day += 1) {
+      const iso = addDaysToDateValue(range.startDate, day - startDay);
+      totals.set(iso, 0);
+    }
+    sales.forEach((sale) => {
+      const d = getSaleDateValue(sale);
+      if (totals.has(d)) totals.set(d, totals.get(d) + getSaleTotalAmount(sale));
+    });
+    totals.forEach((value, iso) => {
+      const [, m, dd] = iso.split("-");
+      labels.push(`${dd}/${m}`);
+      data.push(value);
+    });
+  }
+  const total = data.reduce((sum, v) => sum + v, 0);
+  if (meta) meta.textContent = `${range.label} · Gs ${formatGs(total)}`;
+  if (commercialSalesChart) commercialSalesChart.destroy();
+  commercialSalesChart = new window.Chart(canvas.getContext("2d"), {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: "Facturacion",
+        data,
+        borderColor: "#16a34a",
+        backgroundColor: "rgba(22, 163, 74, 0.12)",
+        fill: true,
+        tension: 0.3,
+        pointRadius: data.length > 31 ? 0 : 3,
+        pointBackgroundColor: "#16a34a"
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: { label: (ctx) => `Gs ${formatGs(ctx.parsed.y)}` }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { callback: (value) => formatGs(value) }
+        }
+      }
+    }
+  });
+};
+
+const renderCommercialDashboard = () => {
+  if (!document.getElementById("commercialDashboard")) return;
+  const range = getCommercialPeriodRange(commercialDashboardState.period);
+  renderCommercialKpis(range);
+  renderCommercialTopProducts(range);
+  renderCommercialTopClients(range);
+  renderCommercialCoverage(range);
+  renderCommercialFollowups();
+  renderCommercialSalesChart(range);
+};
+
+const setupCommercialDashboard = () => {
+  const selector = document.getElementById("commercialPeriodSelector");
+  if (selector) {
+    selector.addEventListener("click", (event) => {
+      const btn = event.target.closest(".period-btn");
+      if (!btn) return;
+      commercialDashboardState.period = btn.dataset.period || "month";
+      selector.querySelectorAll(".period-btn").forEach((b) => {
+        b.classList.toggle("active", b === btn);
+      });
+      renderCommercialDashboard();
+    });
+  }
+  const dashboard = document.getElementById("commercialDashboard");
+  if (dashboard) {
+    dashboard.addEventListener("click", (event) => {
+      const opener = event.target.closest("[data-open-section]");
+      if (!opener) return;
+      setActiveAppSection(opener.dataset.openSection);
+    });
+  }
+};
+
 const renderAll = () => {
   renderRawMaterialControlCenter();
 
@@ -5104,6 +5427,7 @@ const renderAll = () => {
   renderRepurchaseList();
   renderSalesCoverage();
   renderCommercialHistory();
+  renderCommercialDashboard();
   renderFinanceMovement();
   renderFinanceReceivables();
   renderFinanceCategorySummary();
@@ -5230,6 +5554,7 @@ const setActiveAppSection = (section) => {
   requestAnimationFrame(() => {
     refreshCollapseHeights();
     if (safeSection === "sales") focusFirstSaleProductField();
+    if (safeSection === "dashboard") renderCommercialDashboard();
     if (config.collapses?.includes("coverageSection")) renderSalesCoverage({ animatePins: true });
   });
 };
@@ -7573,6 +7898,7 @@ saleItems?.addEventListener("click", (event) => {
 
 setupTabs();
 setupDashboardResizeObserver();
+setupCommercialDashboard();
 setDefaultDates();
 initializeCommercialHistory();
 updateDueDateVisibility();

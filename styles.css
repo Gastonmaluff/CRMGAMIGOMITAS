@@ -1019,6 +1019,342 @@ select:focus {
   overflow: visible;
 }
 
+/* ===================== Dashboard comercial ===================== */
+.commercial-dashboard {
+  display: none;
+}
+
+.dashboard[data-app-section="dashboard"] .commercial-dashboard {
+  display: block;
+}
+
+/* En la seccion Dashboard mostramos el panel comercial en vez del overview de produccion */
+.dashboard[data-app-section="dashboard"] .dashboard-overview-viewport {
+  display: none;
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--green-900);
+}
+
+.page-desc {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.period-selector {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-soft);
+  flex-wrap: wrap;
+}
+
+.period-btn {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.88rem;
+  padding: 8px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.period-btn:hover {
+  background: var(--green-50);
+  color: var(--green-700);
+}
+
+.period-btn.active {
+  background: var(--green-600);
+  color: #fff;
+}
+
+/* Fila de KPIs compactos */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.kpi-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kpi-card .kpi-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.kpi-card .kpi-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.kpi-card .kpi-sub {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.kpi-card .kpi-sub.up {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.kpi-card .kpi-sub.down {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.kpi-card.kpi-accent {
+  border-left: 3px solid var(--green-600);
+}
+
+.kpi-card.kpi-warn {
+  border-left: 3px solid var(--warning);
+}
+
+/* Grilla de paneles del dashboard comercial */
+.commercial-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.commercial-grid .panel-wide {
+  grid-column: 1 / -1;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 20px;
+  box-shadow: var(--shadow-soft);
+  min-width: 0;
+}
+
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--green-900);
+}
+
+.panel-desc {
+  margin: 2px 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.panel-head-meta {
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.panel-chart-wrap {
+  position: relative;
+  width: 100%;
+  min-height: 220px;
+}
+
+.panel-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+/* Tabla de datos reutilizable */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.data-table th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  font-weight: 700;
+  background: var(--green-50);
+}
+
+.data-table th.num,
+.data-table td.num {
+  text-align: right;
+}
+
+.data-table tbody tr:hover {
+  background: var(--green-50);
+}
+
+.data-table .empty-row td {
+  text-align: center;
+  color: var(--muted);
+  padding: 18px;
+}
+
+/* Seguimientos */
+.followups-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.followup-block {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: #fcfdfc;
+}
+
+.followup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--green-900);
+  margin-bottom: 10px;
+}
+
+.followup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.followup-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: #fff;
+  border: 1px solid var(--border);
+  font-size: 0.86rem;
+}
+
+.followup-row .followup-name {
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.followup-row .followup-tag {
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.followup-row .followup-tag.overdue {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.followup-row .followup-tag.today {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.followup-row .followup-tag.upcoming {
+  background: var(--green-100);
+  color: var(--green-700);
+}
+
+.followup-list .empty-hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 6px 2px;
+}
+
+.btn-xs {
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  min-height: auto;
+}
+
+@media (max-width: 980px) {
+  .commercial-grid,
+  .followups-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .kpi-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .kpi-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .page-header {
+    flex-direction: column;
+  }
+
+  .period-selector {
+    width: 100%;
+  }
+}
+
 .overview-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -8,7 +8,7 @@
   <title>CRM Gami Gomitas</title>
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
   <link rel="icon" type="image/png" href="apple-touch-icon.png" />
-  <link rel="stylesheet" href="styles.css?v=20260622-01" />
+  <link rel="stylesheet" href="styles.css?v=20260623-01" />
 </head>
 <body>
   <div class="app">
@@ -83,6 +83,105 @@
           <button class="tab" data-tab="commercial-history">Historial comercial</button>
           <button class="tab" data-tab="finance">Finanzas</button>
         </div>
+
+        <!-- ===== Dashboard comercial (reemplaza al overview de produccion) ===== -->
+        <div class="commercial-dashboard" id="commercialDashboard">
+          <div class="page-header">
+            <div class="page-header-text">
+              <h1 class="page-title">Dashboard comercial</h1>
+              <p class="page-desc">Resumen de ventas, clientes, prospectos y oportunidades comerciales.</p>
+            </div>
+            <div class="period-selector" id="commercialPeriodSelector" role="tablist" aria-label="Periodo">
+              <button class="period-btn" type="button" data-period="today">Hoy</button>
+              <button class="period-btn" type="button" data-period="week">Esta semana</button>
+              <button class="period-btn active" type="button" data-period="month">Este mes</button>
+              <button class="period-btn" type="button" data-period="prev-month">Mes anterior</button>
+            </div>
+          </div>
+
+          <div class="kpi-row" id="commercialKpiRow"></div>
+
+          <div class="commercial-grid">
+            <section class="panel panel-wide" id="commercialEvolutionPanel">
+              <div class="panel-head">
+                <div>
+                  <h2 class="panel-title">Evolucion de ventas</h2>
+                  <p class="panel-desc">Facturacion por dia del periodo seleccionado.</p>
+                </div>
+                <div class="panel-head-meta" id="commercialEvolutionMeta"></div>
+              </div>
+              <div class="panel-chart-wrap">
+                <canvas id="commercialSalesChart" height="220"></canvas>
+              </div>
+            </section>
+
+            <section class="panel" id="commercialTopProductsPanel">
+              <div class="panel-head">
+                <h2 class="panel-title">Productos mas vendidos</h2>
+              </div>
+              <div class="panel-table-wrap">
+                <table class="data-table" id="commercialTopProductsTable">
+                  <thead>
+                    <tr><th>Producto</th><th class="num">Unidades</th><th class="num">Facturacion</th><th class="num">%</th></tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel" id="commercialTopClientsPanel">
+              <div class="panel-head">
+                <h2 class="panel-title">Clientes principales</h2>
+              </div>
+              <div class="panel-table-wrap">
+                <table class="data-table" id="commercialTopClientsTable">
+                  <thead>
+                    <tr><th>Cliente</th><th class="num">Total</th><th class="num">Compras</th><th>Ultima</th></tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel" id="commercialFollowupsPanel">
+              <div class="panel-head">
+                <h2 class="panel-title">Seguimientos comerciales</h2>
+              </div>
+              <div class="followups-grid">
+                <div class="followup-block">
+                  <div class="followup-head">
+                    <span>Recompra pendiente</span>
+                    <button class="btn ghost btn-xs" type="button" data-open-section="repurchase">Abrir</button>
+                  </div>
+                  <div class="followup-list" id="commercialRepurchaseList"></div>
+                </div>
+                <div class="followup-block">
+                  <div class="followup-head">
+                    <span>Prospectos sin proxima accion</span>
+                    <button class="btn ghost btn-xs" type="button" data-open-section="prospects">Abrir</button>
+                  </div>
+                  <div class="followup-list" id="commercialProspectsList"></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel" id="commercialCoveragePanel">
+              <div class="panel-head">
+                <h2 class="panel-title">Cobertura comercial</h2>
+                <p class="panel-desc">Ventas y clientes por ciudad.</p>
+              </div>
+              <div class="panel-table-wrap">
+                <table class="data-table" id="commercialCoverageTable">
+                  <thead>
+                    <tr><th>Ciudad</th><th class="num">Ventas</th><th class="num">Facturacion</th><th class="num">Clientes</th><th class="num">Prospectos</th></tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </div>
+
         <div class="dashboard-overview-viewport" id="dashboardOverviewViewport">
           <div class="dashboard-overview-track" id="dashboardOverviewTrack">
             <div class="dashboard-overview-slide">
@@ -1481,7 +1580,7 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260622-01"></script>
+  <script type="module" src="app.js?v=20260623-01"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();
