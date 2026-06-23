@@ -56,7 +56,7 @@ const SIDEBAR_COLLAPSED_KEY = "gg_sidebar_collapsed";
 const sidebarLinks = document.querySelectorAll(".sidebar-link[data-app-section]");
 const APP_SECTION_CONFIG = {
   dashboard: { tab: "production", collapses: [], label: "Dashboard" },
-  sales: { tab: "sales", collapses: ["salesSection"], label: "Ventas" },
+  sales: { tab: "sales", collapses: ["salesSection", "salesGoalSection", "coverageSection"], label: "Ventas" },
   clients: { tab: "sales", collapses: ["clientsSection"], label: "Clientes" },
   prospects: { tab: "sales", collapses: ["prospectsSection"], label: "Prospectos" },
   repurchase: { tab: "sales", collapses: ["repurchaseSection"], label: "Recompra de clientes" },

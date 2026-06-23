@@ -1815,6 +1815,19 @@ select:focus {
   align-items: start;
 }
 
+/* ===== Modulos comerciales (Ventas, Clientes, Prospectos, Recompra) =====
+   Paneles full-width apilados en una sola columna, de izquierda a derecha. */
+#sales > .grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+
+/* La lista de ventas usa el scroll natural de la pagina (sin caja chica) */
+#saleList.list.scroll {
+  max-height: none;
+  overflow: visible;
+}
+
 .list {
   display: grid;
   gap: 8px;
