@@ -8,7 +8,8 @@
   <title>CRM Gami Gomitas</title>
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
   <link rel="icon" type="image/png" href="apple-touch-icon.png" />
-  <link rel="stylesheet" href="styles.css?v=20260623-06" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.css" />
+  <link rel="stylesheet" href="styles.css?v=20260623-07" />
 </head>
 <body>
   <div class="app">
@@ -42,6 +43,7 @@
           <button class="sidebar-link" type="button" data-app-section="clients" data-tooltip="Clientes"><i data-lucide="users"></i><span>Clientes</span></button>
           <button class="sidebar-link" type="button" data-app-section="prospects" data-tooltip="Prospectos"><i data-lucide="map"></i><span>Prospectos</span></button>
           <button class="sidebar-link" type="button" data-app-section="repurchase" data-tooltip="Recompra de clientes"><i data-lucide="repeat"></i><span>Recompra de clientes</span></button>
+          <button class="sidebar-link" type="button" data-app-section="map" data-tooltip="Mapa comercial"><i data-lucide="map-pinned"></i><span>Mapa comercial</span></button>
           <button class="sidebar-link" type="button" data-app-section="reports" data-tooltip="Reportes comerciales"><i data-lucide="line-chart"></i><span>Reportes comerciales</span></button>
 
           <div class="sidebar-group-title">Produccion e inventario</div>
@@ -180,6 +182,88 @@
                 </table>
               </div>
             </section>
+          </div>
+        </div>
+
+        <!-- ===== Mapa comercial ===== -->
+        <div class="commercial-map-section" id="commercialMapSection">
+          <div class="map-topbar">
+            <div class="map-titlebox">
+              <h1 class="page-title">Mapa comercial</h1>
+              <p class="page-desc">Centro de cobertura comercial de Gami Gomitas.</p>
+            </div>
+            <div class="map-search-group">
+              <div class="map-search">
+                <i data-lucide="search"></i>
+                <input id="mapGeoSearch" type="search" placeholder="Buscar ciudad, barrio o direccion" autocomplete="off" />
+                <div class="map-search-results" id="mapGeoResults" hidden></div>
+              </div>
+              <div class="map-search">
+                <i data-lucide="store"></i>
+                <input id="mapBizSearch" type="search" placeholder="Buscar cliente o prospecto" autocomplete="off" />
+                <div class="map-search-results" id="mapBizResults" hidden></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="map-toolbar">
+            <div class="map-filters" id="mapFilters">
+              <button class="map-chip active" type="button" data-map-filter="all">Todos</button>
+              <button class="map-chip" type="button" data-map-filter="prospect">Prospectos</button>
+              <button class="map-chip" type="button" data-map-filter="client">Clientes activos</button>
+              <button class="map-chip" type="button" data-map-filter="overdue">Recompra vencida</button>
+              <input id="mapCityFilter" placeholder="Ciudad" />
+              <input id="mapZoneFilter" placeholder="Barrio/zona" />
+              <select id="mapBusinessFilter" aria-label="Rubro">
+                <option value="">Rubro: todos</option>
+                <option value="despensa">Despensa</option>
+                <option value="supermercado">Supermercado</option>
+                <option value="farmacia">Farmacia</option>
+                <option value="confiteria">Confiteria</option>
+                <option value="mayorista">Mayorista</option>
+                <option value="distribuidor">Distribuidor</option>
+                <option value="otro">Otro</option>
+              </select>
+              <select id="mapLocationFilter" aria-label="Ubicacion">
+                <option value="">Ubicacion: todas</option>
+                <option value="with">Con ubicacion</option>
+                <option value="without">Sin ubicacion</option>
+              </select>
+              <button class="btn ghost btn-xs" type="button" id="mapClearFilters">Limpiar</button>
+            </div>
+            <div class="map-actions">
+              <button class="btn ghost btn-xs" type="button" id="mapViewPy">Ver Paraguay</button>
+              <button class="btn ghost btn-xs" type="button" id="mapViewAll">Ver todos</button>
+              <button class="btn ghost btn-xs" type="button" id="mapCenterResults">Centrar resultados</button>
+              <select id="mapStyleSelect" aria-label="Estilo de mapa">
+                <option value="streets">Mapa</option>
+                <option value="satellite">Satelite</option>
+                <option value="hybrid">Hibrido</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="map-indicators" id="mapIndicators"></div>
+
+          <div class="map-shell">
+            <div class="map-canvas" id="commercialMapCanvas"></div>
+            <div class="map-legend" id="mapLegend">
+              <span><i class="map-dot map-dot-gray"></i> Prospecto</span>
+              <span><i class="map-dot map-dot-green"></i> Cliente activo</span>
+              <span><i class="map-dot map-dot-red"></i> Recompra vencida</span>
+            </div>
+            <div class="map-fallback" id="mapFallback" hidden></div>
+            <aside class="map-detail" id="mapDetail" hidden></aside>
+          </div>
+
+          <div class="collapsible-panel" id="mapVisiblePanel">
+            <button class="collapsible-head" type="button" id="mapVisibleToggle" aria-expanded="false" aria-controls="mapVisibleBody">
+              <span class="collapsible-head-label"><i data-lucide="list"></i> Negocios visibles <span class="count-badge" id="mapVisibleCount">0</span></span>
+              <i data-lucide="chevron-down" class="collapsible-chevron"></i>
+            </button>
+            <div class="collapsible-body" id="mapVisibleBody" hidden>
+              <div class="map-visible-list" id="mapVisibleList"></div>
+            </div>
           </div>
         </div>
 
@@ -1630,7 +1714,8 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260623-06"></script>
+  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.js"></script>
+  <script type="module" src="app.js?v=20260623-07"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

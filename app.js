@@ -62,6 +62,7 @@ const APP_SECTION_CONFIG = {
   clients: { tab: "sales", collapses: ["clientsSection"], label: "Clientes" },
   prospects: { tab: "sales", collapses: ["prospectsSection"], label: "Prospectos" },
   repurchase: { tab: "sales", collapses: ["repurchaseSection"], label: "Recompra de clientes" },
+  map: { tab: "sales", collapses: [], label: "Mapa comercial" },
   production: { tab: "production", collapses: ["prodToday"], label: "Produccion" },
   products: { tab: "production", collapses: ["recipeSection"], label: "Productos" },
   "raw-materials": { tab: "production", collapses: ["rawMaterialSection", "recipeSection"], label: "Materias primas" },
@@ -5564,6 +5565,7 @@ const renderAll = () => {
   renderSalesCoverage();
   renderCommercialHistory();
   renderCommercialDashboard();
+  if (commercialMap) refreshCommercialMap();
   renderFinanceMovement();
   renderFinanceReceivables();
   renderFinanceCategorySummary();
@@ -5606,6 +5608,7 @@ const applySidebarCollapsed = (collapsed) => {
 const toggleSidebarCollapsed = () => {
   const collapsed = !appShell?.classList.contains("sidebar-collapsed");
   applySidebarCollapsed(collapsed);
+  resizeCommercialMap(300);
   try {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
   } catch (error) {
@@ -5691,6 +5694,7 @@ const setActiveAppSection = (section) => {
     refreshCollapseHeights();
     if (safeSection === "sales") focusFirstSaleProductField();
     if (safeSection === "dashboard") renderCommercialDashboard();
+    if (safeSection === "map") { ensureCommercialMap(); resizeCommercialMap(80); resizeCommercialMap(380); }
     if (config.collapses?.includes("coverageSection")) renderSalesCoverage({ animatePins: true });
   });
 };
@@ -8364,6 +8368,585 @@ window.addEventListener("resize", () => {
 requestAnimationFrame(() => {
   refreshCollapseHeights();
 });
+
+/* ===================== Mapa comercial (MapLibre + MapTiler) ===================== */
+const MAPTILER_API_KEY = "XIOrnXPz3pNmBSbHdwx5";
+const MAP_STYLES = {
+  streets: `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_API_KEY}`,
+  satellite: `https://api.maptiler.com/maps/satellite/style.json?key=${MAPTILER_API_KEY}`,
+  hybrid: `https://api.maptiler.com/maps/hybrid/style.json?key=${MAPTILER_API_KEY}`
+};
+const MAP_COLORS = { prospect: "#9ca3af", client: "#16a34a", overdue: "#dc2626" };
+const PY_BOUNDS = [[-62.7, -27.7], [-54.2, -19.2]];
+const CDE_CENTER = [-54.6111, -25.5097];
+const MAP_EMPTY_FC = { type: "FeatureCollection", features: [] };
+
+let commercialMap = null;
+let commercialMapReady = false;
+let commercialMapDidIntro = false;
+let commercialMapEntities = [];
+let mapSelectedId = "";
+let mapGeoSearchTimer = null;
+const mapFilterState = { type: "all", city: "", zone: "", business: "", location: "" };
+
+const mapToNumber = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const num = Number(String(value).replace(",", ".").trim());
+  return Number.isFinite(num) ? num : null;
+};
+
+// Normaliza coordenadas desde multiples formatos. Devuelve {lat,lng} valido o null.
+const normalizeCoordinates = (record) => {
+  if (!record) return null;
+  const candidates = [
+    [record.latitude, record.longitude],
+    [record.lat, record.lng],
+    [record.latitud, record.longitud],
+    [record.location?.latitude, record.location?.longitude],
+    [record.location?.lat, record.location?.lng],
+    [record.ubicacion?.latitud, record.ubicacion?.longitud],
+    [record.ubicacion?.lat, record.ubicacion?.lng]
+  ];
+  for (const [latRaw, lngRaw] of candidates) {
+    if (latRaw === undefined || latRaw === null || lngRaw === undefined || lngRaw === null) continue;
+    const lat = mapToNumber(latRaw);
+    const lng = mapToNumber(lngRaw);
+    if (lat === null || lng === null) continue;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+    if (lat === 0 && lng === 0) continue;
+    return { lat, lng };
+  }
+  return null;
+};
+
+const getClientSalesInfo = (clientId, name) => {
+  const targetName = normalizeText(name || "");
+  let lastDate = "";
+  let lastAmount = 0;
+  let count = 0;
+  state.sales.forEach((sale) => {
+    const matches = (clientId && sale.clientId === clientId)
+      || (!sale.clientId && targetName && normalizeText(sale.clientName || "") === targetName)
+      || (sale.clientId && clientId && sale.clientId === clientId);
+    if (!matches) return;
+    count += 1;
+    const date = getSaleDateValue(sale);
+    if (date && date > lastDate) {
+      lastDate = date;
+      lastAmount = getSaleTotalAmount(sale);
+    }
+  });
+  return { lastDate, lastAmount, count };
+};
+
+// Estado comercial unificado para el mapa (gris / verde / rojo).
+const getCommercialMapStatus = (params) => {
+  const { entityType, raw, clientId, name, followupMap } = params;
+  if (entityType === "prospect") {
+    const statusLabel = getOptionLabel(PROSPECT_STATUS_OPTIONS, normalizeOptionValue(PROSPECT_STATUS_OPTIONS, raw.status, "nuevo"));
+    return {
+      status: "prospect",
+      color: MAP_COLORS.prospect,
+      label: "Prospecto",
+      reason: statusLabel,
+      lastPurchaseDate: "",
+      expectedRepurchaseDate: "",
+      repurchaseFrequencyDays: null,
+      lastAmount: 0,
+      daysRemaining: null,
+      daysLate: null
+    };
+  }
+  const followup = followupMap.get(`id:${clientId}`) || followupMap.get(`name:${normalizeText(name || "")}`);
+  if (followup) {
+    const overdue = followup.statusClass === "overdue";
+    return {
+      status: overdue ? "overdue" : "client",
+      color: overdue ? MAP_COLORS.overdue : MAP_COLORS.client,
+      label: overdue ? "Recompra vencida" : "Cliente activo",
+      reason: overdue ? `Vencida hace ${followup.overdueDays} dia(s)` : "Recompra al dia",
+      lastPurchaseDate: followup.saleDate || "",
+      expectedRepurchaseDate: followup.operativeDate || followup.nextContactDate || "",
+      repurchaseFrequencyDays: followup.frequency || null,
+      lastAmount: 0,
+      daysRemaining: overdue ? null : (followup.daysUntil ?? null),
+      daysLate: overdue ? (followup.overdueDays ?? null) : null
+    };
+  }
+  const info = getClientSalesInfo(clientId, name);
+  return {
+    status: "client",
+    color: MAP_COLORS.client,
+    label: "Cliente activo",
+    reason: "Sin frecuencia de recompra configurada",
+    lastPurchaseDate: info.lastDate || "",
+    expectedRepurchaseDate: "",
+    repurchaseFrequencyDays: null,
+    lastAmount: info.lastAmount || 0,
+    daysRemaining: null,
+    daysLate: null
+  };
+};
+
+const buildCommercialMapEntities = () => {
+  const followups = buildRepurchaseFollowups();
+  const followupMap = new Map();
+  followups.forEach((f) => {
+    if (f.clientId) followupMap.set(`id:${f.clientId}`, f);
+    if (f.clientName) followupMap.set(`name:${normalizeText(f.clientName)}`, f);
+  });
+  const makeEntity = (raw, entityType) => {
+    const coords = normalizeCoordinates(raw);
+    const clientId = entityType === "client" ? raw.id : "";
+    const status = getCommercialMapStatus({ entityType, raw, clientId, name: raw.name, followupMap });
+    return {
+      id: `${entityType}_${raw.id}`,
+      entityType,
+      name: raw.name || "Sin nombre",
+      contactName: raw.contactName || "",
+      phone: raw.phone || "",
+      businessType: raw.businessType || "",
+      city: raw.city || "",
+      neighborhood: raw.zone || "",
+      address: raw.address || "",
+      mapsLink: raw.mapsLink || "",
+      latitude: coords ? coords.lat : null,
+      longitude: coords ? coords.lng : null,
+      hasLocation: Boolean(coords),
+      nextVisitDate: normalizeDateValue(raw.nextActionDate || "") || "",
+      sourceCollection: entityType === "client" ? "clients" : "prospects",
+      sourceDocumentId: raw.id,
+      ...status
+    };
+  };
+  const entities = [];
+  state.prospects.forEach((p) => entities.push(makeEntity(p, "prospect")));
+  state.clients.forEach((c) => entities.push(makeEntity(c, "client")));
+  return entities;
+};
+
+const applyMapFilters = (entities) => entities.filter((e) => {
+  const f = mapFilterState;
+  if (f.type === "prospect" && e.entityType !== "prospect") return false;
+  if (f.type === "client" && !(e.entityType === "client" && e.status === "client")) return false;
+  if (f.type === "overdue" && e.status !== "overdue") return false;
+  if (f.city && !normalizeText(e.city).includes(normalizeText(f.city))) return false;
+  if (f.zone && !normalizeText(e.neighborhood).includes(normalizeText(f.zone))) return false;
+  if (f.business && normalizeText(e.businessType) !== normalizeText(f.business)) return false;
+  if (f.location === "with" && !e.hasLocation) return false;
+  if (f.location === "without" && e.hasLocation) return false;
+  return true;
+});
+
+const commercialEntitiesToGeoJSON = (entities) => ({
+  type: "FeatureCollection",
+  features: entities.filter((e) => e.hasLocation).map((e) => ({
+    type: "Feature",
+    geometry: { type: "Point", coordinates: [e.longitude, e.latitude] },
+    properties: {
+      id: e.id,
+      name: e.name,
+      entityType: e.entityType,
+      commercialStatus: e.status,
+      color: e.color,
+      city: e.city,
+      neighborhood: e.neighborhood,
+      phone: e.phone,
+      lastPurchaseDate: e.lastPurchaseDate || "",
+      expectedRepurchaseDate: e.expectedRepurchaseDate || "",
+      daysLate: e.daysLate ?? 0,
+      sourceCollection: e.sourceCollection,
+      sourceDocumentId: e.sourceDocumentId
+    }
+  }))
+});
+
+const showMapFallback = (message) => {
+  const fb = document.getElementById("mapFallback");
+  if (!fb) return;
+  fb.hidden = false;
+  fb.innerHTML = `<div class="map-fallback-box"><p>${escapeHtml(message)}</p><button class="btn ghost btn-xs" type="button" id="mapRetryBtn">Reintentar</button></div>`;
+  document.getElementById("mapRetryBtn")?.addEventListener("click", () => {
+    fb.hidden = true;
+    if (commercialMap) { try { commercialMap.remove(); } catch (e) { /* noop */ } commercialMap = null; commercialMapReady = false; }
+    ensureCommercialMap();
+  });
+};
+
+const updateMapIndicators = (filtered) => {
+  const el = document.getElementById("mapIndicators");
+  if (!el) return;
+  const prospects = filtered.filter((e) => e.entityType === "prospect").length;
+  const clients = filtered.filter((e) => e.entityType === "client" && e.status === "client").length;
+  const overdue = filtered.filter((e) => e.status === "overdue").length;
+  const noLoc = filtered.filter((e) => !e.hasLocation).length;
+  el.innerHTML = `
+    <span class="map-cap"><i class="map-dot map-dot-gray"></i>${formatInteger(prospects)} prospectos</span>
+    <span class="map-cap"><i class="map-dot map-dot-green"></i>${formatInteger(clients)} clientes activos</span>
+    <span class="map-cap"><i class="map-dot map-dot-red"></i>${formatInteger(overdue)} recompras vencidas</span>
+    <span class="map-cap map-cap-muted">Sin ubicacion: ${formatInteger(noLoc)}</span>
+  `;
+};
+
+const renderMapVisibleList = (filtered) => {
+  const list = document.getElementById("mapVisibleList");
+  const count = document.getElementById("mapVisibleCount");
+  if (count) count.textContent = formatInteger(filtered.length);
+  if (!list) return;
+  if (!filtered.length) {
+    list.innerHTML = '<div class="empty-hint">Sin negocios para los filtros actuales.</div>';
+    return;
+  }
+  list.innerHTML = filtered.slice(0, 200).map((e) => `
+    <div class="map-visible-row" data-map-entity="${e.id}">
+      <div class="map-visible-main">
+        <span class="map-dot map-dot-${e.status === "overdue" ? "red" : e.status === "prospect" ? "gray" : "green"}"></span>
+        <div>
+          <div class="map-visible-name">${escapeHtml(e.name)}</div>
+          <div class="map-visible-meta">${escapeHtml(e.label)}${e.city ? " · " + escapeHtml(e.city) : ""}${e.neighborhood ? " · " + escapeHtml(e.neighborhood) : ""}</div>
+        </div>
+      </div>
+      <div class="map-visible-actions">
+        ${e.hasLocation ? `<button class="icon-btn" type="button" data-map-locate="${e.id}" title="Ver en el mapa"><i data-lucide="map-pin"></i></button>` : '<span class="map-noloc" title="Sin ubicacion">s/ubic.</span>'}
+        <button class="icon-btn" type="button" data-map-detail="${e.id}" title="Detalle"><i data-lucide="panel-right-open"></i></button>
+      </div>
+    </div>
+  `).join("");
+  refreshIcons();
+};
+
+const refreshCommercialMap = () => {
+  if (!document.getElementById("commercialMapSection")) return;
+  commercialMapEntities = buildCommercialMapEntities();
+  const filtered = applyMapFilters(commercialMapEntities);
+  updateMapIndicators(filtered);
+  renderMapVisibleList(filtered);
+  if (commercialMap && commercialMap.getSource && commercialMap.getSource("commercial")) {
+    commercialMap.getSource("commercial").setData(commercialEntitiesToGeoJSON(filtered));
+  }
+};
+
+const getMapEntityById = (id) => commercialMapEntities.find((e) => e.id === id) || null;
+
+const highlightMapEntity = (id) => {
+  mapSelectedId = id || "";
+  if (commercialMap && commercialMap.getLayer && commercialMap.getLayer("points-selected")) {
+    commercialMap.setFilter("points-selected", ["==", ["get", "id"], mapSelectedId]);
+  }
+};
+
+const openMapDetail = (id) => {
+  const e = getMapEntityById(id);
+  const panel = document.getElementById("mapDetail");
+  if (!e || !panel) return;
+  highlightMapEntity(id);
+  const gmaps = buildGoogleMapsLocationUrl({ latitude: e.latitude, longitude: e.longitude, mapsLink: e.mapsLink, address: e.address, zone: e.neighborhood, city: e.city });
+  const wa = buildWhatsAppLink(e.phone, e.name);
+  const fmt = (d) => d ? formatDate(d) : "-";
+  const rows = [];
+  rows.push(`<div class="map-detail-row"><b>Contacto</b><span>${escapeHtml(e.contactName || "-")}</span></div>`);
+  rows.push(`<div class="map-detail-row"><b>Telefono</b><span>${escapeHtml(e.phone || "-")}</span></div>`);
+  rows.push(`<div class="map-detail-row"><b>Rubro</b><span>${e.businessType ? escapeHtml(getOptionLabel(PROSPECT_BUSINESS_TYPE_OPTIONS, e.businessType)) : "-"}</span></div>`);
+  rows.push(`<div class="map-detail-row"><b>Direccion</b><span>${escapeHtml(e.address || "-")}</span></div>`);
+  rows.push(`<div class="map-detail-row"><b>Ciudad</b><span>${escapeHtml(e.city || "-")}${e.neighborhood ? " / " + escapeHtml(e.neighborhood) : ""}</span></div>`);
+  rows.push(`<div class="map-detail-row"><b>Coordenadas</b><span>${e.hasLocation ? `${e.latitude.toFixed(5)}, ${e.longitude.toFixed(5)}` : "Sin ubicacion"}</span></div>`);
+  if (e.entityType === "client") {
+    rows.push(`<div class="map-detail-row"><b>Ultima compra</b><span>${fmt(e.lastPurchaseDate)}${e.lastAmount ? " · Gs " + formatGs(e.lastAmount) : ""}</span></div>`);
+    rows.push(`<div class="map-detail-row"><b>Frecuencia</b><span>${e.repurchaseFrequencyDays ? "cada " + e.repurchaseFrequencyDays + " dias" : "Sin frecuencia configurada"}</span></div>`);
+    rows.push(`<div class="map-detail-row"><b>Proxima recompra</b><span>${fmt(e.expectedRepurchaseDate)}</span></div>`);
+    if (e.daysLate) rows.push(`<div class="map-detail-row"><b>Atraso</b><span>${e.daysLate} dia(s)</span></div>`);
+    else if (e.daysRemaining !== null && e.daysRemaining !== undefined) rows.push(`<div class="map-detail-row"><b>Faltan</b><span>${e.daysRemaining} dia(s)</span></div>`);
+  } else {
+    rows.push(`<div class="map-detail-row"><b>Estado</b><span>${escapeHtml(e.reason)}</span></div>`);
+  }
+  const navTarget = e.entityType === "client" ? "clients" : "prospects";
+  panel.hidden = false;
+  panel.innerHTML = `
+    <div class="map-detail-head">
+      <div>
+        <span class="map-badge map-badge-${e.status === "overdue" ? "red" : e.status === "prospect" ? "gray" : "green"}">${escapeHtml(e.label)}</span>
+        <h3>${escapeHtml(e.name)}</h3>
+      </div>
+      <button class="icon-btn" type="button" id="mapDetailClose" title="Cerrar"><i data-lucide="x"></i></button>
+    </div>
+    <div class="map-detail-body">${rows.join("")}</div>
+    <div class="map-detail-actions">
+      ${wa ? `<a class="btn ghost btn-xs" href="${wa}" target="_blank" rel="noopener noreferrer">WhatsApp</a>` : ""}
+      ${gmaps ? `<a class="btn ghost btn-xs" href="${escapeHtml(gmaps)}" target="_blank" rel="noopener noreferrer">Google Maps</a>` : ""}
+      <button class="btn ghost btn-xs" type="button" data-map-nav="${navTarget}">Ver ${e.entityType === "client" ? "cliente" : "prospecto"}</button>
+      <button class="btn ghost btn-xs" type="button" data-map-nav="sales">Registrar venta</button>
+    </div>
+  `;
+  refreshIcons();
+  document.getElementById("mapDetailClose")?.addEventListener("click", () => {
+    panel.hidden = true;
+    highlightMapEntity("");
+  });
+  panel.querySelectorAll("[data-map-nav]").forEach((btn) => {
+    btn.addEventListener("click", () => setActiveAppSection(btn.dataset.mapNav));
+  });
+};
+
+const flyToMapEntity = (e) => {
+  if (!commercialMap || !e?.hasLocation) return;
+  commercialMap.flyTo({ center: [e.longitude, e.latitude], zoom: 15, essential: true });
+};
+
+const getMapPrefersReduced = () => Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+const playCommercialMapIntro = () => {
+  if (commercialMapDidIntro || !commercialMap) return;
+  commercialMapDidIntro = true;
+  const located = commercialMapEntities.filter((e) => e.hasLocation);
+  const reduced = getMapPrefersReduced();
+  if (located.length) {
+    let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+    located.forEach((e) => {
+      minLng = Math.min(minLng, e.longitude); maxLng = Math.max(maxLng, e.longitude);
+      minLat = Math.min(minLat, e.latitude); maxLat = Math.max(maxLat, e.latitude);
+    });
+    try {
+      commercialMap.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 80, maxZoom: 13, duration: reduced ? 0 : 2600 });
+      return;
+    } catch (e) { /* fallback abajo */ }
+  }
+  if (reduced) commercialMap.jumpTo({ center: CDE_CENTER, zoom: 11 });
+  else commercialMap.flyTo({ center: CDE_CENTER, zoom: 11, speed: 0.7, curve: 1.6, essential: true });
+};
+
+const addCommercialMapLayers = () => {
+  if (!commercialMap || commercialMap.getSource("commercial")) return;
+  commercialMap.addSource("commercial", {
+    type: "geojson",
+    data: MAP_EMPTY_FC,
+    cluster: true,
+    clusterRadius: 50,
+    clusterMaxZoom: 14
+  });
+  commercialMap.addLayer({
+    id: "clusters", type: "circle", source: "commercial", filter: ["has", "point_count"],
+    paint: {
+      "circle-color": "#15803d", "circle-opacity": 0.85,
+      "circle-stroke-color": "#ffffff", "circle-stroke-width": 2,
+      "circle-radius": ["step", ["get", "point_count"], 16, 10, 22, 50, 30]
+    }
+  });
+  commercialMap.addLayer({
+    id: "cluster-count", type: "symbol", source: "commercial", filter: ["has", "point_count"],
+    layout: { "text-field": ["get", "point_count_abbreviated"], "text-size": 13, "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"] },
+    paint: { "text-color": "#ffffff" }
+  });
+  commercialMap.addLayer({
+    id: "points", type: "circle", source: "commercial", filter: ["!", ["has", "point_count"]],
+    paint: {
+      "circle-color": ["get", "color"],
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 5, 10, 8, 16, 12],
+      "circle-stroke-color": "#ffffff", "circle-stroke-width": 2
+    }
+  });
+  commercialMap.addLayer({
+    id: "points-selected", type: "circle", source: "commercial", filter: ["==", ["get", "id"], mapSelectedId || ""],
+    paint: {
+      "circle-color": "rgba(0,0,0,0)",
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 10, 16, 18],
+      "circle-stroke-color": "#111827", "circle-stroke-width": 3
+    }
+  });
+};
+
+const applyCommercialMapGlobe = () => {
+  try { commercialMap.setProjection({ type: "globe" }); } catch (e) { /* estilo sin globe */ }
+};
+
+const ensureCommercialMap = () => {
+  const canvas = document.getElementById("commercialMapCanvas");
+  if (!canvas) return;
+  if (commercialMap) {
+    window.setTimeout(() => { try { commercialMap.resize(); } catch (e) { /* noop */ } }, 60);
+    return;
+  }
+  if (!window.maplibregl) { showMapFallback("No se pudo cargar MapLibre. Revisa tu conexion e intenta de nuevo."); return; }
+  try {
+    commercialMap = new maplibregl.Map({
+      container: canvas,
+      style: MAP_STYLES.streets,
+      center: [-58, -16],
+      zoom: 2.3,
+      attributionControl: true
+    });
+  } catch (error) {
+    console.error("[map] no se pudo iniciar", error);
+    showMapFallback("Este dispositivo o navegador no puede mostrar el mapa interactivo.");
+    return;
+  }
+  commercialMap.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-left");
+  commercialMap.on("error", (e) => console.warn("[map]", e?.error?.message || e));
+  commercialMap.on("style.load", () => {
+    applyCommercialMapGlobe();
+    addCommercialMapLayers();
+    commercialMapReady = true;
+    refreshCommercialMap();
+    playCommercialMapIntro();
+  });
+  // Interacciones (se registran una vez; sobreviven a cambios de estilo).
+  commercialMap.on("click", "clusters", (e) => {
+    const features = commercialMap.queryRenderedFeatures(e.point, { layers: ["clusters"] });
+    const clusterId = features[0]?.properties?.cluster_id;
+    if (clusterId === undefined) return;
+    commercialMap.getSource("commercial").getClusterExpansionZoom(clusterId)
+      .then((zoom) => commercialMap.easeTo({ center: features[0].geometry.coordinates, zoom }))
+      .catch(() => {});
+  });
+  commercialMap.on("click", "points", (e) => {
+    const id = e.features?.[0]?.properties?.id;
+    if (id) openMapDetail(id);
+  });
+  ["clusters", "points"].forEach((layer) => {
+    commercialMap.on("mouseenter", layer, () => { commercialMap.getCanvas().style.cursor = "pointer"; });
+    commercialMap.on("mouseleave", layer, () => { commercialMap.getCanvas().style.cursor = ""; });
+  });
+};
+
+const resizeCommercialMap = (delay = 60) => {
+  if (!commercialMap) return;
+  window.setTimeout(() => { try { commercialMap.resize(); } catch (e) { /* noop */ } }, delay);
+};
+
+const setupCommercialMap = () => {
+  if (!document.getElementById("commercialMapSection")) return;
+  // Filtros tipo (chips)
+  document.getElementById("mapFilters")?.addEventListener("click", (event) => {
+    const chip = event.target.closest(".map-chip");
+    if (!chip) return;
+    mapFilterState.type = chip.dataset.mapFilter || "all";
+    document.querySelectorAll("#mapFilters .map-chip").forEach((c) => c.classList.toggle("active", c === chip));
+    refreshCommercialMap();
+  });
+  const bindFilter = (id, key) => {
+    const el = document.getElementById(id);
+    el?.addEventListener("input", () => { mapFilterState[key] = el.value || ""; refreshCommercialMap(); });
+    el?.addEventListener("change", () => { mapFilterState[key] = el.value || ""; refreshCommercialMap(); });
+  };
+  bindFilter("mapCityFilter", "city");
+  bindFilter("mapZoneFilter", "zone");
+  bindFilter("mapBusinessFilter", "business");
+  bindFilter("mapLocationFilter", "location");
+  document.getElementById("mapClearFilters")?.addEventListener("click", () => {
+    mapFilterState.type = "all"; mapFilterState.city = ""; mapFilterState.zone = ""; mapFilterState.business = ""; mapFilterState.location = "";
+    ["mapCityFilter", "mapZoneFilter", "mapBusinessFilter", "mapLocationFilter"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
+    document.querySelectorAll("#mapFilters .map-chip").forEach((c) => c.classList.toggle("active", c.dataset.mapFilter === "all"));
+    refreshCommercialMap();
+  });
+  document.getElementById("mapViewPy")?.addEventListener("click", () => {
+    if (commercialMap) commercialMap.fitBounds(PY_BOUNDS, { padding: 40, duration: getMapPrefersReduced() ? 0 : 1800 });
+  });
+  const centerResults = () => {
+    if (!commercialMap) return;
+    const located = applyMapFilters(commercialMapEntities).filter((e) => e.hasLocation);
+    if (!located.length) { window.alert("No hay negocios con ubicacion para centrar."); return; }
+    let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+    located.forEach((e) => { minLng = Math.min(minLng, e.longitude); maxLng = Math.max(maxLng, e.longitude); minLat = Math.min(minLat, e.latitude); maxLat = Math.max(maxLat, e.latitude); });
+    commercialMap.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 80, maxZoom: 15, duration: getMapPrefersReduced() ? 0 : 1400 });
+  };
+  document.getElementById("mapViewAll")?.addEventListener("click", centerResults);
+  document.getElementById("mapCenterResults")?.addEventListener("click", centerResults);
+  document.getElementById("mapStyleSelect")?.addEventListener("change", (event) => {
+    const key = event.target.value;
+    if (commercialMap && MAP_STYLES[key]) commercialMap.setStyle(MAP_STYLES[key]);
+  });
+
+  // Buscador geografico (MapTiler)
+  const geoInput = document.getElementById("mapGeoSearch");
+  const geoResults = document.getElementById("mapGeoResults");
+  geoInput?.addEventListener("input", () => {
+    const q = geoInput.value.trim();
+    window.clearTimeout(mapGeoSearchTimer);
+    if (q.length < 3) { if (geoResults) { geoResults.hidden = true; geoResults.innerHTML = ""; } return; }
+    mapGeoSearchTimer = window.setTimeout(async () => {
+      try {
+        const url = `https://api.maptiler.com/geocoding/${encodeURIComponent(q)}.json?key=${MAPTILER_API_KEY}&country=py&autocomplete=true&limit=6&language=es`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("geocoding");
+        const data = await res.json();
+        const features = data.features || [];
+        if (!geoResults) return;
+        geoResults.innerHTML = features.length
+          ? features.map((f, i) => `<button type="button" class="map-search-item" data-geo-index="${i}">${escapeHtml(f.place_name || f.text || "")}</button>`).join("")
+          : '<div class="map-search-empty">Sin resultados</div>';
+        geoResults.hidden = false;
+        geoResults._features = features;
+      } catch (error) {
+        if (geoResults) { geoResults.innerHTML = '<div class="map-search-empty">No se pudo buscar.</div>'; geoResults.hidden = false; }
+      }
+    }, 350);
+  });
+  geoResults?.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-geo-index]");
+    if (!btn) return;
+    const feature = geoResults._features?.[Number(btn.dataset.geoIndex)];
+    if (feature && commercialMap) {
+      const center = feature.center || (feature.geometry && feature.geometry.coordinates);
+      if (center) commercialMap.flyTo({ center, zoom: 14, essential: true });
+    }
+    geoResults.hidden = true;
+    geoInput.value = feature?.place_name || geoInput.value;
+  });
+
+  // Buscador comercial
+  const bizInput = document.getElementById("mapBizSearch");
+  const bizResults = document.getElementById("mapBizResults");
+  bizInput?.addEventListener("input", () => {
+    const q = normalizeText(bizInput.value.trim());
+    if (!bizResults) return;
+    if (q.length < 2) { bizResults.hidden = true; bizResults.innerHTML = ""; return; }
+    const matches = commercialMapEntities.filter((e) => normalizeText([e.name, e.contactName, e.phone, e.city, e.neighborhood].filter(Boolean).join(" ")).includes(q)).slice(0, 8);
+    bizResults.innerHTML = matches.length
+      ? matches.map((e) => `<button type="button" class="map-search-item" data-biz-id="${e.id}"><span class="map-dot map-dot-${e.status === "overdue" ? "red" : e.status === "prospect" ? "gray" : "green"}"></span>${escapeHtml(e.name)}${e.city ? " · " + escapeHtml(e.city) : ""}</button>`).join("")
+      : '<div class="map-search-empty">Sin resultados</div>';
+    bizResults.hidden = false;
+  });
+  bizResults?.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-biz-id]");
+    if (!btn) return;
+    const e = getMapEntityById(btn.dataset.bizId);
+    if (e) {
+      if (e.hasLocation) flyToMapEntity(e);
+      openMapDetail(e.id);
+      if (!e.hasLocation) window.alert("Este registro no tiene ubicacion cargada.");
+    }
+    bizResults.hidden = true;
+  });
+
+  // Negocios visibles (colapsable)
+  const visToggle = document.getElementById("mapVisibleToggle");
+  const visBody = document.getElementById("mapVisibleBody");
+  visToggle?.addEventListener("click", () => {
+    const expanded = visToggle.getAttribute("aria-expanded") === "true";
+    visToggle.setAttribute("aria-expanded", expanded ? "false" : "true");
+    if (visBody) visBody.hidden = expanded;
+    visToggle.closest(".collapsible-panel")?.classList.toggle("open", !expanded);
+  });
+  document.getElementById("mapVisibleList")?.addEventListener("click", (event) => {
+    const locate = event.target.closest("[data-map-locate]");
+    const detail = event.target.closest("[data-map-detail]");
+    const row = event.target.closest("[data-map-entity]");
+    if (locate) { const e = getMapEntityById(locate.dataset.mapLocate); if (e) flyToMapEntity(e); openMapDetail(locate.dataset.mapLocate); return; }
+    if (detail) { openMapDetail(detail.dataset.mapDetail); return; }
+    if (row) { const e = getMapEntityById(row.dataset.mapEntity); if (e?.hasLocation) flyToMapEntity(e); openMapDetail(row.dataset.mapEntity); }
+  });
+
+  // Cerrar resultados al clickear fuera
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest("#mapGeoSearch") && !event.target.closest("#mapGeoResults") && geoResults) geoResults.hidden = true;
+    if (!event.target.closest("#mapBizSearch") && !event.target.closest("#mapBizResults") && bizResults) bizResults.hidden = true;
+  });
+
+  window.addEventListener("resize", () => resizeCommercialMap(120));
+  window.addEventListener("orientationchange", () => resizeCommercialMap(300));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) resizeCommercialMap(120); });
+};
+
+setupCommercialMap();
 
 onAuthStateChanged(auth, (user) => {
   console.log("[auth] state changed", user ? user.uid : "signed-out");
