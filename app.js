@@ -3570,12 +3570,9 @@ const syncDashboardSlideHeights = (activeTab) => {
       dashboardOverviewViewport.style.height = `${getLayoutHeight(overviewSlide)}px`;
     }
   }
-  if (dashboardPanelsViewport && dashboardPanelsTrack) {
-    const panelSlide = Array.from(dashboardPanelsTrack.children)
-      .find((node) => node.id === safeTab);
-    if (panelSlide) {
-      dashboardPanelsViewport.style.height = `${getLayoutHeight(panelSlide)}px`;
-    }
+  // Los paneles fluyen con el scroll natural de la pagina: no se fija altura.
+  if (dashboardPanelsViewport) {
+    dashboardPanelsViewport.style.height = "";
   }
 };
 
@@ -3613,8 +3610,9 @@ const updateDashboardVisibility = (activeTab) => {
   if (dashboardOverviewTrack) {
     dashboardOverviewTrack.style.transform = `translateX(${offset})`;
   }
+  // El track de paneles ya no se desplaza con translateX (sin carrusel de altura fija).
   if (dashboardPanelsTrack) {
-    dashboardPanelsTrack.style.transform = `translateX(${offset})`;
+    dashboardPanelsTrack.style.transform = "";
   }
   panels.forEach((panel) => {
     panel.setAttribute("aria-hidden", panel.id === safeTab ? "false" : "true");
@@ -7607,15 +7605,34 @@ const syncExpandableCardState = (body, isOpen) => {
   card.classList.toggle("is-expanded", Boolean(isOpen));
 };
 
+const COLLAPSE_ANIM_MS = 280;
+
 const openSection = (toggle, body) => {
+  body.classList.remove("is-open-static");
   setCollapseMax(body);
   body.classList.add("open");
   toggle.classList.add("open");
   toggle.setAttribute("aria-expanded", "true");
   syncExpandableCardState(body, true);
+  // Tras la animacion liberamos el tope de altura: el contenido async
+  // (listas de Firestore) puede crecer sin recortarse ni atrapar el scroll.
+  if (body._collapseStaticTimer) window.clearTimeout(body._collapseStaticTimer);
+  body._collapseStaticTimer = window.setTimeout(() => {
+    if (body.classList.contains("open")) body.classList.add("is-open-static");
+  }, COLLAPSE_ANIM_MS);
 };
 
 const closeSection = (toggle, body) => {
+  // Re-fijamos la altura actual antes de cerrar para que la animacion funcione.
+  if (body.classList.contains("is-open-static")) {
+    setCollapseMax(body);
+    body.classList.remove("is-open-static");
+    void body.offsetHeight; // forzar reflow para reanclar el max-height
+  }
+  if (body._collapseStaticTimer) {
+    window.clearTimeout(body._collapseStaticTimer);
+    body._collapseStaticTimer = null;
+  }
   body.classList.remove("open");
   toggle.classList.remove("open");
   toggle.setAttribute("aria-expanded", "false");
@@ -7783,6 +7800,8 @@ document.addEventListener("keydown", (event) => {
 
 const refreshCollapseHeights = () => {
   document.querySelectorAll(".collapse-body.open").forEach((body) => {
+    // Los ya liberados (is-open-static) no se vuelven a topar: crecen libres.
+    if (body.classList.contains("is-open-static")) return;
     setCollapseMax(body);
   });
   const currentTab = document.querySelector(".tab.active")?.dataset.tab || "production";

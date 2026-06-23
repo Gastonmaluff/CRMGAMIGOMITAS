@@ -988,7 +988,35 @@ select:focus {
 }
 
 .dashboard-panels-track > .tab-panel {
+  display: none;
+}
+
+.dashboard-panels-track > .tab-panel.active {
   display: block;
+}
+
+/* ===== Fix raiz del scroll atrapado / crash =====
+   El area de paneles ya no se comporta como carrusel de altura fija.
+   El panel activo fluye en el documento y usa el scroll natural de la pagina,
+   evitando el recorte por altura calculada + overflow:hidden. */
+.dashboard-panels-viewport {
+  overflow: visible;
+  height: auto !important;
+}
+
+.dashboard-panels-track {
+  display: block;
+  width: 100%;
+  transform: none !important;
+  transition: none;
+  will-change: auto;
+}
+
+/* Una vez abierta una seccion, se libera el tope de altura para que el
+   contenido async (listas de Firestore) crezca sin quedar recortado. */
+.collapse-body.is-open-static {
+  max-height: none;
+  overflow: visible;
 }
 
 .overview-grid {
