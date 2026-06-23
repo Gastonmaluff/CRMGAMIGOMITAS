@@ -4809,68 +4809,6 @@ const exportProspectsToCsv = () => {
   URL.revokeObjectURL(url);
 };
 
-const renderProspectList = () => {
-  if (!prospectList) return;
-  const prospects = getFilteredProspects();
-  if (!prospects.length) {
-    prospectList.innerHTML = '<div class="list-item muted">Sin prospectos para los filtros actuales.</div>';
-    return;
-  }
-  prospectList.innerHTML = prospects.map((item) => {
-    const visitKey = getVisitKey("prospect", item.id);
-    const selected = visitPlannerState.selectedKeys.has(visitKey);
-    const status = normalizeOptionValue(PROSPECT_STATUS_OPTIONS, item.status, "nuevo");
-    const potential = normalizeOptionValue(PROSPECT_POTENTIAL_OPTIONS, item.potential);
-    const mapsUrl = buildGoogleMapsLocationUrl(item);
-    const whatsappLink = buildWhatsAppLink(item.phone, item.name);
-    const meta = [
-      item.contactName ? `<span><b>Contacto</b>${escapeHtml(item.contactName)}</span>` : "",
-      item.phone ? `<span><b>Tel</b>${escapeHtml(item.phone)}</span>` : "",
-      item.city ? `<span><b>Ciudad</b>${escapeHtml(item.city)}</span>` : "",
-      item.zone ? `<span><b>Zona</b>${escapeHtml(item.zone)}</span>` : "",
-      item.address ? `<span><b>Dir</b>${escapeHtml(item.address)}</span>` : "",
-      item.businessType ? `<span><b>Rubro</b>${getOptionLabel(PROSPECT_BUSINESS_TYPE_OPTIONS, item.businessType)}</span>` : ""
-    ].filter(Boolean).join("");
-    return `
-      <div class="list-item prospect-item" data-prospect-id="${item.id}">
-        <div class="prospect-item-head">
-          <label class="visit-check">
-            <input type="checkbox" data-visit-select="prospect" data-visit-id="${item.id}" ${selected ? "checked" : ""} />
-            <span>${escapeHtml(item.name || "Sin nombre")}</span>
-          </label>
-          <div class="prospect-badges">
-            <span class="prospect-status status-${status}">${getOptionLabel(PROSPECT_STATUS_OPTIONS, status)}</span>
-            ${potential ? `<span class="prospect-potential potential-${potential}">${getOptionLabel(PROSPECT_POTENTIAL_OPTIONS, potential)}</span>` : ""}
-          </div>
-        </div>
-        <div class="client-item-details prospect-details">
-          ${meta || '<span class="muted">Sin datos comerciales cargados</span>'}
-        </div>
-        <div class="prospect-followup">
-          ${item.nextAction ? `<span><b>Proxima accion</b>${escapeHtml(item.nextAction)}</span>` : ""}
-          ${item.nextActionDate ? `<span><b>Fecha</b>${formatDate(item.nextActionDate)}</span>` : ""}
-        </div>
-        ${item.observations ? `<div class="muted">Obs: ${escapeHtml(item.observations)}</div>` : ""}
-        <div class="prospect-inline-status">
-          <label>
-            Estado
-            <select data-prospect-status="${item.id}">
-              ${buildProspectStatusOptions(status)}
-            </select>
-          </label>
-        </div>
-        <div class="list-actions prospect-actions">
-          ${whatsappLink ? `<button class="btn ghost" type="button" data-whatsapp-link="${whatsappLink}">WhatsApp</button>` : ""}
-          ${mapsUrl ? `<button class="btn ghost" type="button" data-open-maps="${escapeHtml(mapsUrl)}">Abrir en Google Maps</button>` : ""}
-          <button class="btn ghost" type="button" data-convert-prospect="${item.id}" ${status === "convertido_cliente" ? "disabled" : ""}>Convertir a cliente</button>
-          <button class="btn ghost" type="button" data-edit-prospect="${item.id}">Editar</button>
-          <button class="btn ghost danger" type="button" data-delete-prospect="${item.id}">Eliminar</button>
-        </div>
-      </div>
-    `;
-  }).join("");
-};
-
 const renderVisitClientList = () => {
   if (!visitClientList) return;
   const search = normalizeText(visitClientSearch?.value || "");
