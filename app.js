@@ -3,6 +3,7 @@ import {
   getAuth,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   onAuthStateChanged,
   signOut
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
@@ -42,6 +43,7 @@ const authError = document.getElementById("authError");
 const loginForm = document.getElementById("loginForm");
 const loginSubmitBtn = document.getElementById("loginSubmitBtn");
 const registerBtn = document.getElementById("registerBtn");
+const forgotPasswordBtn = document.getElementById("forgotPasswordBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 
 const tabs = document.querySelectorAll(".tab");
@@ -901,8 +903,7 @@ const formatTime = (value) => {
   return new Date(value).toLocaleTimeString("es-PY", { hour: "2-digit", minute: "2-digit" });
 };
 
-const getAuthMessage = (error) => {
-  const code = String(error?.code || "");
+const getAuthFriendlyMessage = (code, error) => {
   if (code === "auth/invalid-email") return "Correo invalido.";
   if (code === "auth/user-not-found") return "No existe una cuenta con ese correo.";
   if (code === "auth/wrong-password") return "Contrasena incorrecta.";
@@ -911,7 +912,16 @@ const getAuthMessage = (error) => {
   if (code === "auth/network-request-failed") return "Sin conexion a internet. Revisa tu red.";
   if (code === "auth/email-already-in-use") return "Ese correo ya esta registrado.";
   if (code === "auth/weak-password") return "La contrasena es demasiado debil (usa al menos 6 caracteres).";
+  if (code === "auth/missing-password") return "Falta la contrasena.";
+  if (code === "auth/operation-not-allowed") return "El metodo de inicio de sesion esta deshabilitado en Firebase.";
   return error?.message || "No se pudo completar la autenticacion.";
+};
+
+// Devuelve el mensaje amigable + el codigo exacto de Firebase, para ver la razon real del fallo.
+const getAuthMessage = (error) => {
+  const code = String(error?.code || "").trim();
+  const friendly = getAuthFriendlyMessage(code, error);
+  return code ? `${friendly} [${code}]` : friendly;
 };
 
 const setAuthFeedback = (message, type = "error") => {
@@ -5988,6 +5998,31 @@ registerBtn?.addEventListener("click", async () => {
     setAuthFeedback(getAuthMessage(error), "error");
   } finally {
     setAuthBusy(false);
+  }
+});
+
+forgotPasswordBtn?.addEventListener("click", async () => {
+  const { email } = getLoginCredentials();
+  if (!email) {
+    setAuthFeedback("Escribi tu correo arriba y volve a tocar 'Olvide mi contrasena'.", "error");
+    return;
+  }
+  const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  if (!looksLikeEmail) {
+    setAuthFeedback("Ingresa un correo valido para recuperar la contrasena.", "error");
+    return;
+  }
+  try {
+    console.log("[auth] reset password", email);
+    forgotPasswordBtn.disabled = true;
+    setAuthFeedback("Enviando correo de recuperacion...", "info");
+    await sendPasswordResetEmail(auth, email);
+    setAuthFeedback(`Listo: te enviamos un correo a ${email} para restablecer la contrasena. Revisa tu bandeja de entrada y la carpeta de spam.`, "success");
+  } catch (error) {
+    console.error("[auth] reset error", error);
+    setAuthFeedback(getAuthMessage(error), "error");
+  } finally {
+    forgotPasswordBtn.disabled = false;
   }
 });
 

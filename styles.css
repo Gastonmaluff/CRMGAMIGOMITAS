@@ -336,6 +336,29 @@ body {
   width: 100%;
 }
 
+.auth-forgot {
+  border: none;
+  background: transparent;
+  color: var(--green-700);
+  font-weight: 600;
+  text-decoration: underline;
+  padding: 4px;
+  justify-self: center;
+}
+
+.auth-forgot:hover {
+  color: var(--green-800);
+  background: transparent;
+}
+
+.error.success {
+  color: var(--green-700);
+}
+
+.error.info {
+  color: var(--muted);
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);
