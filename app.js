@@ -50,7 +50,9 @@ const TAB_IDS = Array.from(tabs).map((tab) => tab.dataset.tab).filter(Boolean);
 const appShell = document.querySelector(".app-shell");
 const appSidebar = document.getElementById("appSidebar");
 const sidebarToggle = document.getElementById("sidebarToggle");
+const sidebarCollapseBtn = document.getElementById("sidebarCollapseBtn");
 const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+const SIDEBAR_COLLAPSED_KEY = "gg_sidebar_collapsed";
 const sidebarLinks = document.querySelectorAll(".sidebar-link[data-app-section]");
 const APP_SECTION_CONFIG = {
   dashboard: { tab: "production", collapses: [], label: "Dashboard" },
@@ -60,16 +62,28 @@ const APP_SECTION_CONFIG = {
   repurchase: { tab: "sales", collapses: ["repurchaseSection"], label: "Recompra de clientes" },
   production: { tab: "production", collapses: ["prodToday"], label: "Produccion" },
   products: { tab: "production", collapses: ["recipeSection"], label: "Productos" },
-  "raw-materials": { tab: "production", collapses: ["rawMaterialSection", "stockSection"], label: "Materias primas" },
-  stock: { tab: "production", collapses: ["finishedStockSection", "stockSummarySection"], label: "Stock" },
+  "raw-materials": { tab: "production", collapses: ["rawMaterialSection", "recipeSection"], label: "Materias primas" },
+  stock: { tab: "production", collapses: ["finishedStockSection", "stockSummarySection", "stockSection"], label: "Stock" },
   reports: { tab: "commercial-history", collapses: [], label: "Reportes" },
   settings: { tab: "finance", collapses: ["salesGoalSection", "coverageSection", "financeMovementSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection"], label: "Configuracion" }
 };
 let activeAppSection = "dashboard";
 
 const rawMaterialForm = document.getElementById("rawMaterialForm");
+const rawMaterialFormPanel = document.getElementById("rawMaterialFormPanel");
+const newRawMaterialBtn = document.getElementById("newRawMaterialBtn");
+const cancelRawMaterialForm = document.getElementById("cancelRawMaterialForm");
+const openStockEntryBtn = document.getElementById("openStockEntryBtn");
+const rawMaterialSummary = document.getElementById("rawMaterialSummary");
+const rawMaterialSearch = document.getElementById("rawMaterialSearch");
+const rawMaterialCategoryFilter = document.getElementById("rawMaterialCategoryFilter");
+const rawMaterialStatusFilter = document.getElementById("rawMaterialStatusFilter");
+const rawMaterialUnitFilter = document.getElementById("rawMaterialUnitFilter");
 const purchaseForm = document.getElementById("purchaseForm");
 const recipeForm = document.getElementById("recipeForm");
+const recipeProductSelect = document.getElementById("recipeProductSelect");
+const recalculateRecipeCostsBtn = document.getElementById("recalculateRecipeCostsBtn");
+const recipeRecalculateNotice = document.getElementById("recipeRecalculateNotice");
 const batchForm = document.getElementById("batchForm");
 const batchProductSelect = document.getElementById("batchProductSelect");
 const batchRecipeNotice = document.getElementById("batchRecipeNotice");
@@ -262,6 +276,12 @@ const rawMaterialAdjustmentState = {
   openKey: "",
   newStock: "",
   reason: ""
+};
+const rawMaterialFiltersState = {
+  search: "",
+  category: "",
+  status: "",
+  unit: ""
 };
 let saleProductIndex = new Map();
 const SALES_DASHBOARD_DEBUG = false;
@@ -1170,12 +1190,15 @@ const getStockStatus = ({ available, minStock, requiredPerBatch }) => {
   const minNum = Number(minStock || 0);
   const requiredNum = Number(requiredPerBatch || 0);
   if (availableNum <= 0 || (requiredNum > 0 && availableNum + 1e-6 < requiredNum)) {
-    return { label: "Critico", tagClass: "status-critical", alertClass: "alert-critical" };
+    return { key: "critico", label: "Critico", tagClass: "status-critical", alertClass: "alert-critical" };
   }
-  if (minNum > 0 && availableNum < minNum) {
-    return { label: "Bajo", tagClass: "status-low", alertClass: "alert-low" };
+  if (minNum > 0 && availableNum <= minNum) {
+    return { key: "critico", label: "Critico", tagClass: "status-critical", alertClass: "alert-critical" };
   }
-  return { label: "OK", tagClass: "status-ok", alertClass: "" };
+  if (minNum > 0 && availableNum <= minNum * 1.25) {
+    return { key: "bajo", label: "Bajo", tagClass: "status-low", alertClass: "alert-low" };
+  }
+  return { key: "optimo", label: "Optimo", tagClass: "status-ok", alertClass: "" };
 };
 
 const resetForm = (form) => {
@@ -4514,6 +4537,7 @@ const syncState = (key, items) => {
   }
   if (key === "products") {
     updateSelect(batchProductSelect, items, "Seleccionar");
+    updateSelect(recipeProductSelect, items, "Seleccionar producto");
     refreshCommercialHistoryProductOptions();
     if (batchForm.recipe.value) {
       updateBatchProductFromRecipe();
@@ -4735,6 +4759,141 @@ const renderVisitList = () => {
   }).join("");
 };
 
+const buildRawMaterialRows = () => {
+  const { availabilityMap } = computeStockTotals();
+  return state.rawMaterials.map((item) => {
+    const available = availabilityMap[item.id] ?? 0;
+    const unitCost = getMaterialUnitCost(item);
+    const stockValue = available * unitCost;
+    const status = getStockStatus({ available, minStock: item.minStock });
+    return {
+      ...item,
+      available,
+      unitCost,
+      stockValue,
+      status
+    };
+  });
+};
+
+const updateRawMaterialFilterOptions = (rows) => {
+  const buildOptions = (values, placeholder) => {
+    const unique = Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b, "es"));
+    return [`<option value="">${placeholder}</option>`]
+      .concat(unique.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`))
+      .join("");
+  };
+  if (rawMaterialCategoryFilter) {
+    const current = rawMaterialCategoryFilter.value;
+    rawMaterialCategoryFilter.innerHTML = buildOptions(rows.map((row) => row.category), "Todas");
+    rawMaterialCategoryFilter.value = Array.from(rawMaterialCategoryFilter.options).some((option) => option.value === current) ? current : "";
+  }
+  if (rawMaterialUnitFilter) {
+    const current = rawMaterialUnitFilter.value;
+    rawMaterialUnitFilter.innerHTML = buildOptions(rows.map((row) => row.unit), "Todas");
+    rawMaterialUnitFilter.value = Array.from(rawMaterialUnitFilter.options).some((option) => option.value === current) ? current : "";
+  }
+};
+
+const getFilteredRawMaterialRows = (rows) => {
+  const search = normalizeText(rawMaterialFiltersState.search);
+  const category = normalizeText(rawMaterialFiltersState.category);
+  const status = normalizeText(rawMaterialFiltersState.status);
+  const unit = normalizeText(rawMaterialFiltersState.unit);
+  return rows.filter((row) => {
+    if (search && !normalizeText(row.name).includes(search)) return false;
+    if (category && normalizeText(row.category) !== category) return false;
+    if (status && row.status.key !== status) return false;
+    if (unit && normalizeText(row.unit) !== unit) return false;
+    return true;
+  });
+};
+
+const renderRawMaterialSummary = (rows) => {
+  if (!rawMaterialSummary) return;
+  const totalValue = rows.reduce((sum, row) => sum + Number(row.stockValue || 0), 0);
+  const totalStock = rows.reduce((sum, row) => sum + Math.max(0, Number(row.available || 0)), 0);
+  const lowRows = rows.filter((row) => row.status.key === "bajo");
+  const criticalRows = rows.filter((row) => row.status.key === "critico");
+  rawMaterialSummary.innerHTML = `
+    <div class="raw-material-summary-item">
+      <span>Total registradas</span>
+      <strong>${formatInteger(rows.length)}</strong>
+    </div>
+    <div class="raw-material-summary-item">
+      <span>Stock total disponible</span>
+      <strong>${formatNumber(totalStock)}</strong>
+      <small>unidades base mixtas</small>
+    </div>
+    <div class="raw-material-summary-item">
+      <span>Valor total en stock</span>
+      <strong>Gs ${formatGs(totalValue)}</strong>
+    </div>
+    <div class="raw-material-summary-item warning">
+      <span>Stock bajo</span>
+      <strong>${formatInteger(lowRows.length)}</strong>
+    </div>
+    <div class="raw-material-summary-item danger">
+      <span>Criticas</span>
+      <strong>${formatInteger(criticalRows.length)}</strong>
+    </div>
+  `;
+};
+
+const renderRawMaterialControlCenter = () => {
+  if (!rawMaterialList) return;
+  const rows = buildRawMaterialRows();
+  updateRawMaterialFilterOptions(rows);
+  renderRawMaterialSummary(rows);
+  const filteredRows = getFilteredRawMaterialRows(rows);
+  if (!filteredRows.length) {
+    rawMaterialList.innerHTML = '<div class="list-item muted">No hay materias primas para los filtros seleccionados.</div>';
+    return;
+  }
+  rawMaterialList.innerHTML = `
+    <table class="raw-material-table">
+      <thead>
+        <tr>
+          <th>Materia prima</th>
+          <th>Categoria</th>
+          <th>Unidad</th>
+          <th>Stock actual</th>
+          <th>Stock minimo</th>
+          <th>Costo unitario</th>
+          <th>Valor en stock</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filteredRows.map((row) => `
+          <tr class="${row.status.alertClass}">
+            <td data-label="Materia prima">
+              <strong>${escapeHtml(row.name || "Materia prima")}</strong>
+              ${row.supplier ? `<small>Proveedor: ${escapeHtml(row.supplier)}</small>` : ""}
+            </td>
+            <td data-label="Categoria">${escapeHtml(row.category || "Sin categoria")}</td>
+            <td data-label="Unidad">${escapeHtml(row.unit || "-")}</td>
+            <td data-label="Stock actual">${formatNumber(row.available)} ${escapeHtml(row.unit || "")}</td>
+            <td data-label="Stock minimo">${row.minStock ? `${formatNumber(row.minStock)} ${escapeHtml(row.unit || "")}` : "-"}</td>
+            <td data-label="Costo unitario">Gs ${formatGs(row.unitCost)}</td>
+            <td data-label="Valor en stock">Gs ${formatGs(row.stockValue)}</td>
+            <td data-label="Estado"><span class="status-tag ${row.status.tagClass}">${row.status.label}</span></td>
+            <td data-label="Acciones">
+              <div class="raw-material-row-actions">
+                <button class="btn ghost" type="button" data-edit-raw-material="${row.id}">Editar</button>
+                <button class="btn ghost" type="button" data-view-raw-material-movements="${row.id}">Movimientos</button>
+                <button class="btn ghost danger" type="button" data-delete-raw-material="${row.id}">Eliminar</button>
+              </div>
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+};
+
 const renderProspectsWorkspace = () => {
   pruneVisitPlannerState();
   renderProspectList();
@@ -4743,28 +4902,7 @@ const renderProspectsWorkspace = () => {
 };
 
 const renderAll = () => {
-  const { availabilityMap } = computeStockTotals();
-  renderList(rawMaterialList, state.rawMaterials, (item) => {
-    const available = availabilityMap[item.id] ?? 0;
-    const status = getStockStatus({ available, minStock: item.minStock });
-    return `
-      <div class="list-item ${status.alertClass}">
-        <strong>${item.name}</strong>
-        ${item.category ? `<div>Categoria: ${escapeHtml(item.category)}</div>` : ""}
-        Unidad: ${item.unit} | Costo unitario vigente: Gs ${formatGs(item.price ?? item.referenceCost)}
-        <div>Disponible: ${formatNumber(available)} ${item.unit}</div>
-        ${item.minStock ? `<div>Stock minimo: ${formatNumber(item.minStock)} ${item.unit}</div>` : ""}
-        <div class="status-tag ${status.tagClass}">${status.label}</div>
-        ${item.supplier ? `<div>Proveedor: ${item.supplier}</div>` : ""}
-        ${item.lastPurchaseDate ? `<div>Ultima compra: ${formatDate(item.lastPurchaseDate)}</div>` : ""}
-        ${item.observations ? `<div class="muted">Obs: ${escapeHtml(item.observations)}</div>` : ""}
-        <div class="list-actions">
-          <button class="btn ghost" type="button" data-edit-raw-material="${item.id}">Editar</button>
-          <button class="btn ghost danger" type="button" data-delete-raw-material="${item.id}">Eliminar</button>
-        </div>
-      </div>
-    `;
-  });
+  renderRawMaterialControlCenter();
 
   renderList(purchaseList, state.purchases, (item) => `
     <div class="list-item">
@@ -4780,16 +4918,34 @@ const renderAll = () => {
     </div>
   `);
 
-  renderList(recipeList, state.recipes, (item) => `
-    <div class="list-item">
-      <strong>${item.name}</strong>
-      ${buildRecipeSummary(item)}
-      <div class="list-actions">
-        <button class="btn ghost" type="button" data-edit-recipe="${item.id}">Editar</button>
-        <button class="btn ghost danger" type="button" data-delete-recipe="${item.id}">Eliminar</button>
+  if (recipeList) {
+    const recipeCards = state.recipes.map((item) => `
+      <div class="list-item">
+        <strong>${item.name}</strong>
+        ${buildRecipeSummary(item)}
+        <div class="list-actions">
+          <button class="btn ghost" type="button" data-edit-recipe="${item.id}">Editar</button>
+          <button class="btn ghost danger" type="button" data-delete-recipe="${item.id}">Eliminar</button>
+        </div>
       </div>
-    </div>
-  `);
+    `);
+    const missingFormulaCards = state.products
+      .filter((product) => !state.recipes.some((recipe) => {
+        if (recipe.productId && recipe.productId === product.id) return true;
+        return normalizeText(recipe.name) === normalizeText(product.name);
+      }))
+      .map((product) => `
+        <div class="list-item">
+          <strong>${escapeHtml(product.name || "Producto")}</strong>
+          <div><span class="status-tag status-low">Sin formula</span></div>
+          <div class="muted">Puede vincularse cargando una formula con este producto.</div>
+        </div>
+      `);
+    const recipeMarkup = recipeCards.concat(missingFormulaCards);
+    recipeList.innerHTML = recipeMarkup.length
+      ? recipeMarkup.join("")
+      : '<div class="list-item muted">Sin formulas ni productos registrados todavia.</div>';
+  }
 
   renderList(batchList, state.batches, (item) => {
     const createdAt = item.createdAt?.seconds ? new Date(item.createdAt.seconds * 1000) : null;
@@ -4980,14 +5136,43 @@ const toggleSidebar = () => {
   sidebarToggle?.setAttribute("aria-expanded", isOpen ? "true" : "false");
 };
 
+const applySidebarCollapsed = (collapsed) => {
+  appShell?.classList.toggle("sidebar-collapsed", collapsed);
+  if (sidebarCollapseBtn) {
+    sidebarCollapseBtn.setAttribute("aria-label", collapsed ? "Expandir menu" : "Colapsar menu");
+    sidebarCollapseBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  }
+  requestAnimationFrame(() => refreshCollapseHeights());
+};
+
+const toggleSidebarCollapsed = () => {
+  const collapsed = !appShell?.classList.contains("sidebar-collapsed");
+  applySidebarCollapsed(collapsed);
+  try {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
+  } catch (error) {
+    /* localStorage no disponible */
+  }
+};
+
+const restoreSidebarCollapsed = () => {
+  let collapsed = false;
+  try {
+    collapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  } catch (error) {
+    collapsed = false;
+  }
+  applySidebarCollapsed(collapsed);
+};
+
 const classifyAppSectionCards = () => {
   const sectionByCollapse = {
     prodToday: "production",
     finishedStockSection: "stock",
     stockSummarySection: "stock",
-    stockSection: "raw-materials",
+    stockSection: "stock",
     rawMaterialSection: "raw-materials",
-    recipeSection: "products",
+    recipeSection: "products raw-materials",
     salesSection: "sales",
     clientsSection: "clients",
     prospectsSection: "prospects",
@@ -5007,7 +5192,8 @@ const applyAppSectionCardVisibility = (section) => {
   panels.forEach((panel) => {
     const isActivePanel = panel.id === config.tab;
     panel.querySelectorAll(".card[data-app-section]").forEach((card) => {
-      const shouldHide = isActivePanel && card.dataset.appSection !== section;
+      const sections = String(card.dataset.appSection || "").split(/\s+/).filter(Boolean);
+      const shouldHide = isActivePanel && !sections.includes(section);
       card.classList.toggle("app-section-hidden", shouldHide);
     });
   });
@@ -5053,7 +5239,9 @@ const setActiveAppSection = (section) => {
 const setupSidebarNavigation = () => {
   classifyAppSectionCards();
   sidebarToggle?.addEventListener("click", toggleSidebar);
+  sidebarCollapseBtn?.addEventListener("click", toggleSidebarCollapsed);
   sidebarBackdrop?.addEventListener("click", closeSidebar);
+  restoreSidebarCollapsed();
   sidebarLinks.forEach((link) => {
     link.addEventListener("click", () => {
       setActiveAppSection(link.dataset.appSection || "dashboard");
@@ -5063,6 +5251,105 @@ const setupSidebarNavigation = () => {
     if (event.key === "Escape") closeSidebar();
   });
   setActiveAppSection(activeAppSection);
+};
+
+const showRawMaterialForm = () => {
+  rawMaterialFormPanel?.classList.remove("hidden");
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+    rawMaterialForm?.name?.focus();
+  });
+};
+
+const hideRawMaterialForm = () => {
+  rawMaterialFormPanel?.classList.add("hidden");
+  resetForm(rawMaterialForm);
+  setUnitGroupValue("rawMaterialUnit", "");
+  requestAnimationFrame(refreshCollapseHeights);
+};
+
+const openRawMaterialStockEntry = (materialId = "") => {
+  setActiveAppSection("stock");
+  const stockBody = openExclusiveCollapseSection("stockSection");
+  if (purchaseForm?.material && materialId) {
+    purchaseForm.material.value = materialId;
+    const material = state.rawMaterials.find((item) => item.id === materialId);
+    if (material) setUnitGroupValue("purchaseUnit", material.unit || "");
+    updatePurchaseTotal();
+  }
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+    const stockCard = stockBody?.closest(".card") || document.getElementById("stockSection");
+    stockCard?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+};
+
+const updateRawMaterialFiltersFromInputs = () => {
+  rawMaterialFiltersState.search = rawMaterialSearch?.value || "";
+  rawMaterialFiltersState.category = rawMaterialCategoryFilter?.value || "";
+  rawMaterialFiltersState.status = rawMaterialStatusFilter?.value || "";
+  rawMaterialFiltersState.unit = rawMaterialUnitFilter?.value || "";
+};
+
+const recalculateAndPersistRecipeCosts = async () => {
+  const user = auth.currentUser;
+  if (!user) return;
+  if (recipeRecalculateNotice) {
+    recipeRecalculateNotice.className = "error info";
+    recipeRecalculateNotice.textContent = "Actualizando costos...";
+  }
+  try {
+    const operations = [];
+    state.recipes.forEach((recipe) => {
+      const totals = calculateRecipeCurrentTotals(recipe);
+      operations.push(updateDoc(doc(db, "recipes", recipe.id), {
+        ingredients: totals.ingredients.map((ing) => ({
+          materialId: ing.materialId,
+          materialName: ing.materialName,
+          quantity: ing.quantity,
+          unit: ing.unit,
+          quantityBase: ing.quantityBase,
+          unitBase: ing.unitBase,
+          unitCost: ing.unitCost,
+          totalCost: ing.totalCost
+        })),
+        totalCost: totals.totalCost,
+        costPerUnit: totals.costPerUnit,
+        costPerKg: totals.costPerKg ?? 0,
+        productCostPerDisplay: totals.productCostPerDisplay ?? 0,
+        totalDisplayCost: totals.totalDisplayCost ?? 0,
+        packaging: {
+          ...(recipe.packaging || {}),
+          packagingCost: totals.packagingCost
+        },
+        updatedAt: serverTimestamp(),
+        costUpdatedAt: serverTimestamp()
+      }));
+      const product = findProductForRecipe(recipe);
+      if (product?.id) {
+        operations.push(updateDoc(doc(db, "products", product.id), {
+          estimatedCost: totals.totalDisplayCost ?? totals.costPerUnit ?? 0,
+          estimatedFormulaCost: totals.totalCost,
+          estimatedCostPerUnit: totals.costPerUnit,
+          estimatedCostPerDisplay: totals.totalDisplayCost ?? 0,
+          formulaId: recipe.id,
+          formulaStatus: "vinculada",
+          costUpdatedAt: serverTimestamp()
+        }));
+      }
+    });
+    await Promise.all(operations);
+    if (recipeRecalculateNotice) {
+      recipeRecalculateNotice.className = "error success";
+      recipeRecalculateNotice.textContent = `Costos actualizados en ${formatInteger(state.recipes.length)} formulas.`;
+    }
+  } catch (error) {
+    console.error("No se pudieron actualizar costos de productos:", error);
+    if (recipeRecalculateNotice) {
+      recipeRecalculateNotice.className = "error";
+      recipeRecalculateNotice.textContent = "No se pudieron actualizar los costos. Intenta nuevamente.";
+    }
+  }
 };
 
 const updateDueDateVisibility = (forceOpen = null) => {
@@ -5262,6 +5549,7 @@ rawMaterialForm.addEventListener("submit", async (event) => {
   }
   resetForm(rawMaterialForm);
   setUnitGroupValue("rawMaterialUnit", rawMaterialForm.unit.value);
+  rawMaterialFormPanel?.classList.add("hidden");
 });
 
 purchaseForm.addEventListener("submit", async (event) => {
@@ -5360,9 +5648,10 @@ recipeForm.addEventListener("submit", async (event) => {
   if (!recipeDraft.ingredients.length) return;
   const totals = calculateRecipeTotals();
   const productName = recipeForm.name.value.trim();
-  const matchedProduct = state.products.find((item) => normalizeText(item.name) === normalizeText(productName));
+  const selectedProduct = state.products.find((item) => item.id === recipeProductSelect?.value);
+  const matchedProduct = selectedProduct || state.products.find((item) => normalizeText(item.name) === normalizeText(productName));
   const payload = {
-    name: productName,
+    name: matchedProduct?.name || productName,
     productId: matchedProduct?.id || "",
     yieldQuantity: Number(recipeForm.yieldQuantity.value),
     yieldUnit: recipeForm.yieldUnit.value.trim(),
@@ -5477,6 +5766,19 @@ batchForm.addEventListener("submit", async (event) => {
       batchRecipeNotice.textContent = `Stock insuficiente. ${shortages.join(" | ")}`;
     }
     return;
+  }
+  const criticalMaterials = materialsToConsume.filter((item) => {
+    const rawMaterial = state.rawMaterials.find((material) => material.id === item.materialId);
+    const status = getStockStatus({
+      available: availabilityMap[item.materialId] ?? 0,
+      minStock: rawMaterial?.minStock
+    });
+    return status.key === "critico";
+  });
+  if (criticalMaterials.length) {
+    const names = criticalMaterials.map((item) => item.materialName).join(", ");
+    const shouldContinue = window.confirm(`Advertencia: estas materias primas estan en estado critico: ${names}. ¿Registrar produccion de todos modos?`);
+    if (!shouldContinue) return;
   }
 
   const costPerUnit = Number(currentRecipeTotals.costPerUnit || recipe.costPerUnit || 0);
@@ -6093,6 +6395,7 @@ const startEditRawMaterial = (item) => {
   if (rawMaterialForm.observations) rawMaterialForm.observations.value = item.observations || "";
   rawMaterialForm.dataset.editId = item.id;
   setSubmitLabel(rawMaterialForm, "Actualizar materia prima");
+  showRawMaterialForm();
 };
 
 const startEditPurchase = (item) => {
@@ -6108,6 +6411,11 @@ const startEditPurchase = (item) => {
 
 const startEditRecipe = (item) => {
   recipeForm.name.value = item.name || "";
+  if (recipeProductSelect) {
+    const product = state.products.find((productItem) => productItem.id === item.productId)
+      || state.products.find((productItem) => normalizeText(productItem.name) === normalizeText(item.name));
+    recipeProductSelect.value = product?.id || "";
+  }
   recipeForm.yieldQuantity.value = item.yieldQuantity ?? "";
   setUnitGroupValue("recipeYieldUnit", item.yieldUnit || "");
   recipeForm.boxCost.value = item.packaging?.boxCost ?? "";
@@ -6315,9 +6623,13 @@ const saveVisitResult = async (visitKey, result, observation) => {
 rawMaterialList.addEventListener("click", async (event) => {
   const editId = event.target.dataset.editRawMaterial;
   const deleteId = event.target.dataset.deleteRawMaterial;
+  const movementId = event.target.dataset.viewRawMaterialMovements;
   if (editId) {
     const item = state.rawMaterials.find((m) => m.id === editId);
     if (item) startEditRawMaterial(item);
+  }
+  if (movementId) {
+    openRawMaterialStockEntry(movementId);
   }
   if (deleteId && confirmDelete("materia prima")) {
     await deleteDoc(doc(db, "raw_materials", deleteId));
@@ -6931,6 +7243,41 @@ purchaseForm.totalCost.addEventListener("input", () => {
 rawMaterialForm.referenceCostTotal?.addEventListener("input", updateRawMaterialUnitCost);
 rawMaterialForm.referenceQuantity?.addEventListener("input", updateRawMaterialUnitCost);
 
+newRawMaterialBtn?.addEventListener("click", () => {
+  resetForm(rawMaterialForm);
+  setUnitGroupValue("rawMaterialUnit", "");
+  showRawMaterialForm();
+});
+
+cancelRawMaterialForm?.addEventListener("click", hideRawMaterialForm);
+openStockEntryBtn?.addEventListener("click", () => openRawMaterialStockEntry());
+
+[rawMaterialSearch, rawMaterialCategoryFilter, rawMaterialStatusFilter, rawMaterialUnitFilter]
+  .forEach((input) => {
+    input?.addEventListener("input", () => {
+      updateRawMaterialFiltersFromInputs();
+      renderRawMaterialControlCenter();
+      requestAnimationFrame(refreshCollapseHeights);
+    });
+    input?.addEventListener("change", () => {
+      updateRawMaterialFiltersFromInputs();
+      renderRawMaterialControlCenter();
+      requestAnimationFrame(refreshCollapseHeights);
+    });
+  });
+
+recipeProductSelect?.addEventListener("change", () => {
+  const product = state.products.find((item) => item.id === recipeProductSelect.value);
+  if (product && recipeForm.name) {
+    recipeForm.name.value = product.name || "";
+    renderRecipeDraft();
+  }
+});
+
+recalculateRecipeCostsBtn?.addEventListener("click", () => {
+  void recalculateAndPersistRecipeCosts();
+});
+
 purchaseForm.material.addEventListener("change", () => {
   const material = state.rawMaterials.find((item) => item.id === purchaseForm.material.value);
   if (material) {
@@ -7234,6 +7581,7 @@ updateDueDateVisibility();
 updateSaleObservationVisibility(false);
 updateSaleRepurchaseVisibility(false);
 renderRecipeDraft();
+renderRawMaterialControlCenter();
 updateRecipeIngredientFields();
 updateBatchCostPreview();
 resetSaleItems();

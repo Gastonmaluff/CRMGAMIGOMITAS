@@ -8,7 +8,7 @@
   <title>CRM Gami Gomitas</title>
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
   <link rel="icon" type="image/png" href="apple-touch-icon.png" />
-  <link rel="stylesheet" href="styles.css?v=20260608-01" />
+  <link rel="stylesheet" href="styles.css?v=20260622-01" />
 </head>
 <body>
   <div class="app">
@@ -28,17 +28,30 @@
     <div class="app-shell auth-mode">
       <aside class="app-sidebar" id="appSidebar" aria-label="Navegacion principal">
         <nav class="sidebar-nav">
-          <button class="sidebar-link active" type="button" data-app-section="dashboard"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></button>
-          <button class="sidebar-link" type="button" data-app-section="sales"><i data-lucide="shopping-cart"></i><span>Ventas</span></button>
-          <button class="sidebar-link" type="button" data-app-section="clients"><i data-lucide="users"></i><span>Clientes</span></button>
-          <button class="sidebar-link" type="button" data-app-section="prospects"><i data-lucide="map"></i><span>Prospectos</span></button>
-          <button class="sidebar-link" type="button" data-app-section="repurchase"><i data-lucide="repeat"></i><span>Recompra de clientes</span></button>
-          <button class="sidebar-link" type="button" data-app-section="production"><i data-lucide="clipboard-check"></i><span>Produccion</span></button>
-          <button class="sidebar-link" type="button" data-app-section="products"><i data-lucide="package"></i><span>Productos</span></button>
-          <button class="sidebar-link" type="button" data-app-section="raw-materials"><i data-lucide="droplet"></i><span>Materias primas</span></button>
-          <button class="sidebar-link" type="button" data-app-section="stock"><i data-lucide="layers"></i><span>Stock</span></button>
-          <button class="sidebar-link" type="button" data-app-section="reports"><i data-lucide="line-chart"></i><span>Reportes</span></button>
-          <button class="sidebar-link" type="button" data-app-section="settings"><i data-lucide="settings"></i><span>Configuracion</span></button>
+          <div class="sidebar-head">
+            <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" type="button" aria-label="Colapsar menu" title="Colapsar / expandir menu">
+              <i data-lucide="chevrons-left"></i>
+            </button>
+          </div>
+
+          <div class="sidebar-group-title">Inicio</div>
+          <button class="sidebar-link active" type="button" data-app-section="dashboard" data-tooltip="Dashboard"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></button>
+
+          <div class="sidebar-group-title">Comercializacion</div>
+          <button class="sidebar-link" type="button" data-app-section="sales" data-tooltip="Ventas"><i data-lucide="shopping-cart"></i><span>Ventas</span></button>
+          <button class="sidebar-link" type="button" data-app-section="clients" data-tooltip="Clientes"><i data-lucide="users"></i><span>Clientes</span></button>
+          <button class="sidebar-link" type="button" data-app-section="prospects" data-tooltip="Prospectos"><i data-lucide="map"></i><span>Prospectos</span></button>
+          <button class="sidebar-link" type="button" data-app-section="repurchase" data-tooltip="Recompra de clientes"><i data-lucide="repeat"></i><span>Recompra de clientes</span></button>
+          <button class="sidebar-link" type="button" data-app-section="reports" data-tooltip="Reportes comerciales"><i data-lucide="line-chart"></i><span>Reportes comerciales</span></button>
+
+          <div class="sidebar-group-title">Produccion e inventario</div>
+          <button class="sidebar-link" type="button" data-app-section="production" data-tooltip="Produccion"><i data-lucide="clipboard-check"></i><span>Produccion</span></button>
+          <button class="sidebar-link" type="button" data-app-section="products" data-tooltip="Productos"><i data-lucide="package"></i><span>Productos</span></button>
+          <button class="sidebar-link" type="button" data-app-section="raw-materials" data-tooltip="Materias primas"><i data-lucide="droplet"></i><span>Materias primas</span></button>
+          <button class="sidebar-link" type="button" data-app-section="stock" data-tooltip="Stock de productos"><i data-lucide="layers"></i><span>Stock de productos</span></button>
+
+          <div class="sidebar-group-title">Administracion</div>
+          <button class="sidebar-link" type="button" data-app-section="settings" data-tooltip="Configuracion"><i data-lucide="settings"></i><span>Configuracion</span></button>
         </nav>
       </aside>
       <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
@@ -345,6 +358,45 @@
             <div class="card">
               <h2 class="section-title"><span class="section-title-text"><i data-lucide="droplet"></i><span class="section-title-label">Materias primas</span></span> <button class="collapse-toggle" type="button" data-collapse="rawMaterialSection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="rawMaterialSection">
+                <div class="raw-material-control-center">
+                  <div class="raw-material-summary-panel">
+                    <div class="raw-material-summary-heading">
+                      <strong>Resumen de materias primas</strong>
+                      <span>Estado general del inventario industrial</span>
+                    </div>
+                    <div class="raw-material-summary-grid" id="rawMaterialSummary"></div>
+                  </div>
+                  <div class="raw-material-toolbar">
+                    <div class="raw-material-actions">
+                      <button class="btn primary" type="button" id="newRawMaterialBtn">Nueva materia prima</button>
+                      <button class="btn" type="button" id="openStockEntryBtn">Ingresar stock</button>
+                    </div>
+                    <div class="raw-material-filters">
+                      <label>
+                        Buscar
+                        <input id="rawMaterialSearch" type="search" placeholder="Nombre de materia prima" />
+                      </label>
+                      <label>
+                        Categoria
+                        <select id="rawMaterialCategoryFilter"></select>
+                      </label>
+                      <label>
+                        Estado
+                        <select id="rawMaterialStatusFilter">
+                          <option value="">Todos</option>
+                          <option value="optimo">Optimo</option>
+                          <option value="bajo">Bajo</option>
+                          <option value="critico">Critico</option>
+                        </select>
+                      </label>
+                      <label>
+                        Unidad
+                        <select id="rawMaterialUnitFilter"></select>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+                <div class="inline-panel raw-material-form-panel hidden" id="rawMaterialFormPanel">
                 <form id="rawMaterialForm" class="form-grid">
                 <label>
                   Nombre
@@ -399,8 +451,11 @@
                   <textarea name="observations" rows="3"></textarea>
                 </label>
                 <button class="btn primary" type="submit">Guardar materia prima</button>
+                <button class="btn ghost" type="button" id="cancelRawMaterialForm">Cancelar</button>
                 </form>
-                <div class="list scroll" id="rawMaterialList"></div>
+                </div>
+                <div class="section-subtitle raw-material-list-title">Listado de materias primas</div>
+                <div class="raw-material-table-wrap" id="rawMaterialList"></div>
               </div>
             </div>
 
@@ -408,6 +463,10 @@
               <h2 class="section-title"><span class="section-title-text"><i data-lucide="file-text"></i><span class="section-title-label">Formula de producto</span></span> <button class="collapse-toggle" type="button" data-collapse="recipeSection" aria-expanded="true"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="recipeSection">
                 <form id="recipeForm" class="form-grid">
+                <label>
+                  Producto existente
+                  <select name="productId" id="recipeProductSelect"></select>
+                </label>
                 <label>
                   Nombre del producto
                   <input name="name" required />
@@ -475,8 +534,12 @@
                     <input name="wrapCount" type="number" step="1" value="12" />
                   </label>
                 </div>
-                <button class="btn primary" type="submit">Guardar formula</button>
+                <div class="formula-actions">
+                  <button class="btn primary" type="submit">Guardar formula</button>
+                  <button class="btn" type="button" id="recalculateRecipeCostsBtn">Actualizar costos de productos</button>
+                </div>
                 </form>
+                <div class="error info" id="recipeRecalculateNotice"></div>
                 <div class="list" id="recipeCostPreview"></div>
                 <div class="list" id="recipeList"></div>
               </div>
@@ -1418,7 +1481,7 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="app.js?v=20260608-01"></script>
+  <script type="module" src="app.js?v=20260622-01"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();
