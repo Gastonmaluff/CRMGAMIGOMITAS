@@ -12,6 +12,7 @@ import {
   collection,
   addDoc,
   doc,
+  setDoc,
   writeBatch,
   updateDoc,
   deleteDoc,
@@ -234,6 +235,20 @@ const commercialRangeClear = document.getElementById("commercialRangeClear");
 const commercialRangeCancel = document.getElementById("commercialRangeCancel");
 const commercialRangeError = document.getElementById("commercialRangeError");
 const commercialPeriodLabel = document.getElementById("commercialPeriodLabel");
+const mapAddProspectBtn = document.getElementById("mapAddProspectBtn");
+const mapQuickModePanel = document.getElementById("mapQuickModePanel");
+const mapQuickModeText = document.getElementById("mapQuickModeText");
+const mapQuickSessionCount = document.getElementById("mapQuickSessionCount");
+const mapQuickCancelSelection = document.getElementById("mapQuickCancelSelection");
+const mapQuickFinish = document.getElementById("mapQuickFinish");
+const mapQuickToast = document.getElementById("mapQuickToast");
+const mapProspectDrawer = document.getElementById("mapProspectDrawer");
+const mapProspectForm = document.getElementById("mapProspectForm");
+const mapProspectNotice = document.getElementById("mapProspectNotice");
+const mapDuplicateWarning = document.getElementById("mapDuplicateWarning");
+const mapProspectClose = document.getElementById("mapProspectClose");
+const mapProspectCancel = document.getElementById("mapProspectCancel");
+const mapProspectChangeLocation = document.getElementById("mapProspectChangeLocation");
 const repurchaseList = document.getElementById("repurchaseList");
 const repurchaseSummary = document.getElementById("repurchaseSummary");
 const salesCoverageSection = document.getElementById("coverageSection");
@@ -286,7 +301,8 @@ const state = {
   financialInitialSettings: [],
   financialManualAdjustments: [],
   finishedStockAdjustments: [],
-  rawMaterialAdjustments: []
+  rawMaterialAdjustments: [],
+  businessTypes: []
 };
 
 let unsubscribers = [];
@@ -366,6 +382,7 @@ const REPURCHASE_CONTACT_RESULT_VALUES = new Set(
     .map((option) => option.value)
     .filter(Boolean)
 );
+// Rubros por defecto (fallback seguro y semilla inicial del catalogo dinamico).
 const PROSPECT_BUSINESS_TYPE_OPTIONS = [
   { value: "despensa", label: "Despensa" },
   { value: "supermercado", label: "Supermercado" },
@@ -375,6 +392,87 @@ const PROSPECT_BUSINESS_TYPE_OPTIONS = [
   { value: "distribuidor", label: "Distribuidor" },
   { value: "otro", label: "Otro" }
 ];
+
+// Clave normalizada para deduplicar rubros ignorando mayusculas, tildes y espacios.
+const normalizeRubroKey = (value) => String(value || "")
+  .normalize("NFD").replace(/[̀-ͯ]/g, "")
+  .toLowerCase().replace(/\s+/g, " ").trim();
+
+const titleCaseRubro = (value) => {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : "";
+};
+
+const rubroDocId = (key) => String(key || "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+
+// Catalogo unico de rubros: opciones por defecto + coleccion businessTypes (solo activos).
+const getBusinessTypeOptions = () => {
+  const map = new Map();
+  PROSPECT_BUSINESS_TYPE_OPTIONS.forEach((opt) => map.set(opt.value, { value: opt.value, label: opt.label }));
+  (state.businessTypes || []).forEach((rt) => {
+    if (rt.isActive === false) return;
+    const value = normalizeRubroKey(rt.normalizedName || rt.name);
+    if (!value) return;
+    map.set(value, { value, label: rt.name || titleCaseRubro(value) });
+  });
+  return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, "es"));
+};
+
+const getBusinessTypeLabel = (value) => {
+  const key = normalizeRubroKey(value);
+  if (!key) return "Sin definir";
+  const found = getBusinessTypeOptions().find((opt) => opt.value === key);
+  return found ? found.label : titleCaseRubro(value);
+};
+
+// Rellena un <select> de rubros con el catalogo (conservando el valor actual,
+// y agregando el historico si no esta en el catalogo para no perderlo).
+const fillBusinessTypeSelect = (select, { includeAll = false, currentValue } = {}) => {
+  if (!select) return;
+  const prev = currentValue !== undefined ? currentValue : select.value;
+  const prevKey = normalizeRubroKey(prev);
+  const options = getBusinessTypeOptions();
+  const firstLabel = includeAll ? "Rubro: todos" : "Seleccionar";
+  let html = `<option value="">${firstLabel}</option>`;
+  html += options.map((opt) => `<option value="${escapeHtml(opt.value)}">${escapeHtml(opt.label)}</option>`).join("");
+  if (prevKey && !options.some((opt) => opt.value === prevKey)) {
+    html += `<option value="${escapeHtml(prevKey)}">${escapeHtml(titleCaseRubro(prev))}</option>`;
+  }
+  select.innerHTML = html;
+  select.value = prevKey || "";
+};
+
+const renderBusinessTypeSelectors = () => {
+  fillBusinessTypeSelect(prospectForm?.businessType, { includeAll: false });
+  fillBusinessTypeSelect(document.getElementById("prospectBusinessFilter"), { includeAll: true });
+  fillBusinessTypeSelect(document.getElementById("mapBusinessFilter"), { includeAll: true });
+};
+
+let businessTypesSeedAttempted = false;
+// Siembra los rubros por defecto una sola vez si la coleccion esta vacia.
+// Usa ids deterministas para que sea idempotente (sin duplicados).
+const maybeSeedBusinessTypes = async (items) => {
+  if (businessTypesSeedAttempted) return;
+  if (Array.isArray(items) && items.length > 0) { businessTypesSeedAttempted = true; return; }
+  businessTypesSeedAttempted = true;
+  try {
+    await Promise.all(PROSPECT_BUSINESS_TYPE_OPTIONS.map((opt) => {
+      const key = normalizeRubroKey(opt.label);
+      const ref = doc(collection(db, "businessTypes"), rubroDocId(key));
+      return setDoc(ref, {
+        name: opt.label,
+        normalizedName: key,
+        description: "",
+        isActive: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    }));
+  } catch (error) {
+    console.warn("[rubros] no se pudo sembrar el catalogo:", error?.message || error);
+    businessTypesSeedAttempted = false;
+  }
+};
 const PROSPECT_STATUS_OPTIONS = [
   { value: "nuevo", label: "Nuevo" },
   { value: "contactado", label: "Contactado" },
@@ -4669,6 +4767,10 @@ const syncState = (key, items) => {
     refreshFinishedStock();
     refreshSaleProductOptions();
   }
+  if (key === "businessTypes") {
+    renderBusinessTypeSelectors();
+    maybeSeedBusinessTypes(items);
+  }
 };
 
 // Shared company data should remain visible to any authenticated user.
@@ -4780,7 +4882,7 @@ const renderProspectList = () => {
         <td class="cell-strong text-truncate" data-label="Negocio" title="${escapeHtml(item.name || "Sin nombre")}">${escapeHtml(item.name || "Sin nombre")}</td>
         <td class="text-truncate" data-label="Contacto" title="${escapeHtml(item.contactName || "")}">${item.contactName ? escapeHtml(item.contactName) : '<span class="muted">-</span>'}</td>
         <td class="text-truncate" data-label="Telefono" title="${escapeHtml(item.phone || "")}">${item.phone ? escapeHtml(item.phone) : '<span class="muted">-</span>'}</td>
-        <td class="text-truncate" data-label="Rubro">${item.businessType ? getOptionLabel(PROSPECT_BUSINESS_TYPE_OPTIONS, item.businessType) : '<span class="muted">-</span>'}</td>
+        <td class="text-truncate" data-label="Rubro">${item.businessType ? escapeHtml(getBusinessTypeLabel(item.businessType)) : '<span class="muted">-</span>'}</td>
         <td class="text-truncate" data-label="Ciudad" title="${escapeHtml(item.city || "")}">${item.city ? escapeHtml(item.city) : '<span class="muted">-</span>'}</td>
         <td class="text-truncate" data-label="Zona" title="${escapeHtml(item.zone || "")}">${item.zone ? escapeHtml(item.zone) : '<span class="muted">-</span>'}</td>
         <td data-label="Estado"><span class="prospect-status status-${status}">${getOptionLabel(PROSPECT_STATUS_OPTIONS, status)}</span></td>
@@ -4847,7 +4949,7 @@ const exportProspectsToCsv = () => {
     item.name || "",
     item.contactName || "",
     item.phone || "",
-    item.businessType ? getOptionLabel(PROSPECT_BUSINESS_TYPE_OPTIONS, item.businessType) : "",
+    item.businessType ? getBusinessTypeLabel(item.businessType) : "",
     item.city || "",
     item.zone || "",
     item.address || "",
@@ -6623,42 +6725,56 @@ const resetProspectForm = () => {
   if (prospectFormHeading) prospectFormHeading.textContent = "Nuevo prospecto";
 };
 
-const getProspectPayloadFromForm = () => {
-  const status = normalizeOptionValue(PROSPECT_STATUS_OPTIONS, prospectForm.status?.value, "nuevo");
+const getProspectPayloadFromForm = (form = prospectForm) => {
+  const status = normalizeOptionValue(PROSPECT_STATUS_OPTIONS, form.status?.value, "nuevo");
   return {
-    name: formatClientName(prospectForm.name.value),
-    contactName: String(prospectForm.contactName?.value || "").trim(),
-    phone: normalizeProspectPhone(prospectForm.phone?.value || ""),
-    city: String(prospectForm.city?.value || "").trim(),
-    zone: String(prospectForm.zone?.value || "").trim(),
-    address: String(prospectForm.address?.value || "").trim(),
-    businessType: normalizeOptionValue(PROSPECT_BUSINESS_TYPE_OPTIONS, prospectForm.businessType?.value),
+    name: formatClientName(form.name?.value || ""),
+    contactName: String(form.contactName?.value || "").trim(),
+    phone: normalizeProspectPhone(form.phone?.value || ""),
+    city: String(form.city?.value || "").trim(),
+    zone: String(form.zone?.value || "").trim(),
+    address: String(form.address?.value || "").trim(),
+    businessType: normalizeRubroKey(form.businessType?.value),
     status,
-    potential: normalizeOptionValue(PROSPECT_POTENTIAL_OPTIONS, prospectForm.potential?.value),
-    observations: String(prospectForm.observations?.value || "").trim(),
-    nextAction: String(prospectForm.nextAction?.value || "").trim(),
-    nextActionDate: normalizeDateValue(prospectForm.nextActionDate?.value || ""),
-    latitude: parseOptionalCoordinate(prospectForm.latitude?.value),
-    longitude: parseOptionalCoordinate(prospectForm.longitude?.value),
-    mapsLink: String(prospectForm.mapsLink?.value || "").trim()
+    potential: normalizeOptionValue(PROSPECT_POTENTIAL_OPTIONS, form.potential?.value),
+    observations: String(form.observations?.value || "").trim(),
+    nextAction: String(form.nextAction?.value || "").trim(),
+    nextActionDate: normalizeDateValue(form.nextActionDate?.value || ""),
+    latitude: parseOptionalCoordinate(form.latitude?.value),
+    longitude: parseOptionalCoordinate(form.longitude?.value),
+    mapsLink: String(form.mapsLink?.value || "").trim()
   };
+};
+
+const saveProspectFromForm = async (form, extraPayload = {}) => {
+  const user = auth.currentUser;
+  if (!user) return null;
+  const payload = getProspectPayloadFromForm(form);
+  if (!payload.name) {
+    window.alert("Completa el nombre del local.");
+    return null;
+  }
+  if (payload.latitude !== null && (payload.latitude < -90 || payload.latitude > 90)) {
+    window.alert("La latitud no es valida.");
+    return null;
+  }
+  if (payload.longitude !== null && (payload.longitude < -180 || payload.longitude > 180)) {
+    window.alert("La longitud no es valida.");
+    return null;
+  }
+  if (form?.name) form.name.value = payload.name;
+  return saveDoc("prospects", form, {
+    ...payload,
+    ...extraPayload,
+    userId: user.uid,
+    createdAt: serverTimestamp()
+  });
 };
 
 prospectForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const user = auth.currentUser;
-  if (!user) return;
-  const payload = getProspectPayloadFromForm();
-  if (!payload.name) {
-    window.alert("Completa el nombre del local.");
-    return;
-  }
-  prospectForm.name.value = payload.name;
-  await saveDoc("prospects", prospectForm, {
-    ...payload,
-    userId: user.uid,
-    createdAt: serverTimestamp()
-  });
+  const saved = await saveProspectFromForm(prospectForm);
+  if (!saved) return;
   resetProspectForm();
   document.getElementById("prospectFormPanel")?.classList.add("hidden");
   document.body.classList.remove("modal-open");
@@ -7238,7 +7354,7 @@ const startEditProspect = (item) => {
   prospectForm.city.value = item.city || "";
   prospectForm.zone.value = item.zone || "";
   prospectForm.address.value = item.address || "";
-  prospectForm.businessType.value = normalizeOptionValue(PROSPECT_BUSINESS_TYPE_OPTIONS, item.businessType);
+  fillBusinessTypeSelect(prospectForm.businessType, { includeAll: false, currentValue: item.businessType });
   prospectForm.status.value = normalizeOptionValue(PROSPECT_STATUS_OPTIONS, item.status, "nuevo");
   prospectForm.potential.value = normalizeOptionValue(PROSPECT_POTENTIAL_OPTIONS, item.potential);
   prospectForm.observations.value = item.observations || "";
@@ -7302,7 +7418,7 @@ const convertProspectToClient = async (prospect) => {
   const originNote = [
     `Origen: prospecto "${prospect.name || "sin nombre"}"`,
     prospect.contactName ? `Contacto: ${prospect.contactName}` : "",
-    prospect.businessType ? `Rubro: ${getOptionLabel(PROSPECT_BUSINESS_TYPE_OPTIONS, prospect.businessType)}` : "",
+    prospect.businessType ? `Rubro: ${getBusinessTypeLabel(prospect.businessType)}` : "",
     prospect.potential ? `Potencial: ${getOptionLabel(PROSPECT_POTENTIAL_OPTIONS, prospect.potential)}` : "",
     prospect.observations ? `Observaciones: ${prospect.observations}` : ""
   ].filter(Boolean).join("\n");
@@ -8802,11 +8918,417 @@ let mapSelectedId = "";
 let mapHoverId = "";
 let mapGeoSearchTimer = null;
 const mapFilterState = { type: "all", city: "", zone: "", business: "", location: "" };
+const quickMapProspectState = {
+  active: false,
+  selecting: false,
+  drawerOpen: false,
+  selectedLngLat: null,
+  sessionCount: 0,
+  forceDuplicateSave: false,
+  lastFocus: null,
+  geocodeAbort: null,
+  saveAction: "save",
+  cameraAtStart: null,
+  preserveFormOnNextPoint: false
+};
+let quickMapProspectMarker = null;
 
 const mapToNumber = (value) => {
   if (value === null || value === undefined || value === "") return null;
   const num = Number(String(value).replace(",", ".").trim());
   return Number.isFinite(num) ? num : null;
+};
+
+const buildMapsLinkFromCoords = (lat, lng) => {
+  if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return "";
+  return `https://www.google.com/maps?q=${Number(lat).toFixed(6)},${Number(lng).toFixed(6)}`;
+};
+
+const captureCommercialMapCamera = () => {
+  if (!commercialMap) return null;
+  const center = commercialMap.getCenter();
+  return {
+    center: [center.lng, center.lat],
+    zoom: commercialMap.getZoom(),
+    bearing: commercialMap.getBearing(),
+    pitch: commercialMap.getPitch()
+  };
+};
+
+const restoreCommercialMapCamera = (camera) => {
+  if (!commercialMap || !camera) return;
+  commercialMap.jumpTo({
+    center: camera.center,
+    zoom: camera.zoom,
+    bearing: camera.bearing,
+    pitch: camera.pitch
+  });
+};
+
+const updateQuickMapSessionUi = () => {
+  mapQuickModePanel?.classList.toggle("hidden", !quickMapProspectState.active);
+  if (mapQuickModeText) {
+    mapQuickModeText.textContent = quickMapProspectState.selecting
+      ? "Hace clic en el mapa para marcar la ubicacion del prospecto."
+      : "Completando los datos del comercio marcado.";
+  }
+  if (mapQuickSessionCount) {
+    const count = quickMapProspectState.sessionCount;
+    mapQuickSessionCount.textContent = `${formatInteger(count)} prospecto${count === 1 ? "" : "s"} agregado${count === 1 ? "" : "s"} en esta zona`;
+  }
+  commercialMap?.getCanvas()?.classList.toggle("map-crosshair-mode", quickMapProspectState.active && quickMapProspectState.selecting);
+};
+
+const showQuickMapToast = (message, actionLabel = "", action = null) => {
+  if (!mapQuickToast) return;
+  mapQuickToast.innerHTML = `
+    <span>${escapeHtml(message)}</span>
+    ${actionLabel ? `<button class="btn ghost btn-xs" type="button" data-map-toast-action>${escapeHtml(actionLabel)}</button>` : ""}
+  `;
+  mapQuickToast.classList.remove("hidden");
+  const actionBtn = mapQuickToast.querySelector("[data-map-toast-action]");
+  if (actionBtn && typeof action === "function") {
+    actionBtn.addEventListener("click", () => {
+      action();
+      mapQuickToast.classList.add("hidden");
+    }, { once: true });
+  }
+  window.setTimeout(() => {
+    mapQuickToast?.classList.add("hidden");
+  }, actionLabel ? 9000 : 4200);
+};
+
+const createQuickMapMarkerElement = () => {
+  const el = document.createElement("div");
+  el.className = "map-temp-prospect-pin";
+  el.setAttribute("role", "img");
+  el.setAttribute("aria-label", "Ubicacion temporal del prospecto");
+  el.innerHTML = "<span></span>";
+  return el;
+};
+
+const setQuickMapProspectMarker = (lng, lat) => {
+  if (!commercialMap || !window.maplibregl) return;
+  if (!quickMapProspectMarker) {
+    quickMapProspectMarker = new maplibregl.Marker({
+      element: createQuickMapMarkerElement(),
+      draggable: true,
+      anchor: "bottom"
+    });
+    quickMapProspectMarker.on("dragend", () => {
+      const point = quickMapProspectMarker.getLngLat();
+      setQuickMapProspectPoint(point.lng, point.lat, { fromDrag: true });
+    });
+  }
+  quickMapProspectMarker.setLngLat([lng, lat]).addTo(commercialMap);
+};
+
+const clearQuickMapProspectMarker = () => {
+  if (quickMapProspectMarker) {
+    quickMapProspectMarker.remove();
+    quickMapProspectMarker = null;
+  }
+  quickMapProspectState.selectedLngLat = null;
+};
+
+const fillMapProspectLocationFields = (lng, lat) => {
+  if (!mapProspectForm) return;
+  mapProspectForm.latitude.value = Number(lat).toFixed(6);
+  mapProspectForm.longitude.value = Number(lng).toFixed(6);
+  if (mapProspectForm.mapsLink) mapProspectForm.mapsLink.value = buildMapsLinkFromCoords(lat, lng);
+};
+
+const applyMapReverseGeocodeToForm = (data) => {
+  if (!mapProspectForm || !data) return;
+  const feature = data.features?.[0];
+  if (!feature) return;
+  const placeName = String(feature.place_name || feature.place_name_es || "").trim();
+  const context = Array.isArray(feature.context) ? feature.context : [];
+  const findContext = (prefixes) => {
+    const item = context.find((ctx) => prefixes.some((prefix) => String(ctx.id || "").startsWith(prefix)));
+    return String(item?.text_es || item?.text || "").trim();
+  };
+  const city = findContext(["place", "municipality", "region"]) || String(feature.place_type?.includes("place") ? feature.text : "").trim();
+  const zone = findContext(["neighborhood", "locality", "district"]);
+  if (mapProspectForm.address && !mapProspectForm.address.value.trim()) mapProspectForm.address.value = placeName;
+  if (mapProspectForm.city && !mapProspectForm.city.value.trim()) mapProspectForm.city.value = city;
+  if (mapProspectForm.zone && !mapProspectForm.zone.value.trim()) mapProspectForm.zone.value = zone;
+};
+
+const reverseGeocodeMapProspectPoint = async (lng, lat) => {
+  if (!mapProspectNotice) return;
+  if (quickMapProspectState.geocodeAbort) quickMapProspectState.geocodeAbort.abort();
+  quickMapProspectState.geocodeAbort = new AbortController();
+  mapProspectNotice.textContent = "Buscando direccion aproximada...";
+  try {
+    const url = `https://api.maptiler.com/geocoding/${lng},${lat}.json?key=${MAPTILER_API_KEY}&language=es&limit=1`;
+    const response = await fetch(url, { signal: quickMapProspectState.geocodeAbort.signal });
+    if (!response.ok) throw new Error("reverse-geocode");
+    const data = await response.json();
+    applyMapReverseGeocodeToForm(data);
+    mapProspectNotice.textContent = "";
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+    mapProspectNotice.textContent = "No se pudo obtener automaticamente la direccion.";
+  }
+};
+
+const distanceMeters = (a, b) => {
+  if (!a || !b) return Infinity;
+  const toRad = (value) => (Number(value) * Math.PI) / 180;
+  const r = 6371000;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * r * Math.asin(Math.sqrt(h));
+};
+
+const findPossibleProspectDuplicates = (payload) => {
+  const payloadPhone = normalizeText(payload.phone || "");
+  const payloadName = normalizeText(payload.name || "");
+  const payloadAddress = normalizeText(payload.address || "");
+  const payloadCoords = Number.isFinite(Number(payload.latitude)) && Number.isFinite(Number(payload.longitude))
+    ? { lat: Number(payload.latitude), lng: Number(payload.longitude) }
+    : null;
+  const rows = [];
+  const inspect = (record, type) => {
+    const coords = normalizeCoordinates(record);
+    const distance = payloadCoords && coords ? distanceMeters(payloadCoords, { lat: coords.lat, lng: coords.lng }) : Infinity;
+    const recordPhone = normalizeText(record.phone || "");
+    const recordName = normalizeText(record.name || "");
+    const recordAddress = normalizeText(record.address || "");
+    const phoneMatch = payloadPhone && recordPhone && payloadPhone === recordPhone;
+    const nameMatch = payloadName && recordName && (payloadName.includes(recordName) || recordName.includes(payloadName));
+    const addressMatch = payloadAddress && recordAddress && (payloadAddress.includes(recordAddress) || recordAddress.includes(payloadAddress));
+    const coordMatch = distance <= 80;
+    if (!phoneMatch && !nameMatch && !addressMatch && !coordMatch) return;
+    rows.push({
+      id: record.id,
+      type,
+      name: record.name || "Sin nombre",
+      phone: record.phone || "",
+      distance,
+      reasons: [
+        phoneMatch ? "telefono" : "",
+        nameMatch ? "nombre similar" : "",
+        addressMatch ? "direccion" : "",
+        coordMatch ? "ubicacion cercana" : ""
+      ].filter(Boolean)
+    });
+  };
+  state.prospects.forEach((item) => inspect(item, "Prospecto"));
+  state.clients.forEach((item) => inspect(item, "Cliente"));
+  return rows.sort((a, b) => a.distance - b.distance).slice(0, 5);
+};
+
+const renderMapDuplicateWarning = (duplicates, action) => {
+  if (!mapDuplicateWarning) return;
+  if (!duplicates.length) {
+    mapDuplicateWarning.classList.add("hidden");
+    mapDuplicateWarning.innerHTML = "";
+    return;
+  }
+  mapDuplicateWarning.classList.remove("hidden");
+  mapDuplicateWarning.innerHTML = `
+    <strong>Ya existe un prospecto o cliente posiblemente relacionado en esta ubicacion.</strong>
+    <div class="map-duplicate-list">
+      ${duplicates.map((item) => `
+        <div class="map-duplicate-item">
+          <span>${escapeHtml(item.name)} · ${escapeHtml(item.type)}</span>
+          <small>${item.phone ? escapeHtml(item.phone) + " · " : ""}${Number.isFinite(item.distance) ? `${Math.round(item.distance)} m · ` : ""}${escapeHtml(item.reasons.join(", "))}</small>
+        </div>
+      `).join("")}
+    </div>
+    <div class="map-duplicate-actions">
+      <button class="btn ghost btn-xs" type="button" data-map-duplicate-view>Ver registro existente</button>
+      <button class="btn ghost btn-xs" type="button" data-map-duplicate-cancel>Cancelar</button>
+      <button class="btn primary btn-xs" type="button" data-map-duplicate-force>Guardar de todas formas</button>
+    </div>
+  `;
+  mapDuplicateWarning.querySelector("[data-map-duplicate-view]")?.addEventListener("click", () => {
+    const first = duplicates[0];
+    if (!first) return;
+    setActiveAppSection(first.type === "Cliente" ? "clients" : "prospects");
+  });
+  mapDuplicateWarning.querySelector("[data-map-duplicate-cancel]")?.addEventListener("click", () => {
+    quickMapProspectState.forceDuplicateSave = false;
+    mapDuplicateWarning.classList.add("hidden");
+  });
+  mapDuplicateWarning.querySelector("[data-map-duplicate-force]")?.addEventListener("click", () => {
+    quickMapProspectState.forceDuplicateSave = true;
+    void saveQuickMapProspect(action);
+  });
+};
+
+const setMapProspectBusy = (busy) => {
+  if (!mapProspectForm) return;
+  mapProspectForm.querySelectorAll("button, input, select, textarea").forEach((el) => {
+    if (el.id === "mapProspectCancel" && busy) return;
+    el.disabled = Boolean(busy);
+  });
+  if (mapProspectNotice && busy) mapProspectNotice.textContent = "Guardando prospecto...";
+};
+
+const openQuickMapProspectDrawer = () => {
+  if (!mapProspectDrawer || !mapProspectForm) return;
+  mapProspectDrawer.classList.remove("hidden");
+  quickMapProspectState.drawerOpen = true;
+  quickMapProspectState.selecting = false;
+  quickMapProspectState.forceDuplicateSave = false;
+  if (mapDuplicateWarning) {
+    mapDuplicateWarning.classList.add("hidden");
+    mapDuplicateWarning.innerHTML = "";
+  }
+  updateQuickMapSessionUi();
+  refreshIcons();
+  requestAnimationFrame(() => mapProspectForm.name?.focus());
+};
+
+const closeQuickMapProspectDrawer = ({ force = false, clearMarker = true } = {}) => {
+  if (!force && mapProspectForm && Array.from(new FormData(mapProspectForm).values()).some((value) => String(value || "").trim())) {
+    if (!window.confirm("Cerrar el formulario sin guardar los cambios?")) return false;
+  }
+  mapProspectDrawer?.classList.add("hidden");
+  quickMapProspectState.drawerOpen = false;
+  quickMapProspectState.forceDuplicateSave = false;
+  quickMapProspectState.saveAction = "save";
+  if (mapProspectForm) resetForm(mapProspectForm);
+  if (mapProspectNotice) mapProspectNotice.textContent = "";
+  if (mapDuplicateWarning) {
+    mapDuplicateWarning.classList.add("hidden");
+    mapDuplicateWarning.innerHTML = "";
+  }
+  if (clearMarker) clearQuickMapProspectMarker();
+  updateQuickMapSessionUi();
+  quickMapProspectState.lastFocus?.focus?.();
+  return true;
+};
+
+const startQuickMapProspectMode = () => {
+  if (!commercialMap) ensureCommercialMap();
+  if (!commercialMap) {
+    window.alert("El mapa todavia no esta disponible.");
+    return;
+  }
+  quickMapProspectState.active = true;
+  quickMapProspectState.selecting = true;
+  quickMapProspectState.drawerOpen = false;
+  quickMapProspectState.sessionCount = quickMapProspectState.sessionCount || 0;
+  quickMapProspectState.cameraAtStart = captureCommercialMapCamera();
+  quickMapProspectState.lastFocus = document.activeElement;
+  clearQuickMapProspectMarker();
+  mapProspectDrawer?.classList.add("hidden");
+  updateQuickMapSessionUi();
+  mapQuickModePanel?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+};
+
+const finishQuickMapProspectMode = ({ showSummary = true, force = false } = {}) => {
+  const count = quickMapProspectState.sessionCount;
+  const closed = closeQuickMapProspectDrawer({ force, clearMarker: true });
+  if (!closed) return false;
+  quickMapProspectState.active = false;
+  quickMapProspectState.selecting = false;
+  quickMapProspectState.drawerOpen = false;
+  quickMapProspectState.sessionCount = 0;
+  updateQuickMapSessionUi();
+  if (showSummary && count) showQuickMapToast(`Se agregaron ${formatInteger(count)} prospecto${count === 1 ? "" : "s"}.`);
+  return true;
+};
+
+const setQuickMapProspectPoint = (lng, lat, { fromDrag = false } = {}) => {
+  const safeLng = Number(lng);
+  const safeLat = Number(lat);
+  if (!Number.isFinite(safeLng) || !Number.isFinite(safeLat)) return;
+  quickMapProspectState.selectedLngLat = { lng: safeLng, lat: safeLat };
+  setQuickMapProspectMarker(safeLng, safeLat);
+  if (!mapProspectForm || !quickMapProspectState.drawerOpen) {
+    if (!quickMapProspectState.preserveFormOnNextPoint) mapProspectForm?.reset?.();
+  }
+  quickMapProspectState.preserveFormOnNextPoint = false;
+  fillMapProspectLocationFields(safeLng, safeLat);
+  if (mapProspectForm?.status && !mapProspectForm.status.value) mapProspectForm.status.value = "nuevo";
+  openQuickMapProspectDrawer();
+  if (fromDrag && mapProspectNotice) mapProspectNotice.textContent = "Ubicacion actualizada.";
+  void reverseGeocodeMapProspectPoint(safeLng, safeLat);
+};
+
+const resumeQuickMapProspectSelection = ({ clearForm = true } = {}) => {
+  if (clearForm && quickMapProspectState.drawerOpen && mapProspectForm) {
+    const isDirty = Array.from(new FormData(mapProspectForm).values()).some((value) => String(value || "").trim());
+    if (isDirty && !window.confirm("Descartar los datos escritos y seleccionar otra ubicacion?")) return false;
+  }
+  if (clearForm && mapProspectForm) resetForm(mapProspectForm);
+  quickMapProspectState.preserveFormOnNextPoint = !clearForm;
+  mapProspectDrawer?.classList.add("hidden");
+  quickMapProspectState.drawerOpen = false;
+  quickMapProspectState.selecting = true;
+  quickMapProspectState.forceDuplicateSave = false;
+  clearQuickMapProspectMarker();
+  updateQuickMapSessionUi();
+  return true;
+};
+
+const saveQuickMapProspect = async (action = "save") => {
+  if (!mapProspectForm) return;
+  const cameraBeforeSave = captureCommercialMapCamera();
+  const payload = getProspectPayloadFromForm(mapProspectForm);
+  if (payload.latitude === null || payload.longitude === null) {
+    if (mapProspectNotice) mapProspectNotice.textContent = "Latitud y longitud son obligatorias para guardar desde el mapa.";
+    return;
+  }
+  if (!payload.mapsLink && mapProspectForm.mapsLink) {
+    mapProspectForm.mapsLink.value = buildMapsLinkFromCoords(payload.latitude, payload.longitude);
+  }
+  const duplicates = quickMapProspectState.forceDuplicateSave ? [] : findPossibleProspectDuplicates(payload);
+  if (duplicates.length) {
+    renderMapDuplicateWarning(duplicates, action);
+    if (mapProspectNotice) mapProspectNotice.textContent = "";
+    return;
+  }
+  setMapProspectBusy(true);
+  try {
+    const savedId = await saveProspectFromForm(mapProspectForm, {
+      source: "Mapa comercial",
+      origin: "Mapa comercial",
+      createdFrom: "commercial_map"
+    });
+    if (!savedId) {
+      setMapProspectBusy(false);
+      return;
+    }
+    quickMapProspectState.sessionCount += 1;
+    quickMapProspectState.forceDuplicateSave = false;
+    restoreCommercialMapCamera(cameraBeforeSave);
+    closeQuickMapProspectDrawer({ force: true, clearMarker: true });
+    showQuickMapToast("Prospecto creado correctamente.", "Ver en el mapa", () => {
+      const id = `prospect_${savedId}`;
+      const waitForEntity = () => {
+        const entity = getMapEntityById(id);
+        if (entity) {
+          openMapDetail(id);
+          return true;
+        }
+        return false;
+      };
+      if (!waitForEntity()) window.setTimeout(waitForEntity, 900);
+    });
+    if (action === "save-more") {
+      quickMapProspectState.active = true;
+      quickMapProspectState.selecting = true;
+      updateQuickMapSessionUi();
+    } else {
+      quickMapProspectState.active = false;
+      quickMapProspectState.selecting = false;
+      updateQuickMapSessionUi();
+    }
+  } catch (error) {
+    console.error("No se pudo guardar prospecto desde mapa:", error);
+    if (mapProspectNotice) mapProspectNotice.textContent = "No se pudo guardar el prospecto. Reintenta sin perder los datos.";
+  } finally {
+    setMapProspectBusy(false);
+  }
 };
 
 // Normaliza coordenadas desde multiples formatos. Devuelve {lat,lng} valido o null.
@@ -9104,7 +9626,7 @@ const openMapDetail = (id) => {
   const rows = [];
   rows.push(`<div class="map-detail-row"><b>Contacto</b><span>${escapeHtml(e.contactName || "-")}</span></div>`);
   rows.push(`<div class="map-detail-row"><b>Telefono</b><span>${escapeHtml(e.phone || "-")}</span></div>`);
-  rows.push(`<div class="map-detail-row"><b>Rubro</b><span>${e.businessType ? escapeHtml(getOptionLabel(PROSPECT_BUSINESS_TYPE_OPTIONS, e.businessType)) : "-"}</span></div>`);
+  rows.push(`<div class="map-detail-row"><b>Rubro</b><span>${e.businessType ? escapeHtml(getBusinessTypeLabel(e.businessType)) : "-"}</span></div>`);
   rows.push(`<div class="map-detail-row"><b>Direccion</b><span>${escapeHtml(e.address || "-")}</span></div>`);
   rows.push(`<div class="map-detail-row"><b>Ciudad</b><span>${escapeHtml(e.city || "-")}${e.neighborhood ? " / " + escapeHtml(e.neighborhood) : ""}</span></div>`);
   rows.push(`<div class="map-detail-row"><b>Coordenadas</b><span>${e.hasLocation ? `${e.latitude.toFixed(5)}, ${e.longitude.toFixed(5)}` : "Sin ubicacion"}</span></div>`);
@@ -9270,6 +9792,7 @@ const ensureCommercialMap = () => {
   });
   // Interacciones (se registran una vez; sobreviven a cambios de estilo).
   commercialMap.on("click", "clusters", (e) => {
+    if (quickMapProspectState.active) return;
     const features = commercialMap.queryRenderedFeatures(e.point, { layers: ["clusters"] });
     const clusterId = features[0]?.properties?.cluster_id;
     if (clusterId === undefined) return;
@@ -9278,12 +9801,23 @@ const ensureCommercialMap = () => {
       .catch(() => {});
   });
   commercialMap.on("click", "points", (e) => {
+    if (quickMapProspectState.active) return;
     const id = e.features?.[0]?.properties?.id;
     if (id) openMapDetail(id);
+  });
+  commercialMap.on("click", (e) => {
+    if (!quickMapProspectState.active || !quickMapProspectState.selecting) return;
+    const features = commercialMap.queryRenderedFeatures(e.point, { layers: ["points", "points-emph", "clusters"] });
+    if (features.length) {
+      if (mapQuickModeText) mapQuickModeText.textContent = "Elegi un punto vacio del mapa, lejos de un marcador existente.";
+      return;
+    }
+    setQuickMapProspectPoint(e.lngLat.lng, e.lngLat.lat);
   });
   commercialMap.on("mouseenter", "clusters", () => { commercialMap.getCanvas().style.cursor = "pointer"; });
   commercialMap.on("mouseleave", "clusters", () => { commercialMap.getCanvas().style.cursor = ""; });
   commercialMap.on("mousemove", "points", (e) => {
+    if (quickMapProspectState.active) return;
     commercialMap.getCanvas().style.cursor = "pointer";
     const id = e.features?.[0]?.properties?.id || "";
     if (id !== mapHoverId) { mapHoverId = id; updateMapEmphasis(); }
@@ -9301,6 +9835,33 @@ const resizeCommercialMap = (delay = 60) => {
 
 const setupCommercialMap = () => {
   if (!document.getElementById("commercialMapSection")) return;
+  mapAddProspectBtn?.addEventListener("click", () => {
+    startQuickMapProspectMode();
+  });
+  mapQuickCancelSelection?.addEventListener("click", () => {
+    resumeQuickMapProspectSelection({ clearForm: true });
+  });
+  mapQuickFinish?.addEventListener("click", () => {
+    finishQuickMapProspectMode();
+  });
+  mapProspectForm?.querySelectorAll("[data-map-prospect-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      quickMapProspectState.saveAction = button.dataset.mapProspectAction || "save";
+    });
+  });
+  mapProspectForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void saveQuickMapProspect(event.submitter?.dataset?.mapProspectAction || quickMapProspectState.saveAction || "save");
+  });
+  mapProspectClose?.addEventListener("click", () => {
+    finishQuickMapProspectMode({ showSummary: false });
+  });
+  mapProspectCancel?.addEventListener("click", () => {
+    finishQuickMapProspectMode({ showSummary: false });
+  });
+  mapProspectChangeLocation?.addEventListener("click", () => {
+    resumeQuickMapProspectSelection({ clearForm: false });
+  });
   // Filtros tipo (chips)
   document.getElementById("mapFilters")?.addEventListener("click", (event) => {
     const chip = event.target.closest(".map-chip");
@@ -9426,6 +9987,11 @@ const setupCommercialMap = () => {
   document.addEventListener("click", (event) => {
     if (!event.target.closest("#mapGeoSearch") && !event.target.closest("#mapGeoResults") && geoResults) geoResults.hidden = true;
     if (!event.target.closest("#mapBizSearch") && !event.target.closest("#mapBizResults") && bizResults) bizResults.hidden = true;
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && quickMapProspectState.active) {
+      finishQuickMapProspectMode({ showSummary: false });
+    }
   });
 
   window.addEventListener("resize", () => resizeCommercialMap(120));
@@ -9595,6 +10161,7 @@ onAuthStateChanged(auth, (user) => {
   listenCollection("financial_manual_adjustments", "financialManualAdjustments");
   listenCollection("finished_stock_adjustments", "finishedStockAdjustments");
   listenCollection("raw_material_adjustments", "rawMaterialAdjustments");
+  listenCollection("businessTypes", "businessTypes");
 }, (error) => {
   console.error("[auth] observer error", error);
   setAuthFeedback(getAuthMessage(error), "error");

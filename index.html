@@ -9,7 +9,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
   <link rel="icon" type="image/png" href="apple-touch-icon.png" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="styles.css?v=20260625-02" />
+  <link rel="stylesheet" href="styles.css?v=20260625-03" />
 </head>
 <body>
   <div class="app">
@@ -222,6 +222,9 @@
                 <input id="mapBizSearch" type="search" placeholder="Buscar cliente o prospecto" autocomplete="off" />
                 <div class="map-search-results" id="mapBizResults" hidden></div>
               </div>
+              <button class="btn primary map-add-prospect-btn" type="button" id="mapAddProspectBtn" aria-label="Agregar prospecto desde el mapa">
+                <i data-lucide="map-pin-plus"></i> Agregar prospecto
+              </button>
             </div>
           </div>
 
@@ -262,6 +265,20 @@
             </div>
           </div>
 
+          <div class="map-quick-mode-panel hidden" id="mapQuickModePanel" role="status" aria-live="polite">
+            <div>
+              <strong>Modo de carga de prospectos activo</strong>
+              <span id="mapQuickModeText">Hace clic en el mapa para marcar la ubicacion del prospecto.</span>
+              <small id="mapQuickSessionCount">0 prospectos agregados en esta zona</small>
+            </div>
+            <div class="map-quick-mode-actions">
+              <button class="btn ghost btn-xs" type="button" id="mapQuickCancelSelection">Cancelar seleccion actual</button>
+              <button class="btn ghost btn-xs" type="button" id="mapQuickFinish">Finalizar</button>
+            </div>
+          </div>
+
+          <div class="map-quick-toast hidden" id="mapQuickToast" role="status" aria-live="polite"></div>
+
           <div class="map-indicators" id="mapIndicators"></div>
 
           <div class="map-shell">
@@ -273,6 +290,101 @@
             </div>
             <div class="map-fallback" id="mapFallback" hidden></div>
             <aside class="map-detail" id="mapDetail" hidden></aside>
+          </div>
+
+          <div class="map-prospect-drawer hidden" id="mapProspectDrawer" role="dialog" aria-modal="true" aria-labelledby="mapProspectTitle">
+            <div class="map-prospect-drawer-panel">
+              <div class="map-prospect-head">
+                <div>
+                  <h2 id="mapProspectTitle">Nuevo prospecto</h2>
+                  <p>Completa los datos del comercio marcado en el mapa.</p>
+                </div>
+                <button class="icon-btn" type="button" id="mapProspectClose" aria-label="Cerrar carga rapida de prospecto"><i data-lucide="x"></i></button>
+              </div>
+              <form id="mapProspectForm" class="map-prospect-form">
+                <label>
+                  Nombre del negocio
+                  <input name="name" required />
+                </label>
+                <label>
+                  Nombre del contacto
+                  <input name="contactName" />
+                </label>
+                <label>
+                  Telefono o WhatsApp
+                  <input name="phone" inputmode="tel" />
+                </label>
+                <label>
+                  Rubro
+                  <select name="businessType">
+                    <option value="">Seleccionar</option>
+                    <option value="despensa">Despensa</option>
+                    <option value="supermercado">Supermercado</option>
+                    <option value="farmacia">Farmacia</option>
+                    <option value="confiteria">Confiteria</option>
+                    <option value="mayorista">Mayorista</option>
+                    <option value="distribuidor">Distribuidor</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </label>
+                <label>
+                  Ciudad
+                  <input name="city" />
+                </label>
+                <label>
+                  Barrio o zona
+                  <input name="zone" />
+                </label>
+                <label class="map-prospect-wide">
+                  Direccion
+                  <input name="address" />
+                </label>
+                <label>
+                  Estado
+                  <select name="status">
+                    <option value="nuevo">Nuevo</option>
+                    <option value="contactado">Contactado</option>
+                    <option value="visita_pendiente">Visita pendiente</option>
+                    <option value="visitado">Visitado</option>
+                    <option value="interesado">Interesado</option>
+                    <option value="no_interesado">No interesado</option>
+                    <option value="convertido_cliente">Convertido a cliente</option>
+                  </select>
+                </label>
+                <label>
+                  Potencial
+                  <select name="potential">
+                    <option value="">Seleccionar</option>
+                    <option value="bajo">Bajo</option>
+                    <option value="medio">Medio</option>
+                    <option value="alto">Alto</option>
+                  </select>
+                </label>
+                <label>
+                  Latitud
+                  <input name="latitude" type="number" step="any" inputmode="decimal" required />
+                </label>
+                <label>
+                  Longitud
+                  <input name="longitude" type="number" step="any" inputmode="decimal" required />
+                </label>
+                <label class="map-prospect-wide">
+                  Observaciones
+                  <textarea name="observations" rows="3"></textarea>
+                </label>
+                <input name="mapsLink" type="hidden" />
+                <input name="nextAction" type="hidden" />
+                <input name="nextActionDate" type="hidden" />
+                <div class="map-prospect-notice" id="mapProspectNotice"></div>
+                <div class="map-duplicate-warning hidden" id="mapDuplicateWarning"></div>
+                <div class="map-prospect-actions">
+                  <button class="btn primary" type="submit" data-map-prospect-action="save">Guardar prospecto</button>
+                  <button class="btn" type="submit" data-map-prospect-action="save-more">Guardar y agregar otro</button>
+                  <button class="btn ghost" type="button" id="mapProspectChangeLocation">Cambiar ubicacion</button>
+                  <button class="btn ghost" type="button" id="mapProspectCancel">Cancelar</button>
+                </div>
+              </form>
+            </div>
           </div>
 
           <div class="collapsible-panel" id="mapVisiblePanel">
@@ -1828,7 +1940,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.js"></script>
-  <script type="module" src="app.js?v=20260625-02"></script>
+  <script type="module" src="app.js?v=20260625-03"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();
