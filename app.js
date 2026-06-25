@@ -8787,7 +8787,9 @@ const MAP_STYLES = {
   satellite: `https://api.maptiler.com/maps/satellite/style.json?key=${MAPTILER_API_KEY}`,
   hybrid: `https://api.maptiler.com/maps/hybrid/style.json?key=${MAPTILER_API_KEY}`
 };
-const MAP_COLORS = { prospect: "#9ca3af", client: "#16a34a", overdue: "#dc2626" };
+const MAP_COLORS = { prospect: "#F59E0B", client: "#16A34A", overdue: "#DC2626" };
+const MAP_PIN_ICONS = { prospect: "marker-prospecto", client: "marker-cliente", overdue: "marker-recompra-vencida" };
+const MAP_PIN_ICON_EXPR = ["match", ["get", "commercialStatus"], "prospect", "marker-prospecto", "client", "marker-cliente", "overdue", "marker-recompra-vencida", "marker-prospecto"];
 const PY_BOUNDS = [[-62.7, -27.7], [-54.2, -19.2]];
 const CDE_CENTER = [-54.6111, -25.5097];
 const MAP_EMPTY_FC = { type: "FeatureCollection", features: [] };
@@ -8797,6 +8799,7 @@ let commercialMapReady = false;
 let commercialMapDidIntro = false;
 let commercialMapEntities = [];
 let mapSelectedId = "";
+let mapHoverId = "";
 let mapGeoSearchTimer = null;
 const mapFilterState = { type: "all", city: "", zone: "", business: "", location: "" };
 
@@ -8992,7 +8995,7 @@ const updateMapIndicators = (filtered) => {
   const overdue = filtered.filter((e) => e.status === "overdue").length;
   const noLoc = filtered.filter((e) => !e.hasLocation).length;
   el.innerHTML = `
-    <span class="map-cap"><i class="map-dot map-dot-gray"></i>${formatInteger(prospects)} prospectos</span>
+    <span class="map-cap"><i class="map-dot map-dot-orange"></i>${formatInteger(prospects)} prospectos</span>
     <span class="map-cap"><i class="map-dot map-dot-green"></i>${formatInteger(clients)} clientes activos</span>
     <span class="map-cap"><i class="map-dot map-dot-red"></i>${formatInteger(overdue)} recompras vencidas</span>
     <span class="map-cap map-cap-muted">Sin ubicacion: ${formatInteger(noLoc)}</span>
@@ -9011,7 +9014,7 @@ const renderMapVisibleList = (filtered) => {
   list.innerHTML = filtered.slice(0, 200).map((e) => `
     <div class="map-visible-row" data-map-entity="${e.id}">
       <div class="map-visible-main">
-        <span class="map-dot map-dot-${e.status === "overdue" ? "red" : e.status === "prospect" ? "gray" : "green"}"></span>
+        <span class="map-dot map-dot-${e.status === "overdue" ? "red" : e.status === "prospect" ? "orange" : "green"}"></span>
         <div>
           <div class="map-visible-name">${escapeHtml(e.name)}</div>
           <div class="map-visible-meta">${escapeHtml(e.label)}${e.city ? " · " + escapeHtml(e.city) : ""}${e.neighborhood ? " · " + escapeHtml(e.neighborhood) : ""}</div>
@@ -9039,12 +9042,56 @@ const refreshCommercialMap = () => {
 
 const getMapEntityById = (id) => commercialMapEntities.find((e) => e.id === id) || null;
 
-const highlightMapEntity = (id) => {
-  mapSelectedId = id || "";
-  if (commercialMap && commercialMap.getLayer && commercialMap.getLayer("points-selected")) {
-    commercialMap.setFilter("points-selected", ["==", ["get", "id"], mapSelectedId]);
+// Resalta el pin activo (hover y/o seleccionado) sin mover la punta de la coordenada.
+const updateMapEmphasis = () => {
+  if (!commercialMap || !commercialMap.getLayer) return;
+  if (commercialMap.getLayer("points-emph")) {
+    const ids = [mapHoverId, mapSelectedId].filter(Boolean);
+    commercialMap.setFilter("points-emph", ["all", ["!", ["has", "point_count"]], ["in", ["get", "id"], ["literal", ids]]]);
+  }
+  if (commercialMap.getLayer("select-glow")) {
+    commercialMap.setFilter("select-glow", ["==", ["get", "id"], mapSelectedId || ""]);
   }
 };
+
+const highlightMapEntity = (id) => {
+  mapSelectedId = id || "";
+  updateMapEmphasis();
+};
+
+// Construye un pin SVG (forma de gota, borde blanco, circulo blanco al centro)
+// y lo registra como imagen del mapa. Sin assets externos ni rutas absolutas.
+const loadCommercialPinImage = (id, color) => new Promise((resolve) => {
+  if (!commercialMap) { resolve(); return; }
+  if (commercialMap.hasImage(id)) { resolve(); return; }
+  const w = 64;
+  const h = 84;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 32 42">`
+    + `<path d="M16 1.5C9.1 1.5 3.5 7.1 3.5 14c0 8.9 12.5 25.5 12.5 25.5S28.5 22.9 28.5 14C28.5 7.1 22.9 1.5 16 1.5z" fill="${color}" stroke="#ffffff" stroke-width="2.4"/>`
+    + `<circle cx="16" cy="14" r="5" fill="#ffffff"/></svg>`;
+  const img = new Image(w, h);
+  img.onload = () => {
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      if (commercialMap && !commercialMap.hasImage(id)) {
+        commercialMap.addImage(id, ctx.getImageData(0, 0, w, h), { pixelRatio: 2 });
+      }
+    } catch (error) { /* noop */ }
+    resolve();
+  };
+  img.onerror = () => resolve();
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+});
+
+const ensureCommercialMapImages = () => Promise.all([
+  loadCommercialPinImage(MAP_PIN_ICONS.prospect, MAP_COLORS.prospect),
+  loadCommercialPinImage(MAP_PIN_ICONS.client, MAP_COLORS.client),
+  loadCommercialPinImage(MAP_PIN_ICONS.overdue, MAP_COLORS.overdue)
+]);
 
 const openMapDetail = (id) => {
   const e = getMapEntityById(id);
@@ -9075,7 +9122,7 @@ const openMapDetail = (id) => {
   panel.innerHTML = `
     <div class="map-detail-head">
       <div>
-        <span class="map-badge map-badge-${e.status === "overdue" ? "red" : e.status === "prospect" ? "gray" : "green"}">${escapeHtml(e.label)}</span>
+        <span class="map-badge map-badge-${e.status === "overdue" ? "red" : e.status === "prospect" ? "orange" : "green"}">${escapeHtml(e.label)}</span>
         <h3>${escapeHtml(e.name)}</h3>
       </div>
       <button class="icon-btn" type="button" id="mapDetailClose" title="Cerrar"><i data-lucide="x"></i></button>
@@ -9147,20 +9194,40 @@ const addCommercialMapLayers = () => {
     layout: { "text-field": ["get", "point_count_abbreviated"], "text-size": 13, "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"] },
     paint: { "text-color": "#ffffff" }
   });
+  // Resplandor suave bajo el pin seleccionado (anclado a la coordenada).
   commercialMap.addLayer({
-    id: "points", type: "circle", source: "commercial", filter: ["!", ["has", "point_count"]],
+    id: "select-glow", type: "circle", source: "commercial",
+    filter: ["==", ["get", "id"], mapSelectedId || ""],
     paint: {
       "circle-color": ["get", "color"],
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 5, 10, 8, 16, 12],
-      "circle-stroke-color": "#ffffff", "circle-stroke-width": 2
+      "circle-opacity": 0.2,
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 12, 11, 18, 15, 26],
+      "circle-stroke-color": ["get", "color"],
+      "circle-stroke-width": 2,
+      "circle-stroke-opacity": 0.55
     }
   });
+  // Pines base tipo gota (symbol layer con icono SVG segun estado comercial).
   commercialMap.addLayer({
-    id: "points-selected", type: "circle", source: "commercial", filter: ["==", ["get", "id"], mapSelectedId || ""],
-    paint: {
-      "circle-color": "rgba(0,0,0,0)",
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 10, 16, 18],
-      "circle-stroke-color": "#111827", "circle-stroke-width": 3
+    id: "points", type: "symbol", source: "commercial", filter: ["!", ["has", "point_count"]],
+    layout: {
+      "icon-image": MAP_PIN_ICON_EXPR,
+      "icon-anchor": "bottom",
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 7, 0.55, 11, 0.8, 15, 1]
+    }
+  });
+  // Pin agrandado para hover/seleccion (misma punta anclada abajo).
+  commercialMap.addLayer({
+    id: "points-emph", type: "symbol", source: "commercial",
+    filter: ["all", ["!", ["has", "point_count"]], ["in", ["get", "id"], ["literal", []]]],
+    layout: {
+      "icon-image": MAP_PIN_ICON_EXPR,
+      "icon-anchor": "bottom",
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 7, 0.64, 11, 0.94, 15, 1.18]
     }
   });
 };
@@ -9192,9 +9259,11 @@ const ensureCommercialMap = () => {
   }
   commercialMap.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-left");
   commercialMap.on("error", (e) => console.warn("[map]", e?.error?.message || e));
-  commercialMap.on("style.load", () => {
+  commercialMap.on("style.load", async () => {
     applyCommercialMapGlobe();
+    try { await ensureCommercialMapImages(); } catch (error) { /* noop */ }
     addCommercialMapLayers();
+    updateMapEmphasis();
     commercialMapReady = true;
     refreshCommercialMap();
     playCommercialMapIntro();
@@ -9212,9 +9281,16 @@ const ensureCommercialMap = () => {
     const id = e.features?.[0]?.properties?.id;
     if (id) openMapDetail(id);
   });
-  ["clusters", "points"].forEach((layer) => {
-    commercialMap.on("mouseenter", layer, () => { commercialMap.getCanvas().style.cursor = "pointer"; });
-    commercialMap.on("mouseleave", layer, () => { commercialMap.getCanvas().style.cursor = ""; });
+  commercialMap.on("mouseenter", "clusters", () => { commercialMap.getCanvas().style.cursor = "pointer"; });
+  commercialMap.on("mouseleave", "clusters", () => { commercialMap.getCanvas().style.cursor = ""; });
+  commercialMap.on("mousemove", "points", (e) => {
+    commercialMap.getCanvas().style.cursor = "pointer";
+    const id = e.features?.[0]?.properties?.id || "";
+    if (id !== mapHoverId) { mapHoverId = id; updateMapEmphasis(); }
+  });
+  commercialMap.on("mouseleave", "points", () => {
+    commercialMap.getCanvas().style.cursor = "";
+    if (mapHoverId) { mapHoverId = ""; updateMapEmphasis(); }
   });
 };
 
@@ -9312,7 +9388,7 @@ const setupCommercialMap = () => {
     if (q.length < 2) { bizResults.hidden = true; bizResults.innerHTML = ""; return; }
     const matches = commercialMapEntities.filter((e) => normalizeText([e.name, e.contactName, e.phone, e.city, e.neighborhood].filter(Boolean).join(" ")).includes(q)).slice(0, 8);
     bizResults.innerHTML = matches.length
-      ? matches.map((e) => `<button type="button" class="map-search-item" data-biz-id="${e.id}"><span class="map-dot map-dot-${e.status === "overdue" ? "red" : e.status === "prospect" ? "gray" : "green"}"></span>${escapeHtml(e.name)}${e.city ? " · " + escapeHtml(e.city) : ""}</button>`).join("")
+      ? matches.map((e) => `<button type="button" class="map-search-item" data-biz-id="${e.id}"><span class="map-dot map-dot-${e.status === "overdue" ? "red" : e.status === "prospect" ? "orange" : "green"}"></span>${escapeHtml(e.name)}${e.city ? " · " + escapeHtml(e.city) : ""}</button>`).join("")
       : '<div class="map-search-empty">Sin resultados</div>';
     bizResults.hidden = false;
   });

@@ -523,8 +523,25 @@ body {
 }
 
 .map-dot-gray { background: #9ca3af; }
+.map-dot-orange { background: #f59e0b; }
 .map-dot-green { background: #16a34a; }
 .map-dot-red { background: #dc2626; }
+
+/* Mini-pin (forma de gota) para la leyenda */
+.map-pin {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fff;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  flex: 0 0 auto;
+}
+
+.map-pin-orange { background: #f59e0b; }
+.map-pin-green { background: #16a34a; }
+.map-pin-red { background: #dc2626; }
 
 .map-shell {
   position: relative;
@@ -615,6 +632,7 @@ body {
 }
 
 .map-badge-gray { background: #f3f4f6; color: #4b5563; }
+.map-badge-orange { background: #fef3c7; color: #b45309; }
 .map-badge-green { background: var(--green-100); color: var(--green-700); }
 .map-badge-red { background: #fee2e2; color: #b91c1c; }
 
