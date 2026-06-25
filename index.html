@@ -9,7 +9,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
   <link rel="icon" type="image/png" href="apple-touch-icon.png" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="styles.css?v=20260625-04" />
+  <link rel="stylesheet" href="styles.css?v=20260625-06" />
 </head>
 <body>
   <div class="app">
@@ -224,6 +224,9 @@
               </div>
               <button class="btn primary map-add-prospect-btn" type="button" id="mapAddProspectBtn" aria-label="Agregar prospecto desde el mapa">
                 <i data-lucide="map-pin-plus"></i> Agregar prospecto
+              </button>
+              <button class="btn ghost map-import-prospect-btn" type="button" id="mapImportProspectsBtn" aria-label="Importar prospectos desde JSON">
+                <i data-lucide="file-up"></i> Importar JSON
               </button>
             </div>
           </div>
@@ -1108,6 +1111,7 @@
                     </div>
                     <div class="page-header-actions">
                       <button class="btn primary" type="button" id="newProspectBtn"><i data-lucide="plus"></i> Nuevo prospecto</button>
+                      <button class="btn ghost" type="button" id="importProspectsBtn"><i data-lucide="file-up"></i> Importar prospectos</button>
                       <button class="btn ghost" type="button" id="createVisitListBtn">Crear jornada de visitas</button>
                       <button class="btn ghost" type="button" id="openVisitRouteBtn">Ver mapa / ruta</button>
                       <button class="btn ghost" type="button" id="exportProspectsBtn">Exportar</button>
@@ -1115,6 +1119,8 @@
                   </div>
 
                   <div class="prospect-indicators" id="prospectIndicators"></div>
+
+                  <div class="import-history-panel" id="prospectImportHistory"></div>
 
                   <div class="prospect-toolbar">
                     <div class="prospect-toolbar-search">
@@ -1919,6 +1925,133 @@
     </div>
   </div>
 
+  <div class="json-import-modal hidden" id="prospectImportModal" role="dialog" aria-modal="true" aria-labelledby="prospectImportTitle">
+    <div class="json-import-backdrop" id="prospectImportBackdrop"></div>
+    <section class="json-import-card" aria-describedby="prospectImportDesc">
+      <header class="json-import-head">
+        <div>
+          <p class="eyebrow">Prospectos</p>
+          <h2 id="prospectImportTitle">Importar prospectos desde JSON</h2>
+          <p id="prospectImportDesc">Subi un archivo generado a partir de locales encontrados en Google Maps.</p>
+        </div>
+        <button class="icon-btn" type="button" id="prospectImportClose" aria-label="Cerrar importacion"><i data-lucide="x"></i></button>
+      </header>
+
+      <div class="json-import-steps" id="prospectImportSteps" aria-label="Pasos de importacion">
+        <span class="active">1. Archivo</span>
+        <span>2. Validacion</span>
+        <span>3. Revision</span>
+        <span>4. Mapa</span>
+        <span>5. Confirmacion</span>
+        <span>6. Resultado</span>
+      </div>
+
+      <div class="json-import-body">
+        <section class="json-import-dropzone" id="prospectImportDropzone">
+          <input id="prospectImportFile" type="file" accept="application/json,.json" hidden />
+          <div class="json-import-drop-icon"><i data-lucide="file-json"></i></div>
+          <h3>Seleccionar archivo JSON</h3>
+          <p>Arrastra un archivo .json aca o seleccionalo desde tu equipo. Maximo recomendado: 500 prospectos.</p>
+          <div class="json-import-drop-actions">
+            <button class="btn primary" type="button" id="prospectImportChoose">Seleccionar JSON</button>
+            <button class="btn ghost" type="button" id="prospectImportTemplate">Descargar plantilla JSON</button>
+          </div>
+          <div class="json-import-file-meta" id="prospectImportFileMeta">Sin archivo seleccionado.</div>
+          <div class="json-import-error" id="prospectImportError" role="alert"></div>
+        </section>
+
+        <section class="json-import-format" id="prospectImportFormat">
+          <div class="json-import-format-head">
+            <h3>Formato esperado</h3>
+            <span>Campos obligatorios: businessName, latitude, longitude</span>
+          </div>
+          <pre>{
+  "schemaVersion": "1.0",
+  "source": "chatgpt-google-maps-screenshots",
+  "generatedAt": "2026-06-25T12:00:00Z",
+  "prospects": [
+    {
+      "externalId": "maps-001",
+      "businessName": "Nombre del negocio",
+      "businessTypeName": "Estacion de servicio",
+      "latitude": -25.5097,
+      "longitude": -54.6111,
+      "notes": ""
+    }
+  ]
+}</pre>
+        </section>
+
+        <section class="json-import-review hidden" id="prospectImportReview">
+          <div class="json-import-summary" id="prospectImportSummary"></div>
+          <div class="json-import-toolbar">
+            <div class="json-import-tabs" role="tablist">
+              <button class="active" type="button" id="prospectImportTableTab">Tabla</button>
+              <button type="button" id="prospectImportMapTab">Ver en el mapa</button>
+            </div>
+            <div class="json-import-bulk">
+              <select id="prospectImportBulkRubro" aria-label="Aplicar rubro">
+                <option value="">Aplicar rubro...</option>
+              </select>
+              <select id="prospectImportBulkPotential" aria-label="Aplicar potencial">
+                <option value="">Aplicar potencial...</option>
+                <option value="bajo">Bajo</option>
+                <option value="medio">Medio</option>
+                <option value="alto">Alto</option>
+              </select>
+              <button class="btn ghost btn-xs" type="button" id="prospectImportSelectAll">Seleccionar todos</button>
+              <button class="btn ghost btn-xs" type="button" id="prospectImportExcludeSelected">Excluir seleccionados</button>
+            </div>
+          </div>
+
+          <div class="json-import-table-wrap" id="prospectImportTableWrap">
+            <table class="json-import-table">
+              <thead>
+                <tr>
+                  <th>Sel.</th>
+                  <th>Estado</th>
+                  <th>Negocio</th>
+                  <th>Rubro</th>
+                  <th>Telefono</th>
+                  <th>Direccion</th>
+                  <th>Ciudad/Zona</th>
+                  <th>Lat/Lng</th>
+                  <th>Duplicados</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="prospectImportRows"></tbody>
+            </table>
+          </div>
+
+          <div class="json-import-map-panel hidden" id="prospectImportMapPanel">
+            <div>
+              <strong>Vista previa sobre el Mapa comercial</strong>
+              <span id="prospectImportMapHint">Los pines son temporales y no se guardan hasta confirmar la importacion.</span>
+            </div>
+            <div class="json-import-map-actions">
+              <button class="btn ghost btn-xs" type="button" id="prospectImportFitMap">Ver todos los importados</button>
+              <button class="btn ghost btn-xs" type="button" id="prospectImportBackTable">Volver a tabla</button>
+            </div>
+          </div>
+
+          <div class="json-import-confirm" id="prospectImportConfirm"></div>
+        </section>
+
+        <section class="json-import-result hidden" id="prospectImportResult"></section>
+      </div>
+
+      <footer class="json-import-footer">
+        <div class="json-import-progress" id="prospectImportProgress"></div>
+        <div class="json-import-footer-actions">
+          <button class="btn ghost" type="button" id="prospectImportCancel">Cancelar</button>
+          <button class="btn" type="button" id="prospectImportConfirmBack">Volver a revisar</button>
+          <button class="btn primary" type="button" id="prospectImportPrimary" disabled>Importar prospectos</button>
+        </div>
+      </footer>
+    </section>
+  </div>
+
   <div class="loc-modal" id="locationPickerModal" hidden>
     <div class="loc-modal-backdrop" data-loc-close></div>
     <div class="loc-modal-card">
@@ -1966,7 +2099,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.js"></script>
-  <script type="module" src="app.js?v=20260625-05"></script>
+  <script type="module" src="app.js?v=20260625-06"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

@@ -25,6 +25,18 @@ import {
   formatDuplicateDistance,
   normalizeDuplicatePhone
 } from "./duplicate-detection.mjs";
+import {
+  IMPORT_MAX_RECORDS,
+  IMPORT_SCHEMA_TEMPLATE,
+  IMPORT_SOURCE_LABEL,
+  buildImportSummary,
+  canImportRow,
+  detectImportedFileDuplicates,
+  enrichImportedRowsWithDuplicates,
+  getImportedRowStateCodes,
+  normalizeImportedProspectFile,
+  titleCaseImport
+} from "./prospect-import.mjs";
 
 const firebaseConfig = {
   apiKey: "AIzaSyA0i_qAO6PU3PcS-b-Tp523zoTzmSXzgZ0",
@@ -207,7 +219,9 @@ const prospectIndicators = document.getElementById("prospectIndicators");
 const prospectSelectAll = document.getElementById("prospectSelectAll");
 const clearProspectFiltersBtn = document.getElementById("clearProspectFilters");
 const newProspectBtn = document.getElementById("newProspectBtn");
+const importProspectsBtn = document.getElementById("importProspectsBtn");
 const exportProspectsBtn = document.getElementById("exportProspectsBtn");
+const prospectImportHistory = document.getElementById("prospectImportHistory");
 const prospectBulkbar = document.getElementById("prospectBulkbar");
 const prospectSelectedCount = document.getElementById("prospectSelectedCount");
 const prospectBulkVisitBtn = document.getElementById("prospectBulkVisit");
@@ -241,6 +255,7 @@ const commercialRangeCancel = document.getElementById("commercialRangeCancel");
 const commercialRangeError = document.getElementById("commercialRangeError");
 const commercialPeriodLabel = document.getElementById("commercialPeriodLabel");
 const mapAddProspectBtn = document.getElementById("mapAddProspectBtn");
+const mapImportProspectsBtn = document.getElementById("mapImportProspectsBtn");
 const mapQuickModePanel = document.getElementById("mapQuickModePanel");
 const mapQuickModeText = document.getElementById("mapQuickModeText");
 const mapQuickSessionCount = document.getElementById("mapQuickSessionCount");
@@ -284,6 +299,36 @@ const historySalesChartEmpty = document.getElementById("historySalesChartEmpty")
 const finishedStockList = document.getElementById("finishedStockList");
 const finishedStockAdjustmentHistory = document.getElementById("finishedStockAdjustmentHistory");
 
+const prospectImportModal = document.getElementById("prospectImportModal");
+const prospectImportClose = document.getElementById("prospectImportClose");
+const prospectImportCancel = document.getElementById("prospectImportCancel");
+const prospectImportFile = document.getElementById("prospectImportFile");
+const prospectImportChoose = document.getElementById("prospectImportChoose");
+const prospectImportTemplate = document.getElementById("prospectImportTemplate");
+const prospectImportDropzone = document.getElementById("prospectImportDropzone");
+const prospectImportFileMeta = document.getElementById("prospectImportFileMeta");
+const prospectImportError = document.getElementById("prospectImportError");
+const prospectImportFormat = document.getElementById("prospectImportFormat");
+const prospectImportReview = document.getElementById("prospectImportReview");
+const prospectImportRows = document.getElementById("prospectImportRows");
+const prospectImportSummary = document.getElementById("prospectImportSummary");
+const prospectImportConfirm = document.getElementById("prospectImportConfirm");
+const prospectImportResult = document.getElementById("prospectImportResult");
+const prospectImportProgress = document.getElementById("prospectImportProgress");
+const prospectImportPrimary = document.getElementById("prospectImportPrimary");
+const prospectImportConfirmBack = document.getElementById("prospectImportConfirmBack");
+const prospectImportTableTab = document.getElementById("prospectImportTableTab");
+const prospectImportMapTab = document.getElementById("prospectImportMapTab");
+const prospectImportTableWrap = document.getElementById("prospectImportTableWrap");
+const prospectImportMapPanel = document.getElementById("prospectImportMapPanel");
+const prospectImportFitMap = document.getElementById("prospectImportFitMap");
+const prospectImportBackTable = document.getElementById("prospectImportBackTable");
+const prospectImportBulkRubro = document.getElementById("prospectImportBulkRubro");
+const prospectImportBulkPotential = document.getElementById("prospectImportBulkPotential");
+const prospectImportSelectAll = document.getElementById("prospectImportSelectAll");
+const prospectImportExcludeSelected = document.getElementById("prospectImportExcludeSelected");
+const prospectImportSteps = document.getElementById("prospectImportSteps");
+
 const dueDateField = document.getElementById("dueDateField");
 const saleObservationToggle = document.getElementById("saleObservationToggle");
 const saleObservationField = document.getElementById("saleObservationField");
@@ -307,7 +352,8 @@ const state = {
   financialManualAdjustments: [],
   finishedStockAdjustments: [],
   rawMaterialAdjustments: [],
-  businessTypes: []
+  businessTypes: [],
+  prospectImportSessions: []
 };
 
 let unsubscribers = [];
@@ -5199,10 +5245,32 @@ const renderRawMaterialControlCenter = () => {
 const renderProspectsWorkspace = () => {
   pruneVisitPlannerState();
   renderProspectIndicators();
+  renderProspectImportHistory();
   renderProspectList();
   renderVisitClientList();
   renderVisitList();
   if (visitClientsCount) visitClientsCount.textContent = formatInteger(state.clients.length);
+};
+
+const renderProspectImportHistory = () => {
+  if (!prospectImportHistory) return;
+  const sessions = (state.prospectImportSessions || []).slice(0, 4);
+  if (!sessions.length) {
+    prospectImportHistory.innerHTML = "";
+    return;
+  }
+  prospectImportHistory.innerHTML = `
+    <div class="import-history-row">
+      <div>
+        <strong>Historial de importaciones</strong>
+        <div class="muted">${sessions.map((session) => {
+          const date = session.createdAt?.seconds ? formatDate(new Date(session.createdAt.seconds * 1000).toISOString().slice(0, 10)) : "-";
+          return `${date}: ${escapeHtml(session.fileName || "JSON")} (${formatInteger(session.importedCount || 0)} importados)`;
+        }).join(" · ")}</div>
+      </div>
+      <button class="btn ghost btn-xs" type="button" data-open-import-history>Ver ultimo</button>
+    </div>
+  `;
 };
 
 /* ===================== Panel de control comercial ===================== */
@@ -8924,6 +8992,7 @@ let mapSelectedId = "";
 let mapHoverId = "";
 let mapGeoSearchTimer = null;
 const mapFilterState = { type: "all", city: "", zone: "", business: "", location: "" };
+let commercialMapImportSessionFilter = "";
 const quickMapProspectState = {
   active: false,
   selecting: false,
@@ -8938,6 +9007,20 @@ const quickMapProspectState = {
   preserveFormOnNextPoint: false
 };
 let quickMapProspectMarker = null;
+const prospectImportState = {
+  rows: [],
+  fileName: "",
+  fileSize: 0,
+  metadata: {},
+  selectedRowId: "",
+  step: "file",
+  mode: "table",
+  busy: false,
+  importedIds: [],
+  lastImportSessionId: "",
+  result: null
+};
+let prospectImportPreviewMarkers = [];
 
 const mapToNumber = (value) => {
   if (value === null || value === undefined || value === "") return null;
@@ -9148,6 +9231,650 @@ const renderPreciseMapDuplicateWarning = (duplicates, action) => {
     quickMapProspectState.forceDuplicateSave = true;
     void saveQuickMapProspect(action);
   });
+};
+
+const getProspectImportBusinessOptions = () => getBusinessTypeOptions().map((option) => ({
+  value: option.value,
+  label: option.label
+}));
+
+const getProspectImportExistingRecords = () => {
+  const mapRecord = (record, type) => {
+    const coords = normalizeCoordinates(record);
+    return {
+      id: record.id,
+      type,
+      name: record.name || "Sin nombre",
+      phone: record.phone || "",
+      address: record.address || "",
+      latitude: coords?.lat ?? null,
+      longitude: coords?.lng ?? null
+    };
+  };
+  return [
+    ...state.prospects.map((item) => mapRecord(item, "Prospecto")),
+    ...state.clients.map((item) => mapRecord(item, "Cliente"))
+  ];
+};
+
+const rebuildImportRow = (row, index) => ({
+  businessName: row.name,
+  contactName: row.contactName,
+  phone: row.phone,
+  businessTypeName: row.businessTypeName || row.businessType,
+  address: row.address,
+  city: row.city,
+  zone: row.zone,
+  latitude: row.latitude,
+  longitude: row.longitude,
+  googleMapsUrl: row.mapsLink,
+  potential: row.potential,
+  status: row.status,
+  notes: row.observations,
+  externalId: row.externalId || `row-${index + 1}`
+});
+
+const revalidateImportRows = () => {
+  const selectedMap = new Map(prospectImportState.rows.map((row) => [row.rowId, { selected: row.selected, excluded: row.excluded }]));
+  let rows = prospectImportState.rows.map((row, index) => {
+    const rebuilt = normalizeImportedProspectFile({ prospects: [rebuildImportRow(row, index)] }, {
+      businessTypes: getProspectImportBusinessOptions()
+    }).rows[0];
+    const selection = selectedMap.get(row.rowId) || {};
+    return {
+      ...rebuilt,
+      rowId: row.rowId,
+      selected: selection.selected !== false,
+      excluded: Boolean(selection.excluded),
+      duplicateMatches: []
+    };
+  });
+  rows = detectImportedFileDuplicates(rows);
+  rows = enrichImportedRowsWithDuplicates(rows, getProspectImportExistingRecords());
+  prospectImportState.rows = rows;
+};
+
+const getImportableRows = () => prospectImportState.rows.filter(canImportRow);
+
+const setImportStep = (step) => {
+  prospectImportState.step = step;
+  const labels = Array.from(prospectImportSteps?.querySelectorAll("span") || []);
+  const order = ["file", "validation", "review", "map", "confirm", "result"];
+  const activeIndex = Math.max(0, order.indexOf(step));
+  labels.forEach((label, index) => label.classList.toggle("active", index <= activeIndex));
+};
+
+const setProspectImportError = (message) => {
+  if (prospectImportError) prospectImportError.textContent = message || "";
+};
+
+const setProspectImportProgress = (message) => {
+  if (prospectImportProgress) prospectImportProgress.textContent = message || "";
+};
+
+const resetProspectImportState = () => {
+  clearProspectImportPreviewMarkers();
+  prospectImportState.rows = [];
+  prospectImportState.fileName = "";
+  prospectImportState.fileSize = 0;
+  prospectImportState.metadata = {};
+  prospectImportState.selectedRowId = "";
+  prospectImportState.mode = "table";
+  prospectImportState.busy = false;
+  prospectImportState.importedIds = [];
+  prospectImportState.result = null;
+  prospectImportModal?.classList.remove("is-map-mode");
+  prospectImportReview?.classList.add("hidden");
+  prospectImportResult?.classList.add("hidden");
+  prospectImportFormat?.classList.remove("hidden");
+  if (prospectImportRows) prospectImportRows.innerHTML = "";
+  if (prospectImportFile) prospectImportFile.value = "";
+  if (prospectImportFileMeta) prospectImportFileMeta.textContent = "Sin archivo seleccionado.";
+  if (prospectImportPrimary) {
+    prospectImportPrimary.disabled = true;
+    prospectImportPrimary.textContent = "Importar prospectos";
+  }
+  if (prospectImportConfirmBack) prospectImportConfirmBack.hidden = true;
+  setProspectImportError("");
+  setProspectImportProgress("");
+  setImportStep("file");
+};
+
+const openProspectImportModal = () => {
+  resetProspectImportState();
+  prospectImportModal?.classList.remove("hidden");
+  document.body.classList.add("modal-open");
+  fillBusinessTypeSelect(prospectImportBulkRubro, { includeAll: false });
+  requestAnimationFrame(() => {
+    prospectImportChoose?.focus();
+    refreshIcons();
+  });
+};
+
+const closeProspectImportModal = ({ force = false } = {}) => {
+  if (prospectImportState.busy) return false;
+  if (!force && prospectImportState.rows.length && !window.confirm("Se perderan los cambios realizados en esta importacion.")) return false;
+  resetProspectImportState();
+  prospectImportModal?.classList.add("hidden");
+  document.body.classList.remove("modal-open");
+  return true;
+};
+
+const downloadProspectImportTemplate = () => {
+  const blob = new Blob([JSON.stringify(IMPORT_SCHEMA_TEMPLATE, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "plantilla-prospectos-gami.json";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
+
+const formatFileSize = (size) => {
+  const value = Number(size || 0);
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const loadProspectImportFile = async (file) => {
+  if (!file) return;
+  setProspectImportError("");
+  if (!file.name.toLowerCase().endsWith(".json")) {
+    setProspectImportError("Selecciona un archivo con extension .json.");
+    return;
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    setProspectImportError("El archivo es demasiado grande para este importador inicial.");
+    return;
+  }
+  try {
+    const text = await file.text();
+    if (!text.trim()) {
+      setProspectImportError("El archivo esta vacio.");
+      return;
+    }
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch (error) {
+      setProspectImportError("Este archivo no contiene un JSON valido.");
+      return;
+    }
+    const result = normalizeImportedProspectFile(json, {
+      businessTypes: getProspectImportBusinessOptions(),
+      existingRecords: getProspectImportExistingRecords(),
+      maxRecords: IMPORT_MAX_RECORDS
+    });
+    if (!result.ok) {
+      setProspectImportError(result.error || "Este archivo no contiene prospectos validos.");
+      return;
+    }
+    prospectImportState.rows = result.rows;
+    prospectImportState.fileName = file.name;
+    prospectImportState.fileSize = file.size;
+    prospectImportState.metadata = result.metadata || {};
+    if (prospectImportFileMeta) {
+      prospectImportFileMeta.textContent = `${file.name} - ${formatFileSize(file.size)} - ${result.rows.length} registros detectados`;
+    }
+    prospectImportReview?.classList.remove("hidden");
+    prospectImportFormat?.classList.add("hidden");
+    prospectImportResult?.classList.add("hidden");
+    setImportStep("review");
+    renderProspectImport();
+  } catch (error) {
+    console.error("No se pudo leer JSON:", error);
+    setProspectImportError("Este archivo no contiene un JSON valido.");
+  }
+};
+
+const IMPORT_STATE_LABELS = {
+  ready: "Listo para importar",
+  missing: "Falta informacion",
+  "invalid-coordinates": "Coordenadas invalidas",
+  duplicate: "Posible duplicado",
+  "new-business-type": "Rubro nuevo",
+  "file-duplicate": "Registro repetido dentro del archivo",
+  excluded: "Excluido por el usuario"
+};
+
+const renderImportBadges = (row) => {
+  const states = getImportedRowStateCodes(row);
+  return `<div class="json-import-badges">${states.map((stateCode) => (
+    `<span class="json-import-badge ${stateCode}">${IMPORT_STATE_LABELS[stateCode] || stateCode}</span>`
+  )).join("")}</div>`;
+};
+
+const renderImportDuplicates = (row) => {
+  const existing = (row.duplicateMatches || []).slice(0, 3).map((match) => `
+    <small><b>${escapeHtml(match.name)}</b> · ${escapeHtml(match.type)}${Number.isFinite(match.distance) ? ` · ${escapeHtml(formatDuplicateDistance(match.distance))}` : ""}<br>${escapeHtml((match.reasons || []).join(", "))}</small>
+  `).join("");
+  const inFile = (row.fileDuplicateMatches || []).slice(0, 2).map((match) => `
+    <small><b>${escapeHtml(match.name)}</b> · archivo${Number.isFinite(match.distance) ? ` · ${escapeHtml(formatDuplicateDistance(match.distance))}` : ""}<br>${escapeHtml((match.reasons || []).join(", "))}</small>
+  `).join("");
+  return `<div class="json-import-duplicate-list">${existing || inFile ? existing + inFile : '<span class="muted">-</span>'}</div>`;
+};
+
+const buildImportBusinessTypeOptionsHtml = (row) => {
+  const options = getBusinessTypeOptions();
+  let html = '<option value="">Sin rubro</option>';
+  html += options.map((option) => `<option value="${escapeHtml(option.value)}"${option.value === row.businessType ? " selected" : ""}>${escapeHtml(option.label)}</option>`).join("");
+  if (row.businessType && !options.some((option) => option.value === row.businessType)) {
+    html += `<option value="${escapeHtml(row.businessType)}" selected>${escapeHtml(row.businessTypeName || titleCaseImport(row.businessType))} (nuevo)</option>`;
+  }
+  return html;
+};
+
+const renderProspectImportRows = () => {
+  if (!prospectImportRows) return;
+  if (!prospectImportState.rows.length) {
+    prospectImportRows.innerHTML = '<tr><td colspan="10">Sin registros para revisar.</td></tr>';
+    return;
+  }
+  prospectImportRows.innerHTML = prospectImportState.rows.map((row) => `
+    <tr data-import-row="${escapeHtml(row.rowId)}" class="${row.rowId === prospectImportState.selectedRowId ? "is-selected" : ""}">
+      <td data-label="Sel."><input type="checkbox" data-import-field="selected" ${row.selected && !row.excluded ? "checked" : ""} /></td>
+      <td data-label="Estado">${renderImportBadges(row)}</td>
+      <td data-label="Negocio"><input data-import-field="name" value="${escapeHtml(row.name)}" /></td>
+      <td data-label="Rubro"><select data-import-field="businessType">${buildImportBusinessTypeOptionsHtml(row)}</select></td>
+      <td data-label="Telefono"><input data-import-field="phone" value="${escapeHtml(row.phone)}" /></td>
+      <td data-label="Direccion"><textarea data-import-field="address">${escapeHtml(row.address)}</textarea></td>
+      <td data-label="Ciudad/Zona">
+        <input data-import-field="city" value="${escapeHtml(row.city)}" placeholder="Ciudad" />
+        <input data-import-field="zone" value="${escapeHtml(row.zone)}" placeholder="Zona" />
+      </td>
+      <td data-label="Lat/Lng">
+        <input data-import-field="latitude" value="${row.latitude ?? ""}" inputmode="decimal" />
+        <input data-import-field="longitude" value="${row.longitude ?? ""}" inputmode="decimal" />
+      </td>
+      <td data-label="Duplicados">${renderImportDuplicates(row)}</td>
+      <td data-label="Acciones">
+        <div class="json-import-row-actions">
+          <button class="btn ghost btn-xs" type="button" data-import-row-map="${escapeHtml(row.rowId)}">Mapa</button>
+          <button class="btn ghost btn-xs" type="button" data-import-row-toggle="${escapeHtml(row.rowId)}">${row.excluded || !row.selected ? "Incluir" : "Excluir"}</button>
+        </div>
+      </td>
+    </tr>
+  `).join("");
+};
+
+const renderProspectImportSummary = () => {
+  if (!prospectImportSummary) return;
+  const summary = buildImportSummary(prospectImportState.rows);
+  const stats = [
+    ["Totales", summary.total],
+    ["Listos", summary.importable],
+    ["Excluidos", summary.excluded],
+    ["Con errores", summary.errors],
+    ["Duplicados", summary.duplicates + summary.fileDuplicates],
+    ["Rubros nuevos", summary.newBusinessTypes],
+    ["Sin telefono", summary.withoutPhone],
+    ["Sin direccion", summary.withoutAddress]
+  ];
+  prospectImportSummary.innerHTML = stats.map(([label, value]) => `
+    <div class="json-import-stat"><strong>${formatInteger(value)}</strong><span>${escapeHtml(label)}</span></div>
+  `).join("");
+  if (prospectImportPrimary) {
+    prospectImportPrimary.disabled = prospectImportState.busy || summary.importable <= 0 || summary.errors > 0;
+    prospectImportPrimary.textContent = prospectImportState.step === "confirm"
+      ? "Confirmar importacion"
+      : `Importar ${formatInteger(summary.importable)} prospecto${summary.importable === 1 ? "" : "s"}`;
+  }
+  if (prospectImportConfirm) {
+    prospectImportConfirm.innerHTML = `
+      <strong>Resumen antes de importar</strong>
+      <p>Se crearan ${formatInteger(summary.importable)} prospectos. ${summary.newBusinessTypes ? `Se crearan ${formatInteger(summary.newBusinessTypes)} rubros nuevos confirmados en esta vista previa.` : "No hay rubros nuevos pendientes."}</p>
+      <p>${summary.duplicates + summary.fileDuplicates ? "Hay posibles duplicados aceptados para revisar antes de confirmar." : "No hay duplicados marcados en las filas importables."}</p>
+    `;
+  }
+};
+
+const renderProspectImport = () => {
+  revalidateImportRows();
+  renderProspectImportSummary();
+  renderProspectImportRows();
+  renderProspectImportPreviewMarkers();
+  refreshIcons();
+};
+
+const clearProspectImportPreviewMarkers = () => {
+  prospectImportPreviewMarkers.forEach((marker) => marker.remove());
+  prospectImportPreviewMarkers = [];
+};
+
+const highlightImportRow = (rowId) => {
+  prospectImportState.selectedRowId = rowId || "";
+  document.querySelectorAll("[data-import-row]").forEach((rowEl) => {
+    rowEl.classList.toggle("is-selected", rowEl.dataset.importRow === rowId);
+  });
+  prospectImportPreviewMarkers.forEach((marker) => {
+    marker.getElement().classList.toggle("is-selected", marker._importRowId === rowId);
+  });
+};
+
+const renderProspectImportPreviewMarkers = () => {
+  clearProspectImportPreviewMarkers();
+  if (prospectImportState.mode !== "map") return;
+  if (!commercialMap || !window.maplibregl) return;
+  getImportableRows().forEach((row) => {
+    if (!Number.isFinite(Number(row.latitude)) || !Number.isFinite(Number(row.longitude))) return;
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "json-import-preview-pin";
+    el.setAttribute("aria-label", `Vista previa: ${row.name}`);
+    el.addEventListener("click", () => {
+      highlightImportRow(row.rowId);
+      const popup = new maplibregl.Popup({ offset: 28 })
+        .setLngLat([Number(row.longitude), Number(row.latitude)])
+        .setHTML(`
+          <strong>${escapeHtml(row.name)}</strong>
+          <div>${escapeHtml(row.businessTypeName || getBusinessTypeLabel(row.businessType) || "Sin rubro")}</div>
+          <div>${escapeHtml(row.address || row.city || "")}</div>
+          <div>${renderImportBadges(row)}</div>
+          <button class="btn ghost btn-xs" type="button" data-import-popup-edit="${escapeHtml(row.rowId)}">Editar</button>
+          <button class="btn ghost btn-xs" type="button" data-import-popup-exclude="${escapeHtml(row.rowId)}">Excluir</button>
+        `)
+        .addTo(commercialMap);
+      popup.getElement()?.addEventListener("click", (event) => {
+        const edit = event.target.closest("[data-import-popup-edit]");
+        const exclude = event.target.closest("[data-import-popup-exclude]");
+        if (edit) {
+          showProspectImportTable();
+          document.querySelector(`[data-import-row="${CSS.escape(row.rowId)}"]`)?.scrollIntoView({ block: "center" });
+        }
+        if (exclude) {
+          const target = prospectImportState.rows.find((item) => item.rowId === row.rowId);
+          if (target) {
+            target.selected = false;
+            target.excluded = true;
+            renderProspectImport();
+          }
+          popup.remove();
+        }
+      });
+    });
+    const marker = new maplibregl.Marker({ element: el, anchor: "bottom" })
+      .setLngLat([Number(row.longitude), Number(row.latitude)])
+      .addTo(commercialMap);
+    marker._importRowId = row.rowId;
+    prospectImportPreviewMarkers.push(marker);
+  });
+};
+
+const fitProspectImportPreview = () => {
+  if (!commercialMap) return;
+  const located = getImportableRows().filter((row) => Number.isFinite(Number(row.latitude)) && Number.isFinite(Number(row.longitude)));
+  if (!located.length) return;
+  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+  located.forEach((row) => {
+    const lng = Number(row.longitude);
+    const lat = Number(row.latitude);
+    minLng = Math.min(minLng, lng);
+    maxLng = Math.max(maxLng, lng);
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+  });
+  commercialMap.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 80, maxZoom: 15, duration: getMapPrefersReduced() ? 0 : 900 });
+};
+
+const showProspectImportMap = () => {
+  if (!prospectImportState.rows.length) return;
+  prospectImportState.mode = "map";
+  setImportStep("map");
+  setActiveAppSection("map");
+  prospectImportModal?.classList.add("is-map-mode");
+  prospectImportTableTab?.classList.remove("active");
+  prospectImportMapTab?.classList.add("active");
+  prospectImportTableWrap?.classList.add("hidden");
+  prospectImportMapPanel?.classList.remove("hidden");
+  ensureCommercialMap();
+  window.setTimeout(() => {
+    resizeCommercialMap(0);
+    renderProspectImportPreviewMarkers();
+    fitProspectImportPreview();
+  }, 260);
+};
+
+const showProspectImportTable = () => {
+  prospectImportState.mode = "table";
+  setImportStep(prospectImportState.step === "confirm" ? "confirm" : "review");
+  prospectImportModal?.classList.remove("is-map-mode");
+  prospectImportTableTab?.classList.add("active");
+  prospectImportMapTab?.classList.remove("active");
+  prospectImportTableWrap?.classList.remove("hidden");
+  prospectImportMapPanel?.classList.add("hidden");
+  clearProspectImportPreviewMarkers();
+};
+
+const updateImportRowField = (rowId, field, value) => {
+  const row = prospectImportState.rows.find((item) => item.rowId === rowId);
+  if (!row) return;
+  if (field === "selected") {
+    row.selected = Boolean(value);
+    row.excluded = !row.selected;
+  } else if (field === "businessType") {
+    row.businessType = normalizeRubroKey(value);
+    row.businessTypeName = row.businessType ? getBusinessTypeLabel(row.businessType) : "";
+    const exists = getBusinessTypeOptions().some((option) => option.value === row.businessType);
+    row.businessTypeIsNew = Boolean(row.businessType && !exists);
+  } else if (field === "latitude" || field === "longitude") {
+    const parsed = String(value || "").trim();
+    row[field] = parsed === "" ? null : parsed;
+  } else {
+    row[field] = value;
+  }
+  renderProspectImport();
+};
+
+const setProspectImportBusy = (busy) => {
+  prospectImportState.busy = Boolean(busy);
+  prospectImportModal?.querySelectorAll("button, input, select, textarea").forEach((el) => {
+    if (el.id === "prospectImportCancel") return;
+    el.disabled = Boolean(busy);
+  });
+};
+
+const buildImportedProspectPayload = (row, importSessionId) => {
+  const mapsLink = row.mapsLink || buildMapsLinkFromCoords(row.latitude, row.longitude);
+  return {
+    name: row.name,
+    contactName: row.contactName || "",
+    phone: normalizeProspectPhone(row.phone || ""),
+    city: row.city || "",
+    zone: row.zone || "",
+    address: row.address || "",
+    businessType: normalizeRubroKey(row.businessType || ""),
+    status: normalizeOptionValue(PROSPECT_STATUS_OPTIONS, row.status, "nuevo"),
+    potential: normalizeOptionValue(PROSPECT_POTENTIAL_OPTIONS, row.potential),
+    observations: row.observations || "",
+    nextAction: "",
+    nextActionDate: "",
+    latitude: Number(row.latitude),
+    longitude: Number(row.longitude),
+    mapsLink,
+    source: IMPORT_SOURCE_LABEL,
+    importSessionId,
+    externalImportId: row.externalId || ""
+  };
+};
+
+const createImportBatches = async ({ rows, businessTypesToCreate, importSessionId }) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error("auth");
+  const importedProspectIds = [];
+  const operations = [];
+  businessTypesToCreate.forEach((type) => {
+    const ref = doc(collection(db, "businessTypes"), rubroDocId(type.key));
+    operations.push({ ref, data: {
+      name: type.label,
+      normalizedName: type.key,
+      description: "Creado durante importacion JSON de prospectos.",
+      isActive: true,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    } });
+  });
+  rows.forEach((row) => {
+    const ref = doc(collection(db, "prospects"));
+    importedProspectIds.push(ref.id);
+    operations.push({ ref, data: {
+      ...buildImportedProspectPayload(row, importSessionId),
+      userId: user.uid,
+      userEmail: user.email || "",
+      userName: user.displayName || "",
+      createdAt: serverTimestamp()
+    } });
+  });
+  const sessionRef = doc(db, "prospect_import_sessions", importSessionId);
+  operations.push({ ref: sessionRef, data: {
+    importSessionId,
+    fileName: prospectImportState.fileName,
+    source: IMPORT_SOURCE_LABEL,
+    importedCount: rows.length,
+    skippedCount: prospectImportState.rows.length - rows.length,
+    errorCount: prospectImportState.rows.filter((row) => (row.errors || []).length).length,
+    createdRubricCount: businessTypesToCreate.length,
+    duplicateAcceptedCount: rows.filter((row) => (row.duplicateMatches || []).length || (row.fileDuplicateMatches || []).length).length,
+    status: "completed",
+    createdBy: user.uid,
+    createdByEmail: user.email || "",
+    createdAt: serverTimestamp(),
+    importedProspectIds
+  } });
+
+  const chunkSize = 450;
+  for (let i = 0; i < operations.length; i += chunkSize) {
+    const batch = writeBatch(db);
+    operations.slice(i, i + chunkSize).forEach((op) => batch.set(op.ref, op.data));
+    await batch.commit();
+  }
+  return importedProspectIds;
+};
+
+const confirmProspectImport = async () => {
+  if (prospectImportState.step !== "confirm") {
+    setImportStep("confirm");
+    prospectImportConfirmBack.hidden = false;
+    renderProspectImportSummary();
+    return;
+  }
+  const rows = getImportableRows();
+  if (!rows.length) return;
+  const newTypeMap = new Map();
+  rows.forEach((row) => {
+    if (!row.businessTypeIsNew || !row.businessType) return;
+    newTypeMap.set(row.businessType, { key: row.businessType, label: row.businessTypeName || titleCaseImport(row.businessType) });
+  });
+  const importSessionId = `import_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const startedAt = performance.now();
+  setProspectImportBusy(true);
+  setProspectImportProgress("Preparando datos...");
+  try {
+    setProspectImportProgress(newTypeMap.size ? "Creando rubros..." : "Guardando prospectos...");
+    const importedIds = await createImportBatches({
+      rows,
+      businessTypesToCreate: Array.from(newTypeMap.values()),
+      importSessionId
+    });
+    prospectImportState.importedIds = importedIds;
+    prospectImportState.lastImportSessionId = importSessionId;
+    prospectImportState.result = {
+      importedCount: importedIds.length,
+      skippedCount: prospectImportState.rows.length - rows.length,
+      errorCount: prospectImportState.rows.filter((row) => (row.errors || []).length).length,
+      createdRubricCount: newTypeMap.size,
+      duplicateAcceptedCount: rows.filter((row) => (row.duplicateMatches || []).length || (row.fileDuplicateMatches || []).length).length,
+      durationMs: Math.round(performance.now() - startedAt)
+    };
+    setProspectImportProgress("Importacion finalizada.");
+    setImportStep("result");
+    prospectImportReview?.classList.add("hidden");
+    prospectImportResult?.classList.remove("hidden");
+    clearProspectImportPreviewMarkers();
+    renderProspectImportResult();
+  } catch (error) {
+    console.error("No se pudo importar JSON:", error);
+    setProspectImportProgress("");
+    setProspectImportError("No se pudo completar la importacion. Los datos siguen disponibles para reintentar.");
+  } finally {
+    setProspectImportBusy(false);
+  }
+};
+
+const renderProspectImportResult = () => {
+  if (!prospectImportResult) return;
+  const result = prospectImportState.result || {};
+  prospectImportResult.innerHTML = `
+    <strong>Importacion finalizada</strong>
+    <div class="json-import-summary">
+      <div class="json-import-stat"><strong>${formatInteger(result.importedCount || 0)}</strong><span>Prospectos creados</span></div>
+      <div class="json-import-stat"><strong>${formatInteger(result.skippedCount || 0)}</strong><span>Omitidos</span></div>
+      <div class="json-import-stat"><strong>${formatInteger(result.errorCount || 0)}</strong><span>Con error</span></div>
+      <div class="json-import-stat"><strong>${formatInteger(result.createdRubricCount || 0)}</strong><span>Rubros creados</span></div>
+      <div class="json-import-stat"><strong>${formatInteger(result.duplicateAcceptedCount || 0)}</strong><span>Duplicados aceptados</span></div>
+      <div class="json-import-stat"><strong>${((result.durationMs || 0) / 1000).toFixed(1)}s</strong><span>Duracion</span></div>
+    </div>
+    <div class="json-import-row-actions">
+      <button class="btn ghost" type="button" data-import-result-prospects>Ver prospectos importados</button>
+      <button class="btn primary" type="button" data-import-result-map>Ver en Mapa comercial</button>
+      <button class="btn ghost" type="button" data-import-result-errors>Descargar informe de errores</button>
+      <button class="btn ghost" type="button" data-import-result-close>Cerrar</button>
+    </div>
+  `;
+  if (prospectImportPrimary) prospectImportPrimary.disabled = true;
+};
+
+const downloadProspectImportErrorReport = () => {
+  const report = {
+    fileName: prospectImportState.fileName,
+    generatedAt: new Date().toISOString(),
+    rows: prospectImportState.rows.map((row) => ({
+      externalId: row.externalId,
+      name: row.name,
+      selected: row.selected && !row.excluded,
+      errors: row.errors,
+      warnings: row.warnings,
+      duplicates: row.duplicateMatches,
+      fileDuplicates: row.fileDuplicateMatches
+    }))
+  };
+  const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "informe-importacion-prospectos.json";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
+
+const showImportedProspectsOnMap = () => {
+  const sessionId = prospectImportState.lastImportSessionId;
+  if (!sessionId) return;
+  commercialMapImportSessionFilter = sessionId;
+  setActiveAppSection("map");
+  closeProspectImportModal({ force: true });
+  window.setTimeout(() => {
+    refreshCommercialMap();
+    const located = commercialMapEntities.filter((entity) => entity.importSessionId === sessionId && entity.hasLocation);
+    if (commercialMap && located.length) {
+      let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+      located.forEach((e) => {
+        minLng = Math.min(minLng, e.longitude);
+        maxLng = Math.max(maxLng, e.longitude);
+        minLat = Math.min(minLat, e.latitude);
+        maxLat = Math.max(maxLat, e.latitude);
+      });
+      commercialMap.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 80, maxZoom: 15, duration: getMapPrefersReduced() ? 0 : 900 });
+    }
+    showQuickMapToast("Mostrando prospectos importados.", "Quitar filtro", () => {
+      commercialMapImportSessionFilter = "";
+      refreshCommercialMap();
+    });
+  }, 700);
 };
 
 const setMapProspectBusy = (busy) => {
@@ -9438,6 +10165,7 @@ const buildCommercialMapEntities = () => {
       longitude: coords ? coords.lng : null,
       hasLocation: Boolean(coords),
       nextVisitDate: normalizeDateValue(raw.nextActionDate || "") || "",
+      importSessionId: raw.importSessionId || "",
       sourceCollection: entityType === "client" ? "clients" : "prospects",
       sourceDocumentId: raw.id,
       ...status
@@ -9459,6 +10187,7 @@ const applyMapFilters = (entities) => entities.filter((e) => {
   if (f.business && normalizeText(e.businessType) !== normalizeText(f.business)) return false;
   if (f.location === "with" && !e.hasLocation) return false;
   if (f.location === "without" && e.hasLocation) return false;
+  if (commercialMapImportSessionFilter && e.importSessionId !== commercialMapImportSessionFilter) return false;
   return true;
 });
 
@@ -9479,6 +10208,7 @@ const commercialEntitiesToGeoJSON = (entities) => ({
       lastPurchaseDate: e.lastPurchaseDate || "",
       expectedRepurchaseDate: e.expectedRepurchaseDate || "",
       daysLate: e.daysLate ?? 0,
+      importSessionId: e.importSessionId || "",
       sourceCollection: e.sourceCollection,
       sourceDocumentId: e.sourceDocumentId
     }
@@ -10241,6 +10971,136 @@ const setupRubroModal = () => {
   });
 };
 
+const setupProspectImport = () => {
+  importProspectsBtn?.addEventListener("click", openProspectImportModal);
+  mapImportProspectsBtn?.addEventListener("click", openProspectImportModal);
+  prospectImportChoose?.addEventListener("click", () => prospectImportFile?.click());
+  prospectImportTemplate?.addEventListener("click", downloadProspectImportTemplate);
+  prospectImportFile?.addEventListener("change", () => {
+    void loadProspectImportFile(prospectImportFile.files?.[0]);
+  });
+  prospectImportClose?.addEventListener("click", () => closeProspectImportModal());
+  prospectImportCancel?.addEventListener("click", () => closeProspectImportModal());
+  document.getElementById("prospectImportBackdrop")?.addEventListener("click", () => closeProspectImportModal());
+  prospectImportDropzone?.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    prospectImportDropzone.classList.add("is-dragover");
+  });
+  prospectImportDropzone?.addEventListener("dragleave", () => prospectImportDropzone.classList.remove("is-dragover"));
+  prospectImportDropzone?.addEventListener("drop", (event) => {
+    event.preventDefault();
+    prospectImportDropzone.classList.remove("is-dragover");
+    void loadProspectImportFile(event.dataTransfer?.files?.[0]);
+  });
+  prospectImportRows?.addEventListener("change", (event) => {
+    const rowEl = event.target.closest("[data-import-row]");
+    const field = event.target.dataset.importField;
+    if (!rowEl || !field) return;
+    updateImportRowField(rowEl.dataset.importRow, field, field === "selected" ? event.target.checked : event.target.value);
+  });
+  prospectImportRows?.addEventListener("input", (event) => {
+    const field = event.target.dataset.importField;
+    if (!field || field === "selected" || field === "businessType") return;
+    window.clearTimeout(event.target._importInputTimer);
+    event.target._importInputTimer = window.setTimeout(() => {
+      const rowEl = event.target.closest("[data-import-row]");
+      if (rowEl) updateImportRowField(rowEl.dataset.importRow, field, event.target.value);
+    }, 300);
+  });
+  prospectImportRows?.addEventListener("click", (event) => {
+    const toggle = event.target.closest("[data-import-row-toggle]");
+    const mapBtn = event.target.closest("[data-import-row-map]");
+    if (toggle) {
+      const row = prospectImportState.rows.find((item) => item.rowId === toggle.dataset.importRowToggle);
+      if (row) {
+        const include = row.excluded || !row.selected;
+        row.selected = include;
+        row.excluded = !include;
+        renderProspectImport();
+      }
+      return;
+    }
+    if (mapBtn) {
+      const rowId = mapBtn.dataset.importRowMap;
+      highlightImportRow(rowId);
+      showProspectImportMap();
+      const row = prospectImportState.rows.find((item) => item.rowId === rowId);
+      if (commercialMap && row && Number.isFinite(Number(row.latitude)) && Number.isFinite(Number(row.longitude))) {
+        window.setTimeout(() => commercialMap.flyTo({ center: [Number(row.longitude), Number(row.latitude)], zoom: 16, essential: true }), 350);
+      }
+    }
+  });
+  prospectImportTableTab?.addEventListener("click", showProspectImportTable);
+  prospectImportMapTab?.addEventListener("click", showProspectImportMap);
+  prospectImportBackTable?.addEventListener("click", showProspectImportTable);
+  prospectImportFitMap?.addEventListener("click", fitProspectImportPreview);
+  prospectImportSelectAll?.addEventListener("click", () => {
+    const shouldSelect = prospectImportState.rows.some((row) => !row.selected || row.excluded);
+    prospectImportState.rows.forEach((row) => {
+      row.selected = shouldSelect;
+      row.excluded = !shouldSelect;
+    });
+    renderProspectImport();
+  });
+  prospectImportExcludeSelected?.addEventListener("click", () => {
+    prospectImportState.rows.forEach((row) => {
+      if (row.selected && !row.excluded) {
+        row.selected = false;
+        row.excluded = true;
+      }
+    });
+    renderProspectImport();
+  });
+  prospectImportBulkRubro?.addEventListener("change", () => {
+    const value = prospectImportBulkRubro.value;
+    if (!value) return;
+    prospectImportState.rows.forEach((row) => {
+      if (row.selected && !row.excluded) {
+        row.businessType = normalizeRubroKey(value);
+        row.businessTypeName = getBusinessTypeLabel(value);
+      }
+    });
+    prospectImportBulkRubro.value = "";
+    renderProspectImport();
+  });
+  prospectImportBulkPotential?.addEventListener("change", () => {
+    const value = prospectImportBulkPotential.value;
+    if (!value) return;
+    prospectImportState.rows.forEach((row) => {
+      if (row.selected && !row.excluded) row.potential = value;
+    });
+    prospectImportBulkPotential.value = "";
+    renderProspectImport();
+  });
+  prospectImportPrimary?.addEventListener("click", () => { void confirmProspectImport(); });
+  prospectImportConfirmBack?.addEventListener("click", () => {
+    prospectImportConfirmBack.hidden = true;
+    setImportStep("review");
+    renderProspectImportSummary();
+  });
+  prospectImportResult?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-import-result-prospects]")) {
+      setActiveAppSection("prospects");
+      closeProspectImportModal({ force: true });
+    }
+    if (event.target.closest("[data-import-result-map]")) showImportedProspectsOnMap();
+    if (event.target.closest("[data-import-result-errors]")) downloadProspectImportErrorReport();
+    if (event.target.closest("[data-import-result-close]")) closeProspectImportModal({ force: true });
+  });
+  prospectImportHistory?.addEventListener("click", (event) => {
+    if (!event.target.closest("[data-open-import-history]")) return;
+    const session = state.prospectImportSessions?.[0];
+    if (!session?.importSessionId) return;
+    commercialMapImportSessionFilter = session.importSessionId;
+    setActiveAppSection("map");
+    refreshCommercialMap();
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !prospectImportModal?.classList.contains("hidden")) closeProspectImportModal();
+  });
+};
+
+setupProspectImport();
 setupCommercialMap();
 setupLocationPicker();
 setupRubroModal();
@@ -10270,6 +11130,7 @@ onAuthStateChanged(auth, (user) => {
   listenCollection("finished_stock_adjustments", "finishedStockAdjustments");
   listenCollection("raw_material_adjustments", "rawMaterialAdjustments");
   listenCollection("businessTypes", "businessTypes");
+  listenCollection("prospect_import_sessions", "prospectImportSessions");
 }, (error) => {
   console.error("[auth] observer error", error);
   setAuthFeedback(getAuthMessage(error), "error");
