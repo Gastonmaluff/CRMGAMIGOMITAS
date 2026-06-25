@@ -57,9 +57,9 @@ const sidebarBackdrop = document.getElementById("sidebarBackdrop");
 const SIDEBAR_COLLAPSED_KEY = "gg_sidebar_collapsed";
 const sidebarLinks = document.querySelectorAll(".sidebar-link[data-app-section]");
 const APP_SECTION_CONFIG = {
-  dashboard: { tab: "production", collapses: [], label: "Dashboard" },
-  sales: { tab: "sales", collapses: ["salesSection", "salesGoalSection", "coverageSection"], label: "Ventas" },
-  clients: { tab: "sales", collapses: ["clientsSection"], label: "Clientes" },
+  dashboard: { tab: "production", collapses: [], label: "Panel de control" },
+  sales: { tab: "sales", collapses: ["salesFormSection", "salesHistorySection", "salesGoalSection", "coverageSection"], label: "Ventas" },
+  clients: { tab: "sales", collapses: ["clientFormSection", "clientListSection"], label: "Clientes" },
   prospects: { tab: "sales", collapses: ["prospectsSection"], label: "Prospectos" },
   repurchase: { tab: "sales", collapses: ["repurchaseSection"], label: "Recompra de clientes" },
   map: { tab: "sales", collapses: [], label: "Mapa comercial" },
@@ -135,6 +135,8 @@ const productForm = document.getElementById("productForm");
 const clientForm = document.getElementById("clientForm");
 const prospectForm = document.getElementById("prospectForm");
 const prospectCancelEdit = document.getElementById("prospectCancelEdit");
+const prospectCancelForm = document.getElementById("prospectCancelForm");
+const prospectCloseForm = document.getElementById("prospectCloseForm");
 const saleForm = document.getElementById("saleForm");
 const saleSubmitButton = saleForm?.querySelector('button[type="submit"]');
 const saleCreditCheckbox = document.getElementById("saleCredit");
@@ -179,6 +181,9 @@ const stockRecipeSelect = document.getElementById("stockRecipeSelect");
 const rawMaterialAdjustmentHistory = document.getElementById("rawMaterialAdjustmentHistory");
 const productList = document.getElementById("productList");
 const clientList = document.getElementById("clientList");
+const clientListCount = document.getElementById("clientListCount");
+const clientListSearch = document.getElementById("clientListSearch");
+const clientListClearFilters = document.getElementById("clientListClearFilters");
 const prospectList = document.getElementById("prospectList");
 const prospectSearch = document.getElementById("prospectSearch");
 const prospectCityFilter = document.getElementById("prospectCityFilter");
@@ -206,6 +211,29 @@ const visitClientsBody = document.getElementById("visitClientsBody");
 const visitClientsCount = document.getElementById("visitClientsCount");
 const prospectFormHeading = document.getElementById("prospectFormHeading");
 const saleList = document.getElementById("saleList");
+const salesHistoryCount = document.getElementById("salesHistoryCount");
+const salesHistoryTotal = document.getElementById("salesHistoryTotal");
+const salesHistoryPeriodSelector = document.getElementById("salesHistoryPeriodSelector");
+const salesHistoryRangePanel = document.getElementById("salesHistoryRangePanel");
+const salesHistoryRangeFrom = document.getElementById("salesHistoryRangeFrom");
+const salesHistoryRangeTo = document.getElementById("salesHistoryRangeTo");
+const salesHistoryRangeApply = document.getElementById("salesHistoryRangeApply");
+const salesHistoryRangeClear = document.getElementById("salesHistoryRangeClear");
+const salesHistoryRangeCancel = document.getElementById("salesHistoryRangeCancel");
+const salesHistoryRangeError = document.getElementById("salesHistoryRangeError");
+const salesHistoryPeriodLabel = document.getElementById("salesHistoryPeriodLabel");
+const salesHistorySearch = document.getElementById("salesHistorySearch");
+const salesHistoryPaymentFilter = document.getElementById("salesHistoryPaymentFilter");
+const salesHistoryCreditFilter = document.getElementById("salesHistoryCreditFilter");
+const salesHistoryClearFilters = document.getElementById("salesHistoryClearFilters");
+const commercialRangePanel = document.getElementById("commercialRangePanel");
+const commercialRangeFrom = document.getElementById("commercialRangeFrom");
+const commercialRangeTo = document.getElementById("commercialRangeTo");
+const commercialRangeApply = document.getElementById("commercialRangeApply");
+const commercialRangeClear = document.getElementById("commercialRangeClear");
+const commercialRangeCancel = document.getElementById("commercialRangeCancel");
+const commercialRangeError = document.getElementById("commercialRangeError");
+const commercialPeriodLabel = document.getElementById("commercialPeriodLabel");
 const repurchaseList = document.getElementById("repurchaseList");
 const repurchaseSummary = document.getElementById("repurchaseSummary");
 const salesCoverageSection = document.getElementById("coverageSection");
@@ -278,6 +306,19 @@ const prospectFiltersState = {
   potential: "",
   location: ""
 };
+const salesHistoryState = {
+  period: "month",
+  customStart: "",
+  customEnd: "",
+  search: "",
+  payment: "",
+  credit: ""
+};
+const clientListState = {
+  search: ""
+};
+const saleDetailOpenState = new Set();
+const prospectDetailOpenState = new Set();
 const visitPlannerState = {
   selectedKeys: new Set(),
   activeKeys: []
@@ -1393,6 +1434,13 @@ const addDaysToDateValue = (dateValue, daysToAdd) => {
   const result = new Date(year, month - 1, day);
   result.setDate(result.getDate() + days);
   return toDateInputValue(result);
+};
+
+const formatIsoDateLabel = (value) => {
+  const normalized = normalizeDateValue(value);
+  const [year, month, day] = String(normalized || "").split("-");
+  if (!year || !month || !day) return "";
+  return `${day}/${month}/${year}`;
 };
 
 const normalizeDateValue = (value) => {
@@ -4709,7 +4757,7 @@ const renderProspectList = () => {
   if (!prospectList) return;
   const prospects = getFilteredProspects();
   if (!prospects.length) {
-    prospectList.innerHTML = '<tr class="empty-row"><td colspan="13">Sin prospectos para los filtros actuales.</td></tr>';
+    prospectList.innerHTML = '<tr class="empty-row"><td colspan="10">Sin prospectos para los filtros actuales.</td></tr>';
     syncProspectSelectAll();
     return;
   }
@@ -4722,30 +4770,43 @@ const renderProspectList = () => {
     const whatsappLink = buildWhatsAppLink(item.phone, item.name);
     const nextAction = item.nextAction ? escapeHtml(item.nextAction) : '<span class="muted">-</span>';
     const nextDate = item.nextActionDate ? formatDate(item.nextActionDate) : '<span class="muted">-</span>';
+    const isDetailOpen = prospectDetailOpenState.has(item.id);
     const locCell = mapsUrl
       ? `<a class="table-loc-link" href="${escapeHtml(mapsUrl)}" target="_blank" rel="noopener noreferrer" title="Abrir en Google Maps"><i data-lucide="map-pin"></i></a>`
       : '<span class="muted" title="Sin ubicacion">-</span>';
     return `
       <tr class="prospect-row ${selected ? "is-selected" : ""}" data-prospect-id="${item.id}">
-        <td class="col-check"><input type="checkbox" data-visit-select="prospect" data-visit-id="${item.id}" ${selected ? "checked" : ""} aria-label="Seleccionar prospecto" /></td>
-        <td class="cell-strong">${escapeHtml(item.name || "Sin nombre")}</td>
-        <td>${item.contactName ? escapeHtml(item.contactName) : '<span class="muted">-</span>'}</td>
-        <td>${item.phone ? escapeHtml(item.phone) : '<span class="muted">-</span>'}</td>
-        <td>${item.businessType ? getOptionLabel(PROSPECT_BUSINESS_TYPE_OPTIONS, item.businessType) : '<span class="muted">-</span>'}</td>
-        <td>${item.city ? escapeHtml(item.city) : '<span class="muted">-</span>'}</td>
-        <td>${item.zone ? escapeHtml(item.zone) : '<span class="muted">-</span>'}</td>
-        <td><span class="prospect-status status-${status}">${getOptionLabel(PROSPECT_STATUS_OPTIONS, status)}</span></td>
-        <td>${potential ? `<span class="prospect-potential potential-${potential}">${getOptionLabel(PROSPECT_POTENTIAL_OPTIONS, potential)}</span>` : '<span class="muted">-</span>'}</td>
-        <td>${nextAction}</td>
-        <td>${nextDate}</td>
-        <td class="col-loc">${locCell}</td>
-        <td class="col-actions">
+        <td class="col-check" data-label=""><input type="checkbox" data-visit-select="prospect" data-visit-id="${item.id}" ${selected ? "checked" : ""} aria-label="Seleccionar prospecto" /></td>
+        <td class="cell-strong text-truncate" data-label="Negocio" title="${escapeHtml(item.name || "Sin nombre")}">${escapeHtml(item.name || "Sin nombre")}</td>
+        <td class="text-truncate" data-label="Contacto" title="${escapeHtml(item.contactName || "")}">${item.contactName ? escapeHtml(item.contactName) : '<span class="muted">-</span>'}</td>
+        <td class="text-truncate" data-label="Telefono" title="${escapeHtml(item.phone || "")}">${item.phone ? escapeHtml(item.phone) : '<span class="muted">-</span>'}</td>
+        <td class="text-truncate" data-label="Rubro">${item.businessType ? getOptionLabel(PROSPECT_BUSINESS_TYPE_OPTIONS, item.businessType) : '<span class="muted">-</span>'}</td>
+        <td class="text-truncate" data-label="Ciudad" title="${escapeHtml(item.city || "")}">${item.city ? escapeHtml(item.city) : '<span class="muted">-</span>'}</td>
+        <td class="text-truncate" data-label="Zona" title="${escapeHtml(item.zone || "")}">${item.zone ? escapeHtml(item.zone) : '<span class="muted">-</span>'}</td>
+        <td data-label="Estado"><span class="prospect-status status-${status}">${getOptionLabel(PROSPECT_STATUS_OPTIONS, status)}</span></td>
+        <td data-label="Potencial">${potential ? `<span class="prospect-potential potential-${potential}">${getOptionLabel(PROSPECT_POTENTIAL_OPTIONS, potential)}</span>` : '<span class="muted">-</span>'}</td>
+        <td class="col-actions" data-label="Acciones">
           <div class="table-actions">
+            <button class="icon-btn" type="button" data-toggle-prospect-detail="${item.id}" title="Ver mas" aria-expanded="${isDetailOpen ? "true" : "false"}"><i data-lucide="${isDetailOpen ? "chevron-up" : "chevron-down"}"></i></button>
             ${whatsappLink ? `<button class="icon-btn" type="button" data-whatsapp-link="${whatsappLink}" title="WhatsApp"><i data-lucide="message-circle"></i></button>` : ""}
             ${mapsUrl ? `<button class="icon-btn" type="button" data-open-maps="${escapeHtml(mapsUrl)}" title="Abrir en Google Maps"><i data-lucide="map-pin"></i></button>` : ""}
             <button class="icon-btn" type="button" data-edit-prospect="${item.id}" title="Editar"><i data-lucide="pencil"></i></button>
             <button class="icon-btn icon-btn-success" type="button" data-convert-prospect="${item.id}" ${status === "convertido_cliente" ? "disabled" : ""} title="Convertir a cliente"><i data-lucide="user-plus"></i></button>
             <button class="icon-btn icon-btn-danger" type="button" data-delete-prospect="${item.id}" title="Eliminar"><i data-lucide="trash-2"></i></button>
+          </div>
+        </td>
+      </tr>
+      <tr class="prospect-detail-row ${isDetailOpen ? "open" : ""}">
+        <td colspan="10">
+          <div class="prospect-detail-grid">
+            <div><span>Direccion</span><strong>${item.address ? escapeHtml(item.address) : "-"}</strong></div>
+            <div><span>Ubicacion</span><strong>${item.latitude || item.longitude ? `${escapeHtml(item.latitude ?? "-")}, ${escapeHtml(item.longitude ?? "-")}` : "-"}</strong></div>
+            <div><span>Maps</span><strong>${mapsUrl ? locCell : "-"}</strong></div>
+            <div><span>Proxima accion</span><strong>${nextAction}</strong></div>
+            <div><span>Fecha</span><strong>${nextDate}</strong></div>
+            <div><span>Origen</span><strong>${item.source ? escapeHtml(item.source) : "-"}</strong></div>
+            <div><span>Responsable</span><strong>${item.responsible ? escapeHtml(item.responsible) : "-"}</strong></div>
+            <div class="prospect-detail-wide"><span>Observaciones</span><strong>${item.observations ? escapeHtml(item.observations) : "-"}</strong></div>
           </div>
         </td>
       </tr>
@@ -5036,13 +5097,12 @@ const renderProspectsWorkspace = () => {
   if (visitClientsCount) visitClientsCount.textContent = formatInteger(state.clients.length);
 };
 
-/* ===================== Dashboard comercial ===================== */
-const commercialDashboardState = { period: "month" };
+/* ===================== Panel de control comercial ===================== */
+const commercialDashboardState = { period: "month", customStart: "", customEnd: "" };
 let commercialSalesChart = null;
 
-const getCommercialPeriodRange = (period) => {
+const getRollingPeriodRange = (period, customStart = "", customEnd = "") => {
   const todayIso = toDateInputValue(new Date());
-  const now = new Date();
   if (period === "today") {
     const prev = addDaysToDateValue(todayIso, -1);
     return { startDate: todayIso, endDate: todayIso, prevStart: prev, prevEnd: prev, label: "Hoy" };
@@ -5051,17 +5111,31 @@ const getCommercialPeriodRange = (period) => {
     const start = addDaysToDateValue(todayIso, -6);
     const prevEnd = addDaysToDateValue(start, -1);
     const prevStart = addDaysToDateValue(prevEnd, -6);
-    return { startDate: start, endDate: todayIso, prevStart, prevEnd, label: "Ultimos 7 dias" };
+    return { startDate: start, endDate: todayIso, prevStart, prevEnd, label: "Esta semana" };
   }
-  if (period === "prev-month") {
-    const r = getPreviousMonthRange();
-    const ps = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-    const pe = new Date(now.getFullYear(), now.getMonth() - 1, 0);
-    return { ...r, prevStart: toDateInputValue(ps), prevEnd: toDateInputValue(pe), label: "Mes anterior" };
+  if (period === "custom") {
+    const startDate = normalizeDateValue(customStart);
+    const endDate = normalizeDateValue(customEnd);
+    if (startDate && endDate && startDate <= endDate) {
+      const dayCount = Math.max(1, (toIsoDayNumber(endDate) ?? 0) - (toIsoDayNumber(startDate) ?? 0) + 1);
+      const prevEnd = addDaysToDateValue(startDate, -1);
+      const prevStart = addDaysToDateValue(prevEnd, -(dayCount - 1));
+      return {
+        startDate,
+        endDate,
+        prevStart,
+        prevEnd,
+        label: `${formatIsoDateLabel(startDate)} - ${formatIsoDateLabel(endDate)}`
+      };
+    }
   }
   const r = getCurrentMonthRange();
   const pr = getPreviousMonthRange();
   return { ...r, prevStart: pr.startDate, prevEnd: pr.endDate, label: "Este mes" };
+};
+
+const getCommercialPeriodRange = (period) => {
+  return getRollingPeriodRange(period, commercialDashboardState.customStart, commercialDashboardState.customEnd);
 };
 
 const getSalesInRange = (startDate, endDate) => state.sales.filter((sale) => {
@@ -5328,6 +5402,7 @@ const renderCommercialSalesChart = (range) => {
 const renderCommercialDashboard = () => {
   if (!document.getElementById("commercialDashboard")) return;
   const range = getCommercialPeriodRange(commercialDashboardState.period);
+  if (commercialPeriodLabel) commercialPeriodLabel.textContent = range.label;
   renderCommercialKpis(range);
   renderCommercialTopProducts(range);
   renderCommercialTopClients(range);
@@ -5342,13 +5417,63 @@ const setupCommercialDashboard = () => {
     selector.addEventListener("click", (event) => {
       const btn = event.target.closest(".period-btn");
       if (!btn) return;
-      commercialDashboardState.period = btn.dataset.period || "month";
+      const nextPeriod = btn.dataset.period || "month";
+      if (nextPeriod === "custom") {
+        commercialRangePanel?.classList.toggle("hidden");
+        btn.setAttribute("aria-expanded", commercialRangePanel?.classList.contains("hidden") ? "false" : "true");
+        if (commercialRangeFrom && commercialDashboardState.customStart) commercialRangeFrom.value = commercialDashboardState.customStart;
+        if (commercialRangeTo && commercialDashboardState.customEnd) commercialRangeTo.value = commercialDashboardState.customEnd;
+        return;
+      }
+      commercialDashboardState.period = nextPeriod;
+      commercialDashboardState.customStart = "";
+      commercialDashboardState.customEnd = "";
+      commercialRangePanel?.classList.add("hidden");
       selector.querySelectorAll(".period-btn").forEach((b) => {
         b.classList.toggle("active", b === btn);
+        if (b.dataset.period === "custom") b.setAttribute("aria-expanded", "false");
       });
       renderCommercialDashboard();
     });
   }
+  commercialRangeApply?.addEventListener("click", () => {
+    const start = normalizeDateValue(commercialRangeFrom?.value);
+    const end = normalizeDateValue(commercialRangeTo?.value);
+    if (!start || !end || start > end) {
+      if (commercialRangeError) commercialRangeError.textContent = "Selecciona un rango valido.";
+      return;
+    }
+    if (commercialRangeError) commercialRangeError.textContent = "";
+    commercialDashboardState.period = "custom";
+    commercialDashboardState.customStart = start;
+    commercialDashboardState.customEnd = end;
+    commercialRangePanel?.classList.add("hidden");
+    selector?.querySelectorAll(".period-btn").forEach((b) => {
+      const isCustom = b.dataset.period === "custom";
+      b.classList.toggle("active", isCustom);
+      if (isCustom) b.setAttribute("aria-expanded", "false");
+    });
+    renderCommercialDashboard();
+  });
+  commercialRangeClear?.addEventListener("click", () => {
+    if (commercialRangeFrom) commercialRangeFrom.value = "";
+    if (commercialRangeTo) commercialRangeTo.value = "";
+    if (commercialRangeError) commercialRangeError.textContent = "";
+    commercialDashboardState.period = "month";
+    commercialDashboardState.customStart = "";
+    commercialDashboardState.customEnd = "";
+    commercialRangePanel?.classList.add("hidden");
+    selector?.querySelectorAll(".period-btn").forEach((b) => {
+      const isMonth = b.dataset.period === "month";
+      b.classList.toggle("active", isMonth);
+      if (b.dataset.period === "custom") b.setAttribute("aria-expanded", "false");
+    });
+    renderCommercialDashboard();
+  });
+  commercialRangeCancel?.addEventListener("click", () => {
+    commercialRangePanel?.classList.add("hidden");
+    selector?.querySelector('[data-period="custom"]')?.setAttribute("aria-expanded", "false");
+  });
   const dashboard = document.getElementById("commercialDashboard");
   if (dashboard) {
     dashboard.addEventListener("click", (event) => {
@@ -5357,6 +5482,161 @@ const setupCommercialDashboard = () => {
       setActiveAppSection(opener.dataset.openSection);
     });
   }
+};
+
+const getSalesHistoryRange = () => getRollingPeriodRange(
+  salesHistoryState.period,
+  salesHistoryState.customStart,
+  salesHistoryState.customEnd
+);
+
+const updateSalesHistoryPaymentOptions = () => {
+  if (!salesHistoryPaymentFilter) return;
+  const selected = salesHistoryPaymentFilter.value;
+  const methods = Array.from(new Set(state.sales.map((sale) => String(sale.payment || "").trim()).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b, "es"));
+  salesHistoryPaymentFilter.innerHTML = [
+    '<option value="">Metodo: todos</option>',
+    ...methods.map((method) => `<option value="${escapeHtml(method)}">${escapeHtml(method)}</option>`)
+  ].join("");
+  if (methods.includes(selected)) salesHistoryPaymentFilter.value = selected;
+};
+
+const getFilteredSalesHistory = () => {
+  const range = getSalesHistoryRange();
+  const search = normalizeText(salesHistoryState.search);
+  const payment = normalizeText(salesHistoryState.payment);
+  const credit = salesHistoryState.credit;
+  return state.sales
+    .filter((sale) => {
+      const saleDate = getSaleDateValue(sale);
+      if (!saleDate || saleDate < range.startDate || saleDate > range.endDate) return false;
+      const details = getSaleClientDetails(sale);
+      if (search && !normalizeText([details.name, sale.clientName].filter(Boolean).join(" ")).includes(search)) return false;
+      if (payment && normalizeText(sale.payment) !== payment) return false;
+      if (credit === "cash" && isCreditSaleRecord(sale)) return false;
+      if (credit === "credit" && !isCreditSaleRecord(sale)) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const bDay = toIsoDayNumber(getSaleDateValue(b)) ?? 0;
+      const aDay = toIsoDayNumber(getSaleDateValue(a)) ?? 0;
+      if (bDay !== aDay) return bDay - aDay;
+      return getSaleCreatedTimestamp(b) - getSaleCreatedTimestamp(a);
+    });
+};
+
+const getSaleTimeLabel = (sale) => {
+  const raw = sale?.createdAt?.toDate?.()
+    || (typeof sale?.createdAt?.seconds === "number" ? new Date(sale.createdAt.seconds * 1000) : null)
+    || (typeof sale?.createdAtMs === "number" ? new Date(sale.createdAtMs) : null);
+  return raw ? formatTime(raw) : "";
+};
+
+const renderSalesHistory = () => {
+  if (!saleList) return;
+  updateSalesHistoryPaymentOptions();
+  const range = getSalesHistoryRange();
+  const sales = getFilteredSalesHistory();
+  const total = sales.reduce((sum, sale) => sum + getSaleTotalAmount(sale), 0);
+  if (salesHistoryCount) salesHistoryCount.textContent = `${formatInteger(sales.length)} venta${sales.length === 1 ? "" : "s"}`;
+  if (salesHistoryTotal) salesHistoryTotal.textContent = `Gs ${formatGs(total)}`;
+  if (salesHistoryPeriodLabel) salesHistoryPeriodLabel.textContent = range.label;
+  if (!sales.length) {
+    saleList.innerHTML = '<div class="list-item muted">No hay ventas para los filtros seleccionados.</div>';
+    return;
+  }
+  saleList.innerHTML = sales.map((item) => {
+    const lines = getSaleLineItems(item);
+    const saleTotal = getSaleTotalAmount(item);
+    const isCreditSale = isCreditSaleRecord(item);
+    const productsPreview = lines.slice(0, 2).map((line) => `
+      <span class="sale-product-pill">${escapeHtml(line.productName || "Producto")} · ${formatInteger(line.quantity)} ${escapeHtml(line.unit || "disp")}</span>
+    `).join("");
+    const hiddenCount = Math.max(0, lines.length - 2);
+    const detailOpen = saleDetailOpenState.has(item.id);
+    const repurchaseText = item.repurchaseActive
+      ? `Cada ${formatInteger(item.repurchaseFrequencyDays || 0)} dias`
+      : "Sin recompra";
+    const nextRepurchase = item.repurchaseNextContactDate ? formatDate(item.repurchaseNextContactDate) : "-";
+    return `
+      <div class="sale-history-item">
+        <div class="sale-history-main">
+          <div class="sale-history-block sale-history-client">
+            <strong>${escapeHtml(item.clientName || getSaleClientDetails(item).name || "Sin cliente")}</strong>
+            <span>${formatDate(getSaleDateValue(item))}${getSaleTimeLabel(item) ? ` · ${getSaleTimeLabel(item)}` : ""}</span>
+          </div>
+          <div class="sale-history-block sale-history-products">
+            ${productsPreview || '<span class="muted">Sin productos</span>'}
+            ${hiddenCount ? `<span class="sale-product-more">+${hiddenCount} productos</span>` : ""}
+          </div>
+          <div class="sale-history-block sale-history-payment">
+            <strong>Gs ${formatGs(saleTotal)}</strong>
+            <span>${escapeHtml(item.payment || "-")} · ${isCreditSale ? "Credito" : "Contado"}</span>
+          </div>
+          <div class="sale-history-block sale-history-followup">
+            <span>${repurchaseText}</span>
+            <small>Proxima: ${nextRepurchase}</small>
+            ${item.observation ? `<small title="${escapeHtml(item.observation)}">${escapeHtml(item.observation)}</small>` : ""}
+          </div>
+          <div class="sale-history-actions">
+            <button class="icon-btn" type="button" data-share-sale="${item.id}" title="Compartir"><i data-lucide="share-2"></i></button>
+            <button class="icon-btn" type="button" data-edit-sale="${item.id}" title="Editar"><i data-lucide="pencil"></i></button>
+            <button class="icon-btn" type="button" data-toggle-sale-detail="${item.id}" title="Ver detalle"><i data-lucide="${detailOpen ? "chevron-up" : "chevron-down"}"></i></button>
+            <button class="icon-btn icon-btn-danger" type="button" data-delete-sale="${item.id}" title="Eliminar"><i data-lucide="trash-2"></i></button>
+          </div>
+        </div>
+        <div class="sale-history-detail ${detailOpen ? "open" : ""}">
+          ${lines.map((line) => `
+            <div><span>${escapeHtml(line.productName || "Producto")}</span><strong>${formatInteger(line.quantity)} x Gs ${formatGs(line.unitPrice)} = Gs ${formatGs(line.total ?? Number(line.quantity || 0) * Number(line.unitPrice || 0))}</strong></div>
+          `).join("") || '<div class="muted">Sin detalle de productos.</div>'}
+        </div>
+      </div>
+    `;
+  }).join("");
+  refreshIcons();
+};
+
+const renderClientDirectory = () => {
+  if (!clientList) return;
+  const search = normalizeText(clientListState.search);
+  const clients = state.clients.filter((item) => {
+    if (!search) return true;
+    const haystack = normalizeText([item.name, item.phone, item.ruc, item.city, item.zone, item.address].filter(Boolean).join(" "));
+    return haystack.includes(search);
+  });
+  if (clientListCount) clientListCount.textContent = `${formatInteger(clients.length)} cliente${clients.length === 1 ? "" : "s"}`;
+  renderList(clientList, clients, (item) => {
+    const historyOpen = clientHistoryOpenState.has(item.id);
+    const mapsUrl = buildGoogleMapsLocationUrl(item);
+    const clientDetails = [
+      item.ruc ? `<span><b>RUC</b>${escapeHtml(item.ruc)}</span>` : "",
+      item.phone ? `<span><b>Tel</b>${escapeHtml(item.phone)}</span>` : "",
+      item.city ? `<span><b>Ciudad</b>${escapeHtml(item.city)}</span>` : "",
+      item.zone ? `<span><b>Zona</b>${escapeHtml(item.zone)}</span>` : "",
+      item.address ? `<span><b>Dir</b>${escapeHtml(item.address)}</span>` : ""
+    ].filter(Boolean).join("");
+    return `
+    <div class="list-item client-item">
+      <div class="client-item-main">
+        <strong>${escapeHtml(item.name)}</strong>
+        ${item.notes ? `<div class="muted">Notas: ${escapeHtml(item.notes)}</div>` : ""}
+      </div>
+      <div class="client-item-details">
+        ${clientDetails || '<span class="muted">Sin datos comerciales cargados</span>'}
+      </div>
+      <div class="list-actions client-item-actions">
+        ${mapsUrl ? `<button class="btn ghost" type="button" data-open-maps="${escapeHtml(mapsUrl)}">Maps</button>` : ""}
+        <button class="btn ghost" type="button" data-toggle-client-history="${item.id}">Historial</button>
+        <button class="btn ghost" type="button" data-edit-client="${item.id}">Editar</button>
+        <button class="btn ghost danger" type="button" data-delete-client="${item.id}">Eliminar</button>
+      </div>
+      <div class="followup-history-panel ${historyOpen ? "open" : "hidden"}">
+        ${buildClientFollowupHistoryMarkup(item, "Sin historial comercial de seguimiento.")}
+      </div>
+    </div>
+  `;
+  });
 };
 
 const renderAll = () => {
@@ -5497,68 +5777,8 @@ const renderAll = () => {
     if (!validClientIds.has(clientId)) clientHistoryOpenState.delete(clientId);
   });
 
-  renderList(clientList, state.clients, (item) => {
-    const historyOpen = clientHistoryOpenState.has(item.id);
-    const mapsUrl = buildGoogleMapsLocationUrl(item);
-    const clientDetails = [
-      item.ruc ? `<span><b>RUC</b>${escapeHtml(item.ruc)}</span>` : "",
-      item.phone ? `<span><b>Tel</b>${escapeHtml(item.phone)}</span>` : "",
-      item.city ? `<span><b>Ciudad</b>${escapeHtml(item.city)}</span>` : "",
-      item.zone ? `<span><b>Zona</b>${escapeHtml(item.zone)}</span>` : "",
-      item.address ? `<span><b>Dir</b>${escapeHtml(item.address)}</span>` : ""
-    ].filter(Boolean).join("");
-    return `
-    <div class="list-item client-item">
-      <div class="client-item-main">
-        <strong>${escapeHtml(item.name)}</strong>
-        ${item.notes ? `<div class="muted">Notas: ${escapeHtml(item.notes)}</div>` : ""}
-      </div>
-      <div class="client-item-details">
-        ${clientDetails || '<span class="muted">Sin datos comerciales cargados</span>'}
-      </div>
-      <div class="list-actions client-item-actions">
-        ${mapsUrl ? `<button class="btn ghost" type="button" data-open-maps="${escapeHtml(mapsUrl)}">Maps</button>` : ""}
-        <button class="btn ghost" type="button" data-toggle-client-history="${item.id}">Historial</button>
-        <button class="btn ghost" type="button" data-edit-client="${item.id}">Editar</button>
-        <button class="btn ghost danger" type="button" data-delete-client="${item.id}">Eliminar</button>
-      </div>
-      <div class="followup-history-panel ${historyOpen ? "open" : "hidden"}">
-        ${buildClientFollowupHistoryMarkup(item, "Sin historial comercial de seguimiento.")}
-      </div>
-    </div>
-  `;
-  });
-
-  renderList(saleList, state.sales, (item) => {
-    const lines = getSaleLineItems(item);
-    const saleTotal = getSaleTotalAmount(item);
-    const isCreditSale = isCreditSaleRecord(item);
-    const lineRows = lines.length
-      ? lines.map((line) => `
-        <div class="sale-line">
-          <span>${line.productName || "Producto"}</span>
-          <strong>${formatInteger(line.quantity)} disp</strong>
-        </div>
-      `).join("")
-      : '<div class="muted">Sin productos</div>';
-    return `
-      <div class="list-item">
-        <div class="sale-summary-primary">
-          <div>Cliente: <strong>${item.clientName || "Sin cliente"}</strong></div>
-          <div>Monto: <strong>Gs ${formatGs(saleTotal)}</strong></div>
-          <div>Fecha: <strong>${formatDate(item.date)}</strong></div>
-        </div>
-        <div class="sale-lines">${lineRows}</div>
-        <div>Pago: ${item.payment} | ${isCreditSale ? `A credito hasta ${formatDate(item.dueDate)}` : "Contado"}</div>
-        ${item.observation ? `<div class="muted">Observacion: ${item.observation}</div>` : ""}
-        <div class="list-actions">
-          <button class="btn ghost" type="button" data-share-sale="${item.id}">Compartir</button>
-          <button class="btn ghost" type="button" data-edit-sale="${item.id}">Editar</button>
-          <button class="btn ghost danger" type="button" data-delete-sale="${item.id}">Eliminar</button>
-        </div>
-      </div>
-    `;
-  });
+  renderClientDirectory();
+  renderSalesHistory();
 
   renderProspectsWorkspace();
   renderRepurchaseList();
@@ -5634,8 +5854,10 @@ const classifyAppSectionCards = () => {
     stockSection: "stock",
     rawMaterialSection: "raw-materials",
     recipeSection: "products raw-materials",
-    salesSection: "sales",
-    clientsSection: "clients",
+    salesFormSection: "sales",
+    salesHistorySection: "sales",
+    clientFormSection: "clients",
+    clientListSection: "clients",
     prospectsSection: "prospects",
     productsSection: "products",
     salesGoalSection: "sales",
@@ -6438,6 +6660,8 @@ prospectForm?.addEventListener("submit", async (event) => {
     createdAt: serverTimestamp()
   });
   resetProspectForm();
+  document.getElementById("prospectFormPanel")?.classList.add("hidden");
+  document.body.classList.remove("modal-open");
 });
 
 saleForm.addEventListener("submit", async (event) => {
@@ -6974,6 +7198,36 @@ const startEditClient = (item) => {
   if (clientForm.notes) clientForm.notes.value = item.notes || "";
   clientForm.dataset.editId = item.id;
   setSubmitLabel(clientForm, "Actualizar cliente");
+  const body = document.getElementById("clientFormSection");
+  const toggle = document.querySelector('.collapse-toggle[data-collapse="clientFormSection"]');
+  if (body && toggle) openSection(toggle, body);
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+    clientForm.name?.focus();
+  });
+};
+
+const isProspectFormDirty = () => {
+  if (!prospectForm) return false;
+  return Array.from(new FormData(prospectForm).values()).some((value) => String(value || "").trim());
+};
+
+const openProspectFormPanel = () => {
+  const panel = document.getElementById("prospectFormPanel");
+  panel?.classList.remove("hidden");
+  document.body.classList.add("modal-open");
+  requestAnimationFrame(() => {
+    prospectForm?.name?.focus();
+    refreshIcons();
+  });
+};
+
+const closeProspectFormPanel = ({ force = false } = {}) => {
+  if (!force && isProspectFormDirty() && !window.confirm("Cerrar el formulario sin guardar los cambios?")) return false;
+  document.getElementById("prospectFormPanel")?.classList.add("hidden");
+  document.body.classList.remove("modal-open");
+  resetProspectForm();
+  return true;
 };
 
 const startEditProspect = (item) => {
@@ -6997,7 +7251,7 @@ const startEditProspect = (item) => {
   setSubmitLabel(prospectForm, "Actualizar prospecto");
   prospectCancelEdit?.classList.remove("hidden");
   if (prospectFormHeading) prospectFormHeading.textContent = `Editar: ${item.name || "prospecto"}`;
-  (document.getElementById("prospectFormPanel") || prospectForm).scrollIntoView({ behavior: "smooth", block: "start" });
+  openProspectFormPanel();
 };
 
 const startEditSale = (item) => {
@@ -7028,6 +7282,13 @@ const startEditSale = (item) => {
   updateDueDateVisibility();
   updateSaleObservationVisibility(Boolean(item.observation));
   updateSaleRepurchaseVisibility(hasRepurchase);
+  const body = document.getElementById("salesFormSection");
+  const toggle = document.querySelector('.collapse-toggle[data-collapse="salesFormSection"]');
+  if (body && toggle) openSection(toggle, body);
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+    saleForm.client?.focus();
+  });
 };
 
 const confirmDelete = (label) => window.confirm(`Eliminar ${label}?`);
@@ -7342,6 +7603,20 @@ prospectList?.addEventListener("click", async (event) => {
     return;
   }
 
+  const detailId = event.target.closest("[data-toggle-prospect-detail]")?.dataset.toggleProspectDetail;
+  if (detailId) {
+    const safeId = String(detailId).trim();
+    if (prospectDetailOpenState.has(safeId)) {
+      prospectDetailOpenState.delete(safeId);
+    } else {
+      prospectDetailOpenState.clear();
+      prospectDetailOpenState.add(safeId);
+    }
+    renderProspectList();
+    requestAnimationFrame(refreshCollapseHeights);
+    return;
+  }
+
   const convertId = event.target.closest("[data-convert-prospect]")?.dataset.convertProspect;
   if (convertId) {
     const prospect = state.prospects.find((item) => item.id === convertId);
@@ -7403,6 +7678,18 @@ saleList.addEventListener("click", async (event) => {
   const shareId = event.target.closest("[data-share-sale]")?.dataset.shareSale;
   const editId = event.target.closest("[data-edit-sale]")?.dataset.editSale;
   const deleteId = event.target.closest("[data-delete-sale]")?.dataset.deleteSale;
+  const detailId = event.target.closest("[data-toggle-sale-detail]")?.dataset.toggleSaleDetail;
+  if (detailId) {
+    const safeId = String(detailId).trim();
+    if (saleDetailOpenState.has(safeId)) {
+      saleDetailOpenState.delete(safeId);
+    } else {
+      saleDetailOpenState.add(safeId);
+    }
+    renderSalesHistory();
+    requestAnimationFrame(refreshCollapseHeights);
+    return;
+  }
   if (shareId) {
     const item = state.sales.find((m) => m.id === shareId);
     if (item) await shareSaleAsPdf(item);
@@ -7661,10 +7948,116 @@ clearProspectFiltersBtn?.addEventListener("click", () => {
   requestAnimationFrame(refreshCollapseHeights);
 });
 
+clientListSearch?.addEventListener("input", () => {
+  clientListState.search = clientListSearch.value || "";
+  renderClientDirectory();
+  requestAnimationFrame(refreshCollapseHeights);
+});
+
+clientListClearFilters?.addEventListener("click", () => {
+  clientListState.search = "";
+  if (clientListSearch) clientListSearch.value = "";
+  renderClientDirectory();
+  requestAnimationFrame(refreshCollapseHeights);
+});
+
+salesHistoryPeriodSelector?.addEventListener("click", (event) => {
+  const btn = event.target.closest("[data-sales-period]");
+  if (!btn) return;
+  const nextPeriod = btn.dataset.salesPeriod || "month";
+  if (nextPeriod === "custom") {
+    salesHistoryRangePanel?.classList.toggle("hidden");
+    btn.setAttribute("aria-expanded", salesHistoryRangePanel?.classList.contains("hidden") ? "false" : "true");
+    if (salesHistoryRangeFrom && salesHistoryState.customStart) salesHistoryRangeFrom.value = salesHistoryState.customStart;
+    if (salesHistoryRangeTo && salesHistoryState.customEnd) salesHistoryRangeTo.value = salesHistoryState.customEnd;
+    return;
+  }
+  salesHistoryState.period = nextPeriod;
+  salesHistoryState.customStart = "";
+  salesHistoryState.customEnd = "";
+  salesHistoryRangePanel?.classList.add("hidden");
+  salesHistoryPeriodSelector.querySelectorAll("[data-sales-period]").forEach((periodBtn) => {
+    periodBtn.classList.toggle("active", periodBtn === btn);
+    if (periodBtn.dataset.salesPeriod === "custom") periodBtn.setAttribute("aria-expanded", "false");
+  });
+  renderSalesHistory();
+  requestAnimationFrame(refreshCollapseHeights);
+});
+
+salesHistoryRangeApply?.addEventListener("click", () => {
+  const start = normalizeDateValue(salesHistoryRangeFrom?.value);
+  const end = normalizeDateValue(salesHistoryRangeTo?.value);
+  if (!start || !end || start > end) {
+    if (salesHistoryRangeError) salesHistoryRangeError.textContent = "Selecciona un rango valido.";
+    return;
+  }
+  if (salesHistoryRangeError) salesHistoryRangeError.textContent = "";
+  salesHistoryState.period = "custom";
+  salesHistoryState.customStart = start;
+  salesHistoryState.customEnd = end;
+  salesHistoryRangePanel?.classList.add("hidden");
+  salesHistoryPeriodSelector?.querySelectorAll("[data-sales-period]").forEach((btn) => {
+    const isCustom = btn.dataset.salesPeriod === "custom";
+    btn.classList.toggle("active", isCustom);
+    if (isCustom) btn.setAttribute("aria-expanded", "false");
+  });
+  renderSalesHistory();
+  requestAnimationFrame(refreshCollapseHeights);
+});
+
+salesHistoryRangeClear?.addEventListener("click", () => {
+  if (salesHistoryRangeFrom) salesHistoryRangeFrom.value = "";
+  if (salesHistoryRangeTo) salesHistoryRangeTo.value = "";
+  if (salesHistoryRangeError) salesHistoryRangeError.textContent = "";
+  salesHistoryState.period = "month";
+  salesHistoryState.customStart = "";
+  salesHistoryState.customEnd = "";
+  salesHistoryRangePanel?.classList.add("hidden");
+  salesHistoryPeriodSelector?.querySelectorAll("[data-sales-period]").forEach((btn) => {
+    const isMonth = btn.dataset.salesPeriod === "month";
+    btn.classList.toggle("active", isMonth);
+    if (btn.dataset.salesPeriod === "custom") btn.setAttribute("aria-expanded", "false");
+  });
+  renderSalesHistory();
+  requestAnimationFrame(refreshCollapseHeights);
+});
+
+salesHistoryRangeCancel?.addEventListener("click", () => {
+  salesHistoryRangePanel?.classList.add("hidden");
+  salesHistoryPeriodSelector?.querySelector('[data-sales-period="custom"]')?.setAttribute("aria-expanded", "false");
+});
+
+[salesHistorySearch, salesHistoryPaymentFilter, salesHistoryCreditFilter].forEach((input) => {
+  input?.addEventListener("input", () => {
+    salesHistoryState.search = salesHistorySearch?.value || "";
+    salesHistoryState.payment = salesHistoryPaymentFilter?.value || "";
+    salesHistoryState.credit = salesHistoryCreditFilter?.value || "";
+    renderSalesHistory();
+    requestAnimationFrame(refreshCollapseHeights);
+  });
+  input?.addEventListener("change", () => {
+    salesHistoryState.search = salesHistorySearch?.value || "";
+    salesHistoryState.payment = salesHistoryPaymentFilter?.value || "";
+    salesHistoryState.credit = salesHistoryCreditFilter?.value || "";
+    renderSalesHistory();
+    requestAnimationFrame(refreshCollapseHeights);
+  });
+});
+
+salesHistoryClearFilters?.addEventListener("click", () => {
+  salesHistoryState.search = "";
+  salesHistoryState.payment = "";
+  salesHistoryState.credit = "";
+  if (salesHistorySearch) salesHistorySearch.value = "";
+  if (salesHistoryPaymentFilter) salesHistoryPaymentFilter.value = "";
+  if (salesHistoryCreditFilter) salesHistoryCreditFilter.value = "";
+  renderSalesHistory();
+  requestAnimationFrame(refreshCollapseHeights);
+});
+
 newProspectBtn?.addEventListener("click", () => {
   resetProspectForm();
-  document.getElementById("prospectFormPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  requestAnimationFrame(() => prospectForm?.name?.focus());
+  openProspectFormPanel();
 });
 
 prospectSelectAll?.addEventListener("change", () => {
@@ -7718,7 +8111,15 @@ visitClientSearch?.addEventListener("input", () => {
 });
 
 prospectCancelEdit?.addEventListener("click", () => {
-  resetProspectForm();
+  closeProspectFormPanel({ force: true });
+});
+
+prospectCancelForm?.addEventListener("click", () => {
+  closeProspectFormPanel();
+});
+
+prospectCloseForm?.addEventListener("click", () => {
+  closeProspectFormPanel();
 });
 
 createVisitListBtn?.addEventListener("click", () => {
@@ -8229,7 +8630,7 @@ const isElementReadyForFocus = (element) => Boolean(
 );
 
 const scrollSalesCardIntoView = () => {
-  const salesBody = document.getElementById("salesSection");
+  const salesBody = document.getElementById("salesFormSection");
   const salesCard = salesBody?.closest(".card");
   const scrollTarget = salesCard || salesBody || document.getElementById("sales");
   if (!scrollTarget) return;
@@ -8249,7 +8650,7 @@ const navigateToSalesShortcut = async () => {
     setDashboardTransitionsEnabled(false);
     await waitForNextFrame();
     setActiveAppSection("sales");
-    const salesBody = openExclusiveCollapseSection("salesSection");
+    const salesBody = openExclusiveCollapseSection("salesFormSection");
     refreshCollapseHeights();
 
     const salesPanelReady = await waitForCondition(() => {
@@ -8301,10 +8702,18 @@ const navigateToSalesShortcut = async () => {
   }
 };
 
+const INDEPENDENT_COLLAPSE_IDS = new Set([
+  "salesFormSection",
+  "salesHistorySection",
+  "clientFormSection",
+  "clientListSection",
+  "prospectsSection"
+]);
+
 document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
   const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
-  if (["salesGoalSection", "productsSection", "clientsSection", "prospectsSection", "salesSection", "repurchaseSection", "coverageSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection"].includes(toggle.dataset.collapse)) {
+  if (["salesGoalSection", "productsSection", "clientFormSection", "clientListSection", "prospectsSection", "salesFormSection", "salesHistorySection", "repurchaseSection", "coverageSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection"].includes(toggle.dataset.collapse)) {
     closeSection(toggle, body);
   } else {
     openSection(toggle, body);
@@ -8318,13 +8727,15 @@ document.addEventListener("click", (event) => {
   if (!toggle) return;
   const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
-  document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((otherToggle) => {
-    const otherBody = document.getElementById(otherToggle.dataset.collapse);
-    if (!otherBody) return;
-    if (otherToggle !== toggle) {
-      closeSection(otherToggle, otherBody);
-    }
-  });
+  if (!INDEPENDENT_COLLAPSE_IDS.has(toggle.dataset.collapse)) {
+    document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((otherToggle) => {
+      const otherBody = document.getElementById(otherToggle.dataset.collapse);
+      if (!otherBody) return;
+      if (otherToggle !== toggle && !INDEPENDENT_COLLAPSE_IDS.has(otherToggle.dataset.collapse)) {
+        closeSection(otherToggle, otherBody);
+      }
+    });
+  }
   if (body.classList.contains("open")) {
     closeSection(toggle, body);
   } else {
@@ -8333,7 +8744,7 @@ document.addEventListener("click", (event) => {
   if (toggle.dataset.collapse === "coverageSection" && body.classList.contains("open")) {
     renderSalesCoverage({ animatePins: true });
   }
-  if (toggle.dataset.collapse === "salesSection" && body.classList.contains("open")) {
+  if (toggle.dataset.collapse === "salesFormSection" && body.classList.contains("open")) {
     focusFirstSaleProductField();
   }
   requestAnimationFrame(() => {
