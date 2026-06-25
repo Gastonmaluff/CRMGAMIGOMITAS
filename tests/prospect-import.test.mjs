@@ -116,12 +116,26 @@ test("detecta repetidos dentro del archivo por telefono", () => {
   const result = normalizeImportedProspectFile({
     prospects: [
       validRecord,
-      { ...validRecord, externalId: "maps-002", businessName: "Otro Local", latitude: -25.6, longitude: -54.7 }
+      { ...validRecord, externalId: "maps-002", businessName: "Otro Local", latitude: -25.50975, longitude: -54.61115 }
     ]
   }, { businessTypes });
   assert.equal(result.ok, true);
   assert.equal(result.rows[0].fileDuplicateMatches.length, 1);
   assert.equal(result.rows[1].fileDuplicateMatches.length, 1);
+});
+
+test("no marca sucursales lejanas como repetidas solo por telefono corporativo", () => {
+  const result = normalizeImportedProspectFile({
+    prospects: [
+      { ...validRecord, externalId: "maps-001", businessName: "Petrobras Area 1", address: "Area 1", latitude: -25.5097, longitude: -54.6111 },
+      { ...validRecord, externalId: "maps-002", businessName: "Petrobras Km 10", address: "Km 10", latitude: -25.5267, longitude: -54.6241 }
+    ]
+  }, { businessTypes });
+  assert.equal(result.ok, true);
+  assert.equal(result.rows[0].fileDuplicateMatches.length, 0);
+  assert.equal(result.rows[1].fileDuplicateMatches.length, 0);
+  assert.equal(result.rows[0].fileBranchMatches.length, 1);
+  assert.equal(result.rows[1].fileBranchMatches.length, 1);
 });
 
 test("detecta duplicado existente por telefono aunque este lejos", () => {

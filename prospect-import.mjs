@@ -211,13 +211,18 @@ export const normalizeImportedProspect = (rawRecord, index = 0, options = {}) =>
     excluded: false,
     duplicateMatches: [],
     fileDuplicateMatches: [],
+    fileBranchMatches: [],
     errors,
     warnings
   };
 };
 
 export const detectImportedFileDuplicates = (rows) => {
-  const nextRows = rows.map((row) => ({ ...row, fileDuplicateMatches: [...(row.fileDuplicateMatches || [])] }));
+  const nextRows = rows.map((row) => ({
+    ...row,
+    fileDuplicateMatches: [...(row.fileDuplicateMatches || [])],
+    fileBranchMatches: [...(row.fileBranchMatches || [])]
+  }));
   for (let i = 0; i < nextRows.length; i += 1) {
     for (let j = i + 1; j < nextRows.length; j += 1) {
       const a = nextRows[i];
@@ -226,18 +231,34 @@ export const detectImportedFileDuplicates = (rows) => {
       const distance = hasValidCoordinatePair(a.latitude, a.longitude) && hasValidCoordinatePair(b.latitude, b.longitude)
         ? calculateDistanceMeters(a.latitude, a.longitude, b.latitude, b.longitude)
         : Infinity;
-      if (a.normalizedPhone && b.normalizedPhone && a.normalizedPhone === b.normalizedPhone) reasons.push("mismo telefono en archivo");
+      const samePhone = Boolean(a.normalizedPhone && b.normalizedPhone && a.normalizedPhone === b.normalizedPhone);
+      const sameAddress = Boolean(a.address && b.address && normalizeDuplicateText(a.address) === normalizeDuplicateText(b.address));
       if (Number.isFinite(distance) && distance <= DUPLICATE_DISTANCE_METERS + 0.001) reasons.push("ubicacion repetida en archivo");
+      if (samePhone && (sameAddress || !Number.isFinite(distance) || distance <= DUPLICATE_DISTANCE_METERS + 0.001)) {
+        reasons.push("mismo telefono en archivo");
+      }
       if (
         Number.isFinite(distance)
         && distance <= SIMILAR_NAME_DISTANCE_METERS + 0.001
         && isHighlySimilarBusinessName(a.name, b.name)
       ) reasons.push("nombre similar en archivo");
-      if (!reasons.length) continue;
-      const matchA = { rowId: b.rowId, name: b.name, distance, reasons };
-      const matchB = { rowId: a.rowId, name: a.name, distance, reasons };
-      a.fileDuplicateMatches.push(matchA);
-      b.fileDuplicateMatches.push(matchB);
+      if (reasons.length) {
+        const matchA = { rowId: b.rowId, name: b.name, distance, reasons };
+        const matchB = { rowId: a.rowId, name: a.name, distance, reasons };
+        a.fileDuplicateMatches.push(matchA);
+        b.fileDuplicateMatches.push(matchB);
+        continue;
+      }
+      if (
+        samePhone
+        && Number.isFinite(distance)
+        && distance > DUPLICATE_DISTANCE_METERS + 0.001
+        && !sameAddress
+      ) {
+        const branchReason = ["mismo telefono corporativo, ubicacion distinta"];
+        a.fileBranchMatches.push({ rowId: b.rowId, name: b.name, distance, reasons: branchReason });
+        b.fileBranchMatches.push({ rowId: a.rowId, name: a.name, distance, reasons: branchReason });
+      }
     }
   }
   return nextRows;
@@ -295,6 +316,7 @@ export const getImportedRowStateCodes = (row) => {
   if ((row.errors || []).some((error) => error.code.startsWith("invalid-"))) states.push("invalid-coordinates");
   if ((row.duplicateMatches || []).length) states.push("duplicate");
   if ((row.fileDuplicateMatches || []).length) states.push("file-duplicate");
+  if ((row.fileBranchMatches || []).length) states.push("branch-warning");
   if (row.businessTypeIsNew) states.push("new-business-type");
   if (!states.length) states.push("ready");
   return states;
@@ -322,6 +344,7 @@ export const buildImportSummary = (rows) => {
     errors: selectedRows.filter((row) => (row.errors || []).length).length,
     duplicates: selectedRows.filter((row) => (row.duplicateMatches || []).length).length,
     fileDuplicates: selectedRows.filter((row) => (row.fileDuplicateMatches || []).length).length,
+    branchWarnings: selectedRows.filter((row) => (row.fileBranchMatches || []).length).length,
     newBusinessTypes: newBusinessTypes.size,
     withoutPhone: selectedRows.filter((row) => !row.phone).length,
     withoutAddress: selectedRows.filter((row) => !row.address).length

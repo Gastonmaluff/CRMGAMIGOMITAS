@@ -12,6 +12,7 @@ import {
   collection,
   addDoc,
   doc,
+  getDoc,
   setDoc,
   writeBatch,
   updateDoc,
@@ -390,6 +391,7 @@ const visitPlannerState = {
   selectedKeys: new Set(),
   activeKeys: []
 };
+let prospectImportHistoryOpen = false;
 const MAX_ROUTE_STOPS = 10;
 const repurchaseNotesOpenState = new Set();
 const repurchaseHistoryOpenState = new Set();
@@ -4911,7 +4913,7 @@ const renderProspectList = () => {
   if (!prospectList) return;
   const prospects = getFilteredProspects();
   if (!prospects.length) {
-    prospectList.innerHTML = '<tr class="empty-row"><td colspan="10">Sin prospectos para los filtros actuales.</td></tr>';
+    prospectList.innerHTML = '<tr class="empty-row"><td colspan="7">Sin prospectos para los filtros actuales.</td></tr>';
     syncProspectSelectAll();
     return;
   }
@@ -4931,12 +4933,12 @@ const renderProspectList = () => {
     return `
       <tr class="prospect-row ${selected ? "is-selected" : ""}" data-prospect-id="${item.id}">
         <td class="col-check" data-label=""><input type="checkbox" data-visit-select="prospect" data-visit-id="${item.id}" ${selected ? "checked" : ""} aria-label="Seleccionar prospecto" /></td>
-        <td class="cell-strong text-truncate" data-label="Negocio" title="${escapeHtml(item.name || "Sin nombre")}">${escapeHtml(item.name || "Sin nombre")}</td>
-        <td class="text-truncate" data-label="Contacto" title="${escapeHtml(item.contactName || "")}">${item.contactName ? escapeHtml(item.contactName) : '<span class="muted">-</span>'}</td>
-        <td class="text-truncate" data-label="Telefono" title="${escapeHtml(item.phone || "")}">${item.phone ? escapeHtml(item.phone) : '<span class="muted">-</span>'}</td>
+        <td class="cell-strong prospect-name-cell" data-label="Negocio" title="${escapeHtml(item.name || "Sin nombre")}">${escapeHtml(item.name || "Sin nombre")}</td>
         <td class="text-truncate" data-label="Rubro">${item.businessType ? escapeHtml(getBusinessTypeLabel(item.businessType)) : '<span class="muted">-</span>'}</td>
-        <td class="text-truncate" data-label="Ciudad" title="${escapeHtml(item.city || "")}">${item.city ? escapeHtml(item.city) : '<span class="muted">-</span>'}</td>
-        <td class="text-truncate" data-label="Zona" title="${escapeHtml(item.zone || "")}">${item.zone ? escapeHtml(item.zone) : '<span class="muted">-</span>'}</td>
+        <td class="prospect-place-cell" data-label="Ciudad / zona">
+          <strong>${item.city ? escapeHtml(item.city) : '<span class="muted">Sin ciudad</span>'}</strong>
+          <span>${item.zone ? escapeHtml(item.zone) : '<span class="muted">Sin zona</span>'}</span>
+        </td>
         <td data-label="Estado"><span class="prospect-status status-${status}">${getOptionLabel(PROSPECT_STATUS_OPTIONS, status)}</span></td>
         <td data-label="Potencial">${potential ? `<span class="prospect-potential potential-${potential}">${getOptionLabel(PROSPECT_POTENTIAL_OPTIONS, potential)}</span>` : '<span class="muted">-</span>'}</td>
         <td class="col-actions" data-label="Acciones">
@@ -4951,9 +4953,12 @@ const renderProspectList = () => {
         </td>
       </tr>
       <tr class="prospect-detail-row ${isDetailOpen ? "open" : ""}">
-        <td colspan="10">
+        <td colspan="7">
           <div class="prospect-detail-grid">
+            <div><span>Contacto</span><strong>${item.contactName ? escapeHtml(item.contactName) : "-"}</strong></div>
+            <div><span>Telefono</span><strong>${item.phone ? escapeHtml(item.phone) : "-"}</strong></div>
             <div><span>Direccion</span><strong>${item.address ? escapeHtml(item.address) : "-"}</strong></div>
+            <div><span>Ciudad / zona</span><strong>${item.city || item.zone ? `${escapeHtml(item.city || "-")} / ${escapeHtml(item.zone || "-")}` : "-"}</strong></div>
             <div><span>Ubicacion</span><strong>${item.latitude || item.longitude ? `${escapeHtml(item.latitude ?? "-")}, ${escapeHtml(item.longitude ?? "-")}` : "-"}</strong></div>
             <div><span>Maps</span><strong>${mapsUrl ? locCell : "-"}</strong></div>
             <div><span>Proxima accion</span><strong>${nextAction}</strong></div>
@@ -5259,6 +5264,37 @@ const renderProspectImportHistory = () => {
     prospectImportHistory.innerHTML = "";
     return;
   }
+  const latest = sessions[0];
+  const latestDate = latest?.createdAt?.seconds ? formatDate(new Date(latest.createdAt.seconds * 1000).toISOString().slice(0, 10)) : "-";
+  const totalImported = sessions.reduce((sum, session) => sum + Number(session.importedCount || 0), 0);
+  prospectImportHistory.innerHTML = `
+    <div class="import-history-card ${prospectImportHistoryOpen ? "open" : ""}">
+      <button class="import-history-head" type="button" data-toggle-import-history aria-expanded="${prospectImportHistoryOpen ? "true" : "false"}">
+        <span>
+          <strong>Historial de importaciones</strong>
+          <small>${formatInteger(sessions.length)} sesion${sessions.length === 1 ? "" : "es"} - ${formatInteger(totalImported)} prospecto${totalImported === 1 ? "" : "s"} importado${totalImported === 1 ? "" : "s"} - Ultima: ${escapeHtml(latestDate)}</small>
+        </span>
+        <i data-lucide="chevron-down" class="import-history-chevron"></i>
+      </button>
+      <div class="import-history-body" ${prospectImportHistoryOpen ? "" : "hidden"}>
+        ${sessions.map((session) => {
+          const date = session.createdAt?.seconds ? formatDate(new Date(session.createdAt.seconds * 1000).toISOString().slice(0, 10)) : "-";
+          return `
+            <div class="import-history-row">
+              <div>
+                <strong>${escapeHtml(session.fileName || "JSON")}</strong>
+                <div class="muted">${date} - ${formatInteger(session.importedCount || 0)} importados - ${escapeHtml(session.status || "completed")}</div>
+              </div>
+              <button class="btn ghost btn-xs" type="button" data-open-import-history="${escapeHtml(session.importSessionId || "")}">Ver en mapa</button>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
+  refreshIcons();
+  return;
+  /*
   prospectImportHistory.innerHTML = `
     <div class="import-history-row">
       <div>
@@ -5271,6 +5307,7 @@ const renderProspectImportHistory = () => {
       <button class="btn ghost btn-xs" type="button" data-open-import-history>Ver ultimo</button>
     </div>
   `;
+  */
 };
 
 /* ===================== Panel de control comercial ===================== */
@@ -5988,17 +6025,30 @@ const closeSidebar = () => {
 };
 
 const toggleSidebar = () => {
+  if (window.matchMedia("(min-width: 721px)").matches && appShell?.classList.contains("sidebar-collapsed")) {
+    applySidebarCollapsed(false);
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, "0");
+    } catch (error) {
+      /* localStorage no disponible */
+    }
+    return;
+  }
   const isOpen = appShell?.classList.toggle("sidebar-open");
   sidebarToggle?.setAttribute("aria-expanded", isOpen ? "true" : "false");
 };
 
 const applySidebarCollapsed = (collapsed) => {
   appShell?.classList.toggle("sidebar-collapsed", collapsed);
+  document.body.classList.toggle("sidebar-is-collapsed", Boolean(collapsed));
   if (sidebarCollapseBtn) {
     sidebarCollapseBtn.setAttribute("aria-label", collapsed ? "Expandir menu" : "Colapsar menu");
     sidebarCollapseBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
   }
-  requestAnimationFrame(() => refreshCollapseHeights());
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+    resizeCommercialMap(260);
+  });
 };
 
 const toggleSidebarCollapsed = () => {
@@ -9016,11 +9066,15 @@ const prospectImportState = {
   step: "file",
   mode: "table",
   busy: false,
+  runLock: false,
+  importSessionId: "",
+  plannedProspectIds: [],
   importedIds: [],
   lastImportSessionId: "",
   result: null
 };
 let prospectImportPreviewMarkers = [];
+const PROSPECT_IMPORT_DRAFT_KEY = "gg_prospect_import_draft_v1";
 
 const mapToNumber = (value) => {
   if (value === null || value === undefined || value === "") return null;
@@ -9301,7 +9355,13 @@ const setImportStep = (step) => {
   const labels = Array.from(prospectImportSteps?.querySelectorAll("span") || []);
   const order = ["file", "validation", "review", "map", "confirm", "result"];
   const activeIndex = Math.max(0, order.indexOf(step));
-  labels.forEach((label, index) => label.classList.toggle("active", index <= activeIndex));
+  labels.forEach((label, index) => {
+    label.classList.toggle("active", index === activeIndex);
+    label.classList.toggle("is-complete", index < activeIndex);
+    label.classList.toggle("is-current", index === activeIndex);
+    label.classList.toggle("is-pending", index > activeIndex);
+  });
+  if (step !== "file" && step !== "result") saveProspectImportDraft();
 };
 
 const setProspectImportError = (message) => {
@@ -9310,6 +9370,58 @@ const setProspectImportError = (message) => {
 
 const setProspectImportProgress = (message) => {
   if (prospectImportProgress) prospectImportProgress.textContent = message || "";
+};
+
+const createProspectImportSessionId = () => `import_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+const saveProspectImportDraft = () => {
+  try {
+    if (!prospectImportState.rows.length) {
+      sessionStorage.removeItem(PROSPECT_IMPORT_DRAFT_KEY);
+      return;
+    }
+    sessionStorage.setItem(PROSPECT_IMPORT_DRAFT_KEY, JSON.stringify({
+      rows: prospectImportState.rows,
+      fileName: prospectImportState.fileName,
+      fileSize: prospectImportState.fileSize,
+      metadata: prospectImportState.metadata,
+      importSessionId: prospectImportState.importSessionId,
+      plannedProspectIds: prospectImportState.plannedProspectIds,
+      step: prospectImportState.step,
+      mode: prospectImportState.mode
+    }));
+  } catch (error) {
+    /* sessionStorage no disponible */
+  }
+};
+
+const clearProspectImportDraft = () => {
+  try {
+    sessionStorage.removeItem(PROSPECT_IMPORT_DRAFT_KEY);
+  } catch (error) {
+    /* sessionStorage no disponible */
+  }
+};
+
+const loadProspectImportDraft = () => {
+  try {
+    const raw = sessionStorage.getItem(PROSPECT_IMPORT_DRAFT_KEY);
+    if (!raw) return false;
+    const draft = JSON.parse(raw);
+    if (!Array.isArray(draft.rows) || !draft.rows.length) return false;
+    prospectImportState.rows = draft.rows;
+    prospectImportState.fileName = draft.fileName || "";
+    prospectImportState.fileSize = Number(draft.fileSize || 0);
+    prospectImportState.metadata = draft.metadata || {};
+    prospectImportState.importSessionId = draft.importSessionId || createProspectImportSessionId();
+    prospectImportState.plannedProspectIds = Array.isArray(draft.plannedProspectIds) ? draft.plannedProspectIds : [];
+    prospectImportState.step = ["review", "map", "confirm"].includes(draft.step) ? draft.step : "review";
+    prospectImportState.mode = draft.mode === "map" ? "map" : "table";
+    return true;
+  } catch (error) {
+    clearProspectImportDraft();
+    return false;
+  }
 };
 
 const resetProspectImportState = () => {
@@ -9321,12 +9433,16 @@ const resetProspectImportState = () => {
   prospectImportState.selectedRowId = "";
   prospectImportState.mode = "table";
   prospectImportState.busy = false;
+  prospectImportState.runLock = false;
+  prospectImportState.importSessionId = "";
+  prospectImportState.plannedProspectIds = [];
   prospectImportState.importedIds = [];
   prospectImportState.result = null;
   prospectImportModal?.classList.remove("is-map-mode");
   prospectImportReview?.classList.add("hidden");
   prospectImportResult?.classList.add("hidden");
   prospectImportFormat?.classList.remove("hidden");
+  prospectImportConfirm?.classList.add("hidden");
   if (prospectImportRows) prospectImportRows.innerHTML = "";
   if (prospectImportFile) prospectImportFile.value = "";
   if (prospectImportFileMeta) prospectImportFileMeta.textContent = "Sin archivo seleccionado.";
@@ -9342,11 +9458,23 @@ const resetProspectImportState = () => {
 
 const openProspectImportModal = () => {
   resetProspectImportState();
+  const restored = loadProspectImportDraft();
   prospectImportModal?.classList.remove("hidden");
   document.body.classList.add("modal-open");
   fillBusinessTypeSelect(prospectImportBulkRubro, { includeAll: false });
+  if (restored) {
+    if (prospectImportFileMeta) {
+      prospectImportFileMeta.textContent = `${prospectImportState.fileName || "Borrador"} - ${formatFileSize(prospectImportState.fileSize)} - ${prospectImportState.rows.length} registros en borrador`;
+    }
+    prospectImportReview?.classList.remove("hidden");
+    prospectImportFormat?.classList.add("hidden");
+    prospectImportResult?.classList.add("hidden");
+    setImportStep(prospectImportState.step);
+    if (prospectImportState.mode === "map") showProspectImportMap();
+    else renderProspectImport();
+  }
   requestAnimationFrame(() => {
-    prospectImportChoose?.focus();
+    (restored ? prospectImportRows?.querySelector("input, select, textarea") : prospectImportChoose)?.focus();
     refreshIcons();
   });
 };
@@ -9355,6 +9483,7 @@ const closeProspectImportModal = ({ force = false } = {}) => {
   if (prospectImportState.busy) return false;
   if (!force && prospectImportState.rows.length && !window.confirm("Se perderan los cambios realizados en esta importacion.")) return false;
   resetProspectImportState();
+  clearProspectImportDraft();
   prospectImportModal?.classList.add("hidden");
   document.body.classList.remove("modal-open");
   return true;
@@ -9416,6 +9545,9 @@ const loadProspectImportFile = async (file) => {
     prospectImportState.fileName = file.name;
     prospectImportState.fileSize = file.size;
     prospectImportState.metadata = result.metadata || {};
+    prospectImportState.importSessionId = createProspectImportSessionId();
+    prospectImportState.plannedProspectIds = [];
+    prospectImportState.runLock = false;
     if (prospectImportFileMeta) {
       prospectImportFileMeta.textContent = `${file.name} - ${formatFileSize(file.size)} - ${result.rows.length} registros detectados`;
     }
@@ -9424,6 +9556,7 @@ const loadProspectImportFile = async (file) => {
     prospectImportResult?.classList.add("hidden");
     setImportStep("review");
     renderProspectImport();
+    saveProspectImportDraft();
   } catch (error) {
     console.error("No se pudo leer JSON:", error);
     setProspectImportError("Este archivo no contiene un JSON valido.");
@@ -9437,14 +9570,19 @@ const IMPORT_STATE_LABELS = {
   duplicate: "Posible duplicado",
   "new-business-type": "Rubro nuevo",
   "file-duplicate": "Registro repetido dentro del archivo",
+  "branch-warning": "Posible sucursal",
   excluded: "Excluido por el usuario"
 };
 
 const renderImportBadges = (row) => {
   const states = getImportedRowStateCodes(row);
-  return `<div class="json-import-badges">${states.map((stateCode) => (
+  const priority = ["excluded", "missing", "invalid-coordinates", "duplicate", "file-duplicate", "new-business-type", "branch-warning", "ready"];
+  const ordered = states.slice().sort((a, b) => priority.indexOf(a) - priority.indexOf(b));
+  const visible = ordered.slice(0, 2);
+  const extra = ordered.length - visible.length;
+  return `<div class="json-import-badges">${visible.map((stateCode) => (
     `<span class="json-import-badge ${stateCode}">${IMPORT_STATE_LABELS[stateCode] || stateCode}</span>`
-  )).join("")}</div>`;
+  )).join("")}${extra > 0 ? `<span class="json-import-badge neutral">+${extra} aviso${extra === 1 ? "" : "s"}</span>` : ""}</div>`;
 };
 
 const renderImportDuplicates = (row) => {
@@ -9454,7 +9592,10 @@ const renderImportDuplicates = (row) => {
   const inFile = (row.fileDuplicateMatches || []).slice(0, 2).map((match) => `
     <small><b>${escapeHtml(match.name)}</b> · archivo${Number.isFinite(match.distance) ? ` · ${escapeHtml(formatDuplicateDistance(match.distance))}` : ""}<br>${escapeHtml((match.reasons || []).join(", "))}</small>
   `).join("");
-  return `<div class="json-import-duplicate-list">${existing || inFile ? existing + inFile : '<span class="muted">-</span>'}</div>`;
+  const branches = (row.fileBranchMatches || []).slice(0, 2).map((match) => `
+    <small><b>${escapeHtml(match.name)}</b> Â· posible sucursal${Number.isFinite(match.distance) ? ` Â· ${escapeHtml(formatDuplicateDistance(match.distance))}` : ""}<br>${escapeHtml((match.reasons || []).join(", "))}</small>
+  `).join("");
+  return `<div class="json-import-duplicate-list">${existing || inFile || branches ? existing + inFile + branches : '<span class="muted">-</span>'}</div>`;
 };
 
 const buildImportBusinessTypeOptionsHtml = (row) => {
@@ -9509,6 +9650,7 @@ const renderProspectImportSummary = () => {
     ["Excluidos", summary.excluded],
     ["Con errores", summary.errors],
     ["Duplicados", summary.duplicates + summary.fileDuplicates],
+    ["Sucursales", summary.branchWarnings || 0],
     ["Rubros nuevos", summary.newBusinessTypes],
     ["Sin telefono", summary.withoutPhone],
     ["Sin direccion", summary.withoutAddress]
@@ -9518,15 +9660,20 @@ const renderProspectImportSummary = () => {
   `).join("");
   if (prospectImportPrimary) {
     prospectImportPrimary.disabled = prospectImportState.busy || summary.importable <= 0 || summary.errors > 0;
-    prospectImportPrimary.textContent = prospectImportState.step === "confirm"
-      ? "Confirmar importacion"
-      : `Importar ${formatInteger(summary.importable)} prospecto${summary.importable === 1 ? "" : "s"}`;
+    if (prospectImportState.busy) {
+      prospectImportPrimary.textContent = "Importando...";
+    } else if (prospectImportState.step === "confirm") {
+      prospectImportPrimary.textContent = `Confirmar e importar ${formatInteger(summary.importable)} prospecto${summary.importable === 1 ? "" : "s"}`;
+    } else {
+      prospectImportPrimary.textContent = "Revisar y confirmar";
+    }
   }
   if (prospectImportConfirm) {
+    prospectImportConfirm.classList.toggle("hidden", prospectImportState.step !== "confirm");
     prospectImportConfirm.innerHTML = `
       <strong>Resumen antes de importar</strong>
       <p>Se crearan ${formatInteger(summary.importable)} prospectos. ${summary.newBusinessTypes ? `Se crearan ${formatInteger(summary.newBusinessTypes)} rubros nuevos confirmados en esta vista previa.` : "No hay rubros nuevos pendientes."}</p>
-      <p>${summary.duplicates + summary.fileDuplicates ? "Hay posibles duplicados aceptados para revisar antes de confirmar." : "No hay duplicados marcados en las filas importables."}</p>
+      <p>${summary.duplicates + summary.fileDuplicates ? "Hay posibles duplicados aceptados para revisar antes de confirmar." : "No hay duplicados marcados en las filas importables."}${summary.branchWarnings ? ` ${formatInteger(summary.branchWarnings)} registro${summary.branchWarnings === 1 ? "" : "s"} parecen sucursales, no duplicados.` : ""}</p>
     `;
   }
 };
@@ -9536,6 +9683,7 @@ const renderProspectImport = () => {
   renderProspectImportSummary();
   renderProspectImportRows();
   renderProspectImportPreviewMarkers();
+  saveProspectImportDraft();
   refreshIcons();
 };
 
@@ -9648,9 +9796,9 @@ const showProspectImportTable = () => {
   clearProspectImportPreviewMarkers();
 };
 
-const updateImportRowField = (rowId, field, value) => {
+const mutateImportRowField = (rowId, field, value) => {
   const row = prospectImportState.rows.find((item) => item.rowId === rowId);
-  if (!row) return;
+  if (!row) return null;
   if (field === "selected") {
     row.selected = Boolean(value);
     row.excluded = !row.selected;
@@ -9665,6 +9813,13 @@ const updateImportRowField = (rowId, field, value) => {
   } else {
     row[field] = value;
   }
+  saveProspectImportDraft();
+  return row;
+};
+
+const updateImportRowField = (rowId, field, value, { render = true } = {}) => {
+  const row = mutateImportRowField(rowId, field, value);
+  if (!row || !render) return;
   renderProspectImport();
 };
 
@@ -9700,7 +9855,14 @@ const buildImportedProspectPayload = (row, importSessionId) => {
   };
 };
 
-const createImportBatches = async ({ rows, businessTypesToCreate, importSessionId }) => {
+const ensurePlannedProspectIds = (rows) => {
+  if (prospectImportState.plannedProspectIds.length === rows.length) return prospectImportState.plannedProspectIds;
+  prospectImportState.plannedProspectIds = rows.map(() => doc(collection(db, "prospects")).id);
+  saveProspectImportDraft();
+  return prospectImportState.plannedProspectIds;
+};
+
+const createImportBatches = async ({ rows, businessTypesToCreate, importSessionId, plannedProspectIds }) => {
   const user = auth.currentUser;
   if (!user) throw new Error("auth");
   const importedProspectIds = [];
@@ -9717,7 +9879,8 @@ const createImportBatches = async ({ rows, businessTypesToCreate, importSessionI
     } });
   });
   rows.forEach((row) => {
-    const ref = doc(collection(db, "prospects"));
+    const plannedId = plannedProspectIds[importedProspectIds.length] || doc(collection(db, "prospects")).id;
+    const ref = doc(db, "prospects", plannedId);
     importedProspectIds.push(ref.id);
     operations.push({ ref, data: {
       ...buildImportedProspectPayload(row, importSessionId),
@@ -9727,22 +9890,6 @@ const createImportBatches = async ({ rows, businessTypesToCreate, importSessionI
       createdAt: serverTimestamp()
     } });
   });
-  const sessionRef = doc(db, "prospect_import_sessions", importSessionId);
-  operations.push({ ref: sessionRef, data: {
-    importSessionId,
-    fileName: prospectImportState.fileName,
-    source: IMPORT_SOURCE_LABEL,
-    importedCount: rows.length,
-    skippedCount: prospectImportState.rows.length - rows.length,
-    errorCount: prospectImportState.rows.filter((row) => (row.errors || []).length).length,
-    createdRubricCount: businessTypesToCreate.length,
-    duplicateAcceptedCount: rows.filter((row) => (row.duplicateMatches || []).length || (row.fileDuplicateMatches || []).length).length,
-    status: "completed",
-    createdBy: user.uid,
-    createdByEmail: user.email || "",
-    createdAt: serverTimestamp(),
-    importedProspectIds
-  } });
 
   const chunkSize = 450;
   for (let i = 0; i < operations.length; i += chunkSize) {
@@ -9754,6 +9901,7 @@ const createImportBatches = async ({ rows, businessTypesToCreate, importSessionI
 };
 
 const confirmProspectImport = async () => {
+  if (prospectImportState.busy || prospectImportState.runLock) return;
   if (prospectImportState.step !== "confirm") {
     setImportStep("confirm");
     prospectImportConfirmBack.hidden = false;
@@ -9767,17 +9915,86 @@ const confirmProspectImport = async () => {
     if (!row.businessTypeIsNew || !row.businessType) return;
     newTypeMap.set(row.businessType, { key: row.businessType, label: row.businessTypeName || titleCaseImport(row.businessType) });
   });
-  const importSessionId = `import_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const importSessionId = prospectImportState.importSessionId || createProspectImportSessionId();
+  prospectImportState.importSessionId = importSessionId;
+  const plannedProspectIds = ensurePlannedProspectIds(rows);
   const startedAt = performance.now();
+  const user = auth.currentUser;
+  if (!user) {
+    setProspectImportError("Inicia sesion para importar prospectos.");
+    return;
+  }
+  prospectImportState.runLock = true;
   setProspectImportBusy(true);
   setProspectImportProgress("Preparando datos...");
+  const sessionRef = doc(db, "prospect_import_sessions", importSessionId);
   try {
+    const sessionSnapshot = await getDoc(sessionRef);
+    if (sessionSnapshot.exists()) {
+      const session = sessionSnapshot.data() || {};
+      if (session.status === "completed") {
+        prospectImportState.importedIds = session.importedProspectIds || plannedProspectIds;
+        prospectImportState.lastImportSessionId = importSessionId;
+        prospectImportState.result = {
+          importedCount: session.importedCount || prospectImportState.importedIds.length,
+          skippedCount: session.skippedCount || 0,
+          errorCount: session.errorCount || 0,
+          createdRubricCount: session.createdRubricCount || 0,
+          duplicateAcceptedCount: session.duplicateAcceptedCount || 0,
+          durationMs: session.durationMs || 0
+        };
+        setProspectImportProgress("Esta importacion ya estaba completada.");
+        setImportStep("result");
+        prospectImportReview?.classList.add("hidden");
+        prospectImportResult?.classList.remove("hidden");
+        clearProspectImportPreviewMarkers();
+        renderProspectImportResult();
+        return;
+      }
+      if (session.status === "processing") {
+        setProspectImportError("Esta importacion ya se esta procesando. Espera a que termine antes de reintentar.");
+        return;
+      }
+      if (Array.isArray(session.plannedProspectIds) && session.plannedProspectIds.length === rows.length) {
+        prospectImportState.plannedProspectIds = session.plannedProspectIds;
+      }
+    }
+    await setDoc(sessionRef, {
+      importSessionId,
+      fileName: prospectImportState.fileName,
+      source: IMPORT_SOURCE_LABEL,
+      status: "processing",
+      plannedProspectIds: prospectImportState.plannedProspectIds,
+      plannedCount: rows.length,
+      skippedCount: prospectImportState.rows.length - rows.length,
+      errorCount: prospectImportState.rows.filter((row) => (row.errors || []).length).length,
+      createdBy: user.uid,
+      createdByEmail: user.email || "",
+      updatedAt: serverTimestamp(),
+      createdAt: sessionSnapshot.exists() ? (sessionSnapshot.data()?.createdAt || serverTimestamp()) : serverTimestamp()
+    }, { merge: true });
     setProspectImportProgress(newTypeMap.size ? "Creando rubros..." : "Guardando prospectos...");
     const importedIds = await createImportBatches({
       rows,
       businessTypesToCreate: Array.from(newTypeMap.values()),
-      importSessionId
+      importSessionId,
+      plannedProspectIds: prospectImportState.plannedProspectIds
     });
+    await setDoc(sessionRef, {
+      importSessionId,
+      fileName: prospectImportState.fileName,
+      source: IMPORT_SOURCE_LABEL,
+      importedCount: importedIds.length,
+      skippedCount: prospectImportState.rows.length - rows.length,
+      errorCount: prospectImportState.rows.filter((row) => (row.errors || []).length).length,
+      createdRubricCount: newTypeMap.size,
+      duplicateAcceptedCount: rows.filter((row) => (row.duplicateMatches || []).length || (row.fileDuplicateMatches || []).length).length,
+      status: "completed",
+      updatedAt: serverTimestamp(),
+      completedAt: serverTimestamp(),
+      durationMs: Math.round(performance.now() - startedAt),
+      importedProspectIds: importedIds
+    }, { merge: true });
     prospectImportState.importedIds = importedIds;
     prospectImportState.lastImportSessionId = importSessionId;
     prospectImportState.result = {
@@ -9794,12 +10011,24 @@ const confirmProspectImport = async () => {
     prospectImportResult?.classList.remove("hidden");
     clearProspectImportPreviewMarkers();
     renderProspectImportResult();
+    clearProspectImportDraft();
   } catch (error) {
     console.error("No se pudo importar JSON:", error);
+    try {
+      await setDoc(sessionRef, {
+        status: "failed",
+        updatedAt: serverTimestamp(),
+        errorMessage: String(error?.message || "import-error").slice(0, 220),
+        plannedProspectIds: prospectImportState.plannedProspectIds
+      }, { merge: true });
+    } catch (sessionError) {
+      console.warn("No se pudo marcar la sesion como fallida:", sessionError);
+    }
     setProspectImportProgress("");
-    setProspectImportError("No se pudo completar la importacion. Los datos siguen disponibles para reintentar.");
+    setProspectImportError("No se pudo completar la importacion. La sesion quedo marcada como fallida para evitar duplicados antes de reintentar.");
   } finally {
     setProspectImportBusy(false);
+    prospectImportState.runLock = false;
   }
 };
 
@@ -9837,7 +10066,8 @@ const downloadProspectImportErrorReport = () => {
       errors: row.errors,
       warnings: row.warnings,
       duplicates: row.duplicateMatches,
-      fileDuplicates: row.fileDuplicateMatches
+      fileDuplicates: row.fileDuplicateMatches,
+      fileBranchMatches: row.fileBranchMatches
     }))
   };
   const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
@@ -11001,11 +11231,14 @@ const setupProspectImport = () => {
   prospectImportRows?.addEventListener("input", (event) => {
     const field = event.target.dataset.importField;
     if (!field || field === "selected" || field === "businessType") return;
-    window.clearTimeout(event.target._importInputTimer);
-    event.target._importInputTimer = window.setTimeout(() => {
-      const rowEl = event.target.closest("[data-import-row]");
-      if (rowEl) updateImportRowField(rowEl.dataset.importRow, field, event.target.value);
-    }, 300);
+    const rowEl = event.target.closest("[data-import-row]");
+    if (rowEl) updateImportRowField(rowEl.dataset.importRow, field, event.target.value, { render: false });
+  });
+  prospectImportRows?.addEventListener("focusout", (event) => {
+    const field = event.target.dataset.importField;
+    if (!field || field === "selected" || field === "businessType") return;
+    const rowEl = event.target.closest("[data-import-row]");
+    if (rowEl) updateImportRowField(rowEl.dataset.importRow, field, event.target.value);
   });
   prospectImportRows?.addEventListener("click", (event) => {
     const toggle = event.target.closest("[data-import-row-toggle]");
@@ -11016,6 +11249,7 @@ const setupProspectImport = () => {
         const include = row.excluded || !row.selected;
         row.selected = include;
         row.excluded = !include;
+        saveProspectImportDraft();
         renderProspectImport();
       }
       return;
@@ -11040,6 +11274,7 @@ const setupProspectImport = () => {
       row.selected = shouldSelect;
       row.excluded = !shouldSelect;
     });
+    saveProspectImportDraft();
     renderProspectImport();
   });
   prospectImportExcludeSelected?.addEventListener("click", () => {
@@ -11049,6 +11284,7 @@ const setupProspectImport = () => {
         row.excluded = true;
       }
     });
+    saveProspectImportDraft();
     renderProspectImport();
   });
   prospectImportBulkRubro?.addEventListener("change", () => {
@@ -11061,6 +11297,7 @@ const setupProspectImport = () => {
       }
     });
     prospectImportBulkRubro.value = "";
+    saveProspectImportDraft();
     renderProspectImport();
   });
   prospectImportBulkPotential?.addEventListener("change", () => {
@@ -11070,6 +11307,7 @@ const setupProspectImport = () => {
       if (row.selected && !row.excluded) row.potential = value;
     });
     prospectImportBulkPotential.value = "";
+    saveProspectImportDraft();
     renderProspectImport();
   });
   prospectImportPrimary?.addEventListener("click", () => { void confirmProspectImport(); });
@@ -11088,10 +11326,17 @@ const setupProspectImport = () => {
     if (event.target.closest("[data-import-result-close]")) closeProspectImportModal({ force: true });
   });
   prospectImportHistory?.addEventListener("click", (event) => {
-    if (!event.target.closest("[data-open-import-history]")) return;
-    const session = state.prospectImportSessions?.[0];
-    if (!session?.importSessionId) return;
-    commercialMapImportSessionFilter = session.importSessionId;
+    if (event.target.closest("[data-toggle-import-history]")) {
+      prospectImportHistoryOpen = !prospectImportHistoryOpen;
+      renderProspectImportHistory();
+      return;
+    }
+    const historyBtn = event.target.closest("[data-open-import-history]");
+    if (!historyBtn) return;
+    const fallback = state.prospectImportSessions?.[0];
+    const sessionId = historyBtn.dataset.openImportHistory || fallback?.importSessionId || "";
+    if (!sessionId) return;
+    commercialMapImportSessionFilter = sessionId;
     setActiveAppSection("map");
     refreshCommercialMap();
   });
