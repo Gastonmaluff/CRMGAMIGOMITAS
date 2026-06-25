@@ -20,6 +20,11 @@ import {
   serverTimestamp,
   arrayUnion
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+import {
+  buildDuplicateMatches,
+  formatDuplicateDistance,
+  normalizeDuplicatePhone
+} from "./duplicate-detection.mjs";
 
 const firebaseConfig = {
   apiKey: "AIzaSyA0i_qAO6PU3PcS-b-Tp523zoTzmSXzgZ0",
@@ -9074,57 +9079,32 @@ const reverseGeocodeMapProspectPoint = async (lng, lat) => {
   }
 };
 
-const distanceMeters = (a, b) => {
-  if (!a || !b) return Infinity;
-  const toRad = (value) => (Number(value) * Math.PI) / 180;
-  const r = 6371000;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-  return 2 * r * Math.asin(Math.sqrt(h));
-};
-
 const findPossibleProspectDuplicates = (payload) => {
-  const payloadPhone = normalizeText(payload.phone || "");
-  const payloadName = normalizeText(payload.name || "");
-  const payloadAddress = normalizeText(payload.address || "");
-  const payloadCoords = Number.isFinite(Number(payload.latitude)) && Number.isFinite(Number(payload.longitude))
-    ? { lat: Number(payload.latitude), lng: Number(payload.longitude) }
-    : null;
-  const rows = [];
-  const inspect = (record, type) => {
+  const mapRecord = (record, type) => {
     const coords = normalizeCoordinates(record);
-    const distance = payloadCoords && coords ? distanceMeters(payloadCoords, { lat: coords.lat, lng: coords.lng }) : Infinity;
-    const recordPhone = normalizeText(record.phone || "");
-    const recordName = normalizeText(record.name || "");
-    const recordAddress = normalizeText(record.address || "");
-    const phoneMatch = payloadPhone && recordPhone && payloadPhone === recordPhone;
-    const nameMatch = payloadName && recordName && (payloadName.includes(recordName) || recordName.includes(payloadName));
-    const addressMatch = payloadAddress && recordAddress && (payloadAddress.includes(recordAddress) || recordAddress.includes(payloadAddress));
-    const coordMatch = distance <= 80;
-    if (!phoneMatch && !nameMatch && !addressMatch && !coordMatch) return;
-    rows.push({
+    return {
       id: record.id,
       type,
       name: record.name || "Sin nombre",
       phone: record.phone || "",
-      distance,
-      reasons: [
-        phoneMatch ? "telefono" : "",
-        nameMatch ? "nombre similar" : "",
-        addressMatch ? "direccion" : "",
-        coordMatch ? "ubicacion cercana" : ""
-      ].filter(Boolean)
-    });
+      address: record.address || "",
+      latitude: coords?.lat ?? null,
+      longitude: coords?.lng ?? null
+    };
   };
-  state.prospects.forEach((item) => inspect(item, "Prospecto"));
-  state.clients.forEach((item) => inspect(item, "Cliente"));
-  return rows.sort((a, b) => a.distance - b.distance).slice(0, 5);
+  return buildDuplicateMatches({
+    payload: {
+      ...payload,
+      phone: normalizeDuplicatePhone(payload.phone)
+    },
+    records: [
+      ...state.prospects.map((item) => mapRecord(item, "Prospecto")),
+      ...state.clients.map((item) => mapRecord(item, "Cliente"))
+    ]
+  }).slice(0, 5);
 };
 
-const renderMapDuplicateWarning = (duplicates, action) => {
+const renderPreciseMapDuplicateWarning = (duplicates, action) => {
   if (!mapDuplicateWarning) return;
   if (!duplicates.length) {
     mapDuplicateWarning.classList.add("hidden");
@@ -9133,25 +9113,32 @@ const renderMapDuplicateWarning = (duplicates, action) => {
   }
   mapDuplicateWarning.classList.remove("hidden");
   mapDuplicateWarning.innerHTML = `
-    <strong>Ya existe un prospecto o cliente posiblemente relacionado en esta ubicacion.</strong>
+    <strong>Encontramos un negocio muy cercano</strong>
+    <p>Revisa si el prospecto que estas cargando ya existe en el sistema.</p>
     <div class="map-duplicate-list">
       ${duplicates.map((item) => `
         <div class="map-duplicate-item">
-          <span>${escapeHtml(item.name)} · ${escapeHtml(item.type)}</span>
-          <small>${item.phone ? escapeHtml(item.phone) + " · " : ""}${Number.isFinite(item.distance) ? `${Math.round(item.distance)} m · ` : ""}${escapeHtml(item.reasons.join(", "))}</small>
+          <span>${escapeHtml(item.name)} - ${escapeHtml(item.type)}</span>
+          ${Number.isFinite(item.distance) ? `<small>Distancia: ${escapeHtml(formatDuplicateDistance(item.distance))}</small>` : ""}
+          <small>Coincidencia: ${escapeHtml(item.reasons.join(", "))}</small>
+          ${item.phone ? `<small>Telefono: ${escapeHtml(item.phone)}</small>` : ""}
+          <button class="btn ghost btn-xs" type="button" data-map-duplicate-view="${escapeHtml(item.id)}" data-map-duplicate-type="${escapeHtml(item.type)}">Ver registro</button>
         </div>
       `).join("")}
     </div>
     <div class="map-duplicate-actions">
-      <button class="btn ghost btn-xs" type="button" data-map-duplicate-view>Ver registro existente</button>
       <button class="btn ghost btn-xs" type="button" data-map-duplicate-cancel>Cancelar</button>
       <button class="btn primary btn-xs" type="button" data-map-duplicate-force>Guardar de todas formas</button>
     </div>
   `;
-  mapDuplicateWarning.querySelector("[data-map-duplicate-view]")?.addEventListener("click", () => {
-    const first = duplicates[0];
-    if (!first) return;
-    setActiveAppSection(first.type === "Cliente" ? "clients" : "prospects");
+  mapDuplicateWarning.querySelectorAll("[data-map-duplicate-view]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (getMapEntityById(btn.dataset.mapDuplicateView)) {
+        openMapDetail(btn.dataset.mapDuplicateView);
+        return;
+      }
+      setActiveAppSection(btn.dataset.mapDuplicateType === "Cliente" ? "clients" : "prospects");
+    });
   });
   mapDuplicateWarning.querySelector("[data-map-duplicate-cancel]")?.addEventListener("click", () => {
     quickMapProspectState.forceDuplicateSave = false;
@@ -9284,7 +9271,7 @@ const saveQuickMapProspect = async (action = "save") => {
   }
   const duplicates = quickMapProspectState.forceDuplicateSave ? [] : findPossibleProspectDuplicates(payload);
   if (duplicates.length) {
-    renderMapDuplicateWarning(duplicates, action);
+    renderPreciseMapDuplicateWarning(duplicates, action);
     if (mapProspectNotice) mapProspectNotice.textContent = "";
     return;
   }
