@@ -1004,6 +1004,120 @@ body {
   gap: 8px;
 }
 
+/* ===== Boton "+ Nuevo rubro" + modal de creacion de rubro ===== */
+.rubro-add-btn {
+  justify-self: start;
+  margin-top: 2px;
+}
+
+.rubro-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.rubro-modal[hidden] { display: none; }
+
+.rubro-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 40, 22, 0.45);
+}
+
+.rubro-modal-card {
+  position: relative;
+  z-index: 1;
+  width: min(440px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(8, 40, 22, 0.3);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rubro-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.rubro-modal-head h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--green-900);
+}
+
+.rubro-modal-hint {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.rubro-field {
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.rubro-field input,
+.rubro-field textarea {
+  width: 100%;
+}
+
+.rubro-modal-error {
+  color: var(--danger);
+  font-size: 0.85rem;
+  min-height: 1em;
+}
+
+.rubro-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.link-btn {
+  border: none;
+  background: transparent;
+  color: var(--green-700);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+/* Toast discreto */
+.gg-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%) translateY(16px);
+  background: var(--green-900);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 11px 18px;
+  border-radius: 999px;
+  box-shadow: 0 12px 30px rgba(8, 40, 22, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 300;
+}
+
+.gg-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 @media (max-width: 720px) {
   .map-canvas {
     height: 62vh;

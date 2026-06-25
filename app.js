@@ -444,6 +444,7 @@ const fillBusinessTypeSelect = (select, { includeAll = false, currentValue } = {
 
 const renderBusinessTypeSelectors = () => {
   fillBusinessTypeSelect(prospectForm?.businessType, { includeAll: false });
+  fillBusinessTypeSelect(document.getElementById("mapProspectForm")?.businessType, { includeAll: false });
   fillBusinessTypeSelect(document.getElementById("prospectBusinessFilter"), { includeAll: true });
   fillBusinessTypeSelect(document.getElementById("mapBusinessFilter"), { includeAll: true });
 };
@@ -10134,8 +10135,128 @@ const setupLocationPicker = () => {
   });
 };
 
+/* ---- Toast discreto ---- */
+let ggToastTimer = null;
+const showToast = (message) => {
+  let toast = document.getElementById("ggToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "ggToast";
+    toast.className = "gg-toast";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add("show");
+  window.clearTimeout(ggToastTimer);
+  ggToastTimer = window.setTimeout(() => toast.classList.remove("show"), 2600);
+};
+
+/* ---- Modal "Nuevo rubro" (catalogo dinamico compartido) ---- */
+let rubroTargetSelect = null;
+
+const setRubroError = (message) => {
+  const el = document.getElementById("rubroError");
+  if (el) el.innerHTML = message || "";
+};
+
+const selectRubroInTarget = (key, label) => {
+  if (!rubroTargetSelect) return;
+  if (![...rubroTargetSelect.options].some((opt) => opt.value === key)) {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = label;
+    rubroTargetSelect.appendChild(opt);
+  }
+  rubroTargetSelect.value = key;
+  rubroTargetSelect.dispatchEvent(new Event("change", { bubbles: true }));
+};
+
+const openRubroModal = (targetSelect) => {
+  rubroTargetSelect = targetSelect || prospectForm?.businessType || null;
+  const modal = document.getElementById("rubroModal");
+  if (!modal) return;
+  const nameInput = document.getElementById("rubroName");
+  const descInput = document.getElementById("rubroDesc");
+  if (nameInput) nameInput.value = "";
+  if (descInput) descInput.value = "";
+  setRubroError("");
+  modal.hidden = false;
+  requestAnimationFrame(() => nameInput?.focus());
+};
+
+const closeRubroModal = () => {
+  const modal = document.getElementById("rubroModal");
+  if (modal) modal.hidden = true;
+};
+
+const createRubro = async () => {
+  const nameInput = document.getElementById("rubroName");
+  const descInput = document.getElementById("rubroDesc");
+  const createBtn = document.getElementById("rubroCreateBtn");
+  const rawName = String(nameInput?.value || "").replace(/\s+/g, " ").trim();
+  const key = normalizeRubroKey(rawName);
+  if (!rawName || !key || !/[a-z0-9]/i.test(key)) {
+    setRubroError("Ingresá un nombre de rubro válido.");
+    return;
+  }
+  // Duplicado (ignora mayusculas/tildes/espacios) contra el catalogo y los inactivos.
+  const existingActive = getBusinessTypeOptions().find((opt) => opt.value === key);
+  const existingAny = (state.businessTypes || []).find((rt) => normalizeRubroKey(rt.normalizedName || rt.name) === key);
+  if (existingActive || existingAny) {
+    const label = existingActive?.label || existingAny?.name || titleCaseRubro(rawName);
+    setRubroError(`Este rubro ya existe. <button type="button" class="link-btn" id="rubroUseExisting">Seleccionar rubro existente</button>`);
+    document.getElementById("rubroUseExisting")?.addEventListener("click", () => {
+      selectRubroInTarget(key, label);
+      closeRubroModal();
+      showToast("Rubro seleccionado.");
+    });
+    return;
+  }
+  try {
+    if (createBtn) { createBtn.disabled = true; createBtn.textContent = "Creando..."; }
+    const ref = doc(collection(db, "businessTypes"), rubroDocId(key));
+    await setDoc(ref, {
+      name: rawName,
+      normalizedName: key,
+      description: String(descInput?.value || "").trim(),
+      isActive: true,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+    selectRubroInTarget(key, rawName);
+    closeRubroModal();
+    showToast("Rubro creado correctamente.");
+  } catch (error) {
+    console.error("[rubros] no se pudo crear:", error);
+    setRubroError("No se pudo guardar el rubro. Revisá tu conexión e intentá de nuevo.");
+  } finally {
+    if (createBtn) { createBtn.disabled = false; createBtn.textContent = "Crear rubro"; }
+  }
+};
+
+const setupRubroModal = () => {
+  renderBusinessTypeSelectors();
+  document.addEventListener("click", (event) => {
+    const trigger = event.target.closest("[data-new-rubro]");
+    if (trigger) {
+      const select = trigger.closest("form")?.querySelector('[name="businessType"]') || prospectForm?.businessType;
+      openRubroModal(select);
+      return;
+    }
+    if (event.target.closest("[data-rubro-close]")) closeRubroModal();
+  });
+  document.getElementById("rubroCreateBtn")?.addEventListener("click", createRubro);
+  document.getElementById("rubroName")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") { event.preventDefault(); createRubro(); }
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeRubroModal();
+  });
+};
+
 setupCommercialMap();
 setupLocationPicker();
+setupRubroModal();
 
 onAuthStateChanged(auth, (user) => {
   console.log("[auth] state changed", user ? user.uid : "signed-out");

@@ -9,7 +9,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
   <link rel="icon" type="image/png" href="apple-touch-icon.png" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="styles.css?v=20260625-03" />
+  <link rel="stylesheet" href="styles.css?v=20260625-04" />
 </head>
 <body>
   <div class="app">
@@ -326,6 +326,7 @@
                     <option value="distribuidor">Distribuidor</option>
                     <option value="otro">Otro</option>
                   </select>
+                  <button class="btn ghost btn-xs rubro-add-btn" type="button" data-new-rubro>+ Nuevo rubro</button>
                 </label>
                 <label>
                   Ciudad
@@ -1224,6 +1225,7 @@
                           <option value="distribuidor">Distribuidor</option>
                           <option value="otro">Otro</option>
                         </select>
+                        <button class="btn ghost btn-xs rubro-add-btn" type="button" data-new-rubro>+ Nuevo rubro</button>
                       </label>
                       <label>
                         Potencial estimado
@@ -1936,11 +1938,35 @@
     </div>
   </div>
 
+  <div class="rubro-modal" id="rubroModal" hidden>
+    <div class="rubro-modal-backdrop" data-rubro-close></div>
+    <div class="rubro-modal-card">
+      <div class="rubro-modal-head">
+        <h3>Nuevo rubro</h3>
+        <button class="icon-btn" type="button" data-rubro-close aria-label="Cerrar"><i data-lucide="x"></i></button>
+      </div>
+      <p class="rubro-modal-hint">Agregá un tipo de negocio para utilizarlo en prospectos y filtros.</p>
+      <label class="rubro-field">
+        Nombre del rubro
+        <input id="rubroName" type="text" maxlength="60" placeholder="Ej: Estacion de servicio" autocomplete="off" />
+      </label>
+      <label class="rubro-field">
+        Descripcion (opcional)
+        <textarea id="rubroDesc" rows="2" maxlength="160" placeholder="Ej: Local dentro de instituciones educativas"></textarea>
+      </label>
+      <div class="rubro-modal-error" id="rubroError" role="alert"></div>
+      <div class="rubro-modal-foot">
+        <button class="btn ghost" type="button" data-rubro-close>Cancelar</button>
+        <button class="btn primary" type="button" id="rubroCreateBtn">Crear rubro</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.js"></script>
-  <script type="module" src="app.js?v=20260625-03"></script>
+  <script type="module" src="app.js?v=20260625-04"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();
