@@ -14,7 +14,7 @@
 <body>
   <div class="app">
     <header class="topbar">
-      <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Abrir menu" aria-controls="appSidebar" aria-expanded="false" style="display: none;">
+      <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Abrir menu" aria-controls="appSidebar" aria-expanded="false" title="Abrir menu">
         <i data-lucide="menu"></i>
       </button>
       <div class="brand">
@@ -29,12 +29,6 @@
     <div class="app-shell auth-mode">
       <aside class="app-sidebar" id="appSidebar" aria-label="Navegacion principal">
         <nav class="sidebar-nav">
-          <div class="sidebar-head">
-            <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" type="button" aria-label="Colapsar menu" title="Colapsar / expandir menu">
-              <i data-lucide="chevrons-left"></i>
-            </button>
-          </div>
-
           <div class="sidebar-group-title">Inicio</div>
           <button class="sidebar-link active" type="button" data-app-section="dashboard" data-tooltip="Panel de control"><i data-lucide="layout-dashboard"></i><span>Panel de control</span></button>
 
@@ -207,15 +201,12 @@
         <!-- ===== Mapa comercial ===== -->
         <div class="commercial-map-section" id="commercialMapSection">
           <div class="map-topbar">
-            <div class="map-titlebox">
-              <h1 class="page-title">Mapa comercial</h1>
-              <p class="page-desc">Centro de cobertura comercial de Gami Gomitas.</p>
-            </div>
+            <h1 class="page-title">Mapa comercial</h1>
             <div class="map-search-group">
-              <div class="map-search">
-                <i data-lucide="search"></i>
-                <input id="mapGeoSearch" type="search" placeholder="Buscar ciudad, barrio o direccion" autocomplete="off" />
-                <div class="map-search-results" id="mapGeoResults" hidden></div>
+              <!-- Buscador geografico oculto: conservado para el geocodificador interno -->
+              <div hidden aria-hidden="true">
+                <input id="mapGeoSearch" type="search" autocomplete="off" tabindex="-1" />
+                <div id="mapGeoResults"></div>
               </div>
               <div class="map-search">
                 <i data-lucide="store"></i>
@@ -232,43 +223,93 @@
           </div>
 
           <div class="map-toolbar">
-            <div class="map-filters" id="mapFilters">
-              <button class="map-chip active" type="button" data-map-filter="all">Todos</button>
-              <button class="map-chip" type="button" data-map-filter="prospect">Prospectos</button>
-              <button class="map-chip" type="button" data-map-filter="client">Clientes activos</button>
-              <button class="map-chip" type="button" data-map-filter="overdue">Recompra vencida</button>
-              <input id="mapCityFilter" placeholder="Ciudad" />
-              <input id="mapZoneFilter" placeholder="Barrio/zona" />
-              <select id="mapBusinessFilter" aria-label="Rubro">
-                <option value="">Rubro: todos</option>
-                <option value="despensa">Despensa</option>
-                <option value="supermercado">Supermercado</option>
-                <option value="farmacia">Farmacia</option>
-                <option value="confiteria">Confiteria</option>
-                <option value="mayorista">Mayorista</option>
-                <option value="distribuidor">Distribuidor</option>
-                <option value="otro">Otro</option>
-              </select>
-              <select id="mapLocationFilter" aria-label="Ubicacion">
-                <option value="">Ubicacion: todas</option>
-                <option value="with">Con ubicacion</option>
-                <option value="without">Sin ubicacion</option>
-              </select>
-              <button class="btn ghost btn-xs" type="button" id="mapClearFilters">Limpiar</button>
+            <div class="map-toolbar-left">
+              <button class="map-tool-btn" id="mapFilterBtn" type="button" aria-label="Abrir filtros" aria-expanded="false" aria-controls="mapFilterPanel">
+                <i data-lucide="filter"></i>
+                <span>Filtrar</span>
+                <span class="map-filter-badge" id="mapFilterBadge" hidden>0</span>
+              </button>
+              <div class="map-active-chips" id="mapActiveChips"></div>
             </div>
-            <div class="map-actions">
-              <button class="btn ghost btn-xs" type="button" id="mapViewPy">Ver Paraguay</button>
-              <button class="btn ghost btn-xs" type="button" id="mapViewAll">Ver todos</button>
-              <button class="btn ghost btn-xs" type="button" id="mapCenterResults">Centrar resultados</button>
-              <select id="mapStyleSelect" aria-label="Estilo de mapa">
+            <div class="map-toolbar-right">
+              <button class="map-icon-btn" id="mapCenterResults" type="button" aria-label="Centrar resultados" title="Centrar resultados">
+                <i data-lucide="crosshair"></i>
+              </button>
+              <div class="map-menu-wrap" id="mapLayersWrap">
+                <button class="map-icon-btn" id="mapLayersBtn" type="button" aria-label="Cambiar estilo del mapa" title="Capas" aria-expanded="false" aria-controls="mapLayersMenu">
+                  <i data-lucide="layers"></i>
+                </button>
+                <div class="map-menu" id="mapLayersMenu" hidden role="menu">
+                  <button class="map-menu-item active" type="button" data-style-btn="streets" role="menuitem">Mapa</button>
+                  <button class="map-menu-item" type="button" data-style-btn="satellite" role="menuitem">Satelite</button>
+                  <button class="map-menu-item" type="button" data-style-btn="hybrid" role="menuitem">Hibrido</button>
+                </div>
+              </div>
+              <div class="map-menu-wrap" id="mapOptionsWrap">
+                <button class="map-icon-btn" id="mapOptionsBtn" type="button" aria-label="Opciones del mapa" title="Opciones del mapa" aria-expanded="false" aria-controls="mapOptionsMenu">
+                  <i data-lucide="settings-2"></i>
+                </button>
+                <div class="map-menu" id="mapOptionsMenu" hidden role="menu">
+                  <label class="map-menu-cluster-row" for="mapClusterToggle" title="Agrupar puntos cercanos en zonas alejadas">
+                    <input type="checkbox" id="mapClusterToggle" class="map-cluster-checkbox" />
+                    <div class="map-menu-cluster-text">
+                      <span class="map-menu-item-label">Agrupar puntos</span>
+                      <span class="map-menu-item-desc">Combina marcadores cercanos cuando el mapa esta muy alejado.</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+              <!-- Select oculto: conservado para compatibilidad con el listener JS existente -->
+              <select id="mapStyleSelect" aria-hidden="true" tabindex="-1" style="display:none">
                 <option value="streets">Mapa</option>
                 <option value="satellite">Satelite</option>
                 <option value="hybrid">Hibrido</option>
               </select>
-              <label class="map-cluster-label" for="mapClusterToggle" title="Agrupar puntos cercanos en zonas alejadas">
-                <input type="checkbox" id="mapClusterToggle" class="map-cluster-checkbox" />
-                <span class="map-cluster-text">Agrupar puntos</span>
-              </label>
+            </div>
+          </div>
+
+          <!-- Panel de filtros (oculto por defecto) -->
+          <div class="map-filter-panel" id="mapFilterPanel" hidden>
+            <div class="map-filter-panel-body">
+              <div class="map-filter-section">
+                <div class="map-filter-section-label">Estado comercial</div>
+                <div class="map-filters" id="mapFilters">
+                  <button class="map-chip active" type="button" data-map-filter="all">Todos</button>
+                  <button class="map-chip" type="button" data-map-filter="prospect">Prospectos</button>
+                  <button class="map-chip" type="button" data-map-filter="client">Clientes activos</button>
+                  <button class="map-chip" type="button" data-map-filter="overdue">Recompra vencida</button>
+                </div>
+              </div>
+              <div class="map-filter-section">
+                <div class="map-filter-section-label">Ubicacion</div>
+                <div class="map-filter-inputs">
+                  <input id="mapCityFilter" placeholder="Ciudad" />
+                  <input id="mapZoneFilter" placeholder="Barrio / zona" />
+                  <select id="mapLocationFilter" aria-label="Con o sin ubicacion">
+                    <option value="">Ubicacion: todas</option>
+                    <option value="with">Con ubicacion</option>
+                    <option value="without">Sin ubicacion</option>
+                  </select>
+                </div>
+              </div>
+              <div class="map-filter-section">
+                <div class="map-filter-section-label">Clasificacion</div>
+                <select id="mapBusinessFilter" aria-label="Rubro">
+                  <option value="">Rubro: todos</option>
+                  <option value="despensa">Despensa</option>
+                  <option value="supermercado">Supermercado</option>
+                  <option value="farmacia">Farmacia</option>
+                  <option value="confiteria">Confiteria</option>
+                  <option value="mayorista">Mayorista</option>
+                  <option value="distribuidor">Distribuidor</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </div>
+              <div class="map-filter-actions">
+                <button class="btn primary btn-xs" type="button" id="mapApplyFiltersBtn">Aplicar filtros</button>
+                <button class="btn ghost btn-xs" type="button" id="mapClearFilters">Limpiar filtros</button>
+                <button class="btn ghost btn-xs" type="button" id="mapCloseFilterBtn">Cerrar</button>
+              </div>
             </div>
           </div>
 

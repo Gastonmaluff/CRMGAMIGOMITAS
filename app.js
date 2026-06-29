@@ -6025,13 +6025,8 @@ const closeSidebar = () => {
 };
 
 const toggleSidebar = () => {
-  if (window.matchMedia("(min-width: 721px)").matches && appShell?.classList.contains("sidebar-collapsed")) {
-    applySidebarCollapsed(false);
-    try {
-      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, "0");
-    } catch (error) {
-      /* localStorage no disponible */
-    }
+  if (window.matchMedia("(min-width: 721px)").matches) {
+    toggleSidebarCollapsed();
     return;
   }
   const isOpen = appShell?.classList.toggle("sidebar-open");
@@ -6041,9 +6036,10 @@ const toggleSidebar = () => {
 const applySidebarCollapsed = (collapsed) => {
   appShell?.classList.toggle("sidebar-collapsed", collapsed);
   document.body.classList.toggle("sidebar-is-collapsed", Boolean(collapsed));
-  if (sidebarCollapseBtn) {
-    sidebarCollapseBtn.setAttribute("aria-label", collapsed ? "Expandir menu" : "Colapsar menu");
-    sidebarCollapseBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  if (sidebarToggle) {
+    sidebarToggle.setAttribute("aria-label", collapsed ? "Abrir menu" : "Cerrar menu");
+    sidebarToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    sidebarToggle.title = collapsed ? "Abrir menu" : "Cerrar menu";
   }
   requestAnimationFrame(() => {
     refreshCollapseHeights();
@@ -10509,12 +10505,49 @@ const renderMapVisibleList = (filtered) => {
   refreshIcons();
 };
 
+const updateMapFilterBadge = () => {
+  const badge = document.getElementById("mapFilterBadge");
+  const chipsEl = document.getElementById("mapActiveChips");
+  const f = mapFilterState;
+  const typeLabels = { prospect: "Prospectos", client: "Clientes activos", overdue: "Recompra vencida" };
+  const locLabels = { with: "Con ubicacion", without: "Sin ubicacion" };
+  const items = [];
+  if (f.type && f.type !== "all") items.push({ key: "type", label: typeLabels[f.type] || f.type });
+  if (f.city) items.push({ key: "city", label: f.city });
+  if (f.zone) items.push({ key: "zone", label: f.zone });
+  if (f.business) items.push({ key: "business", label: f.business });
+  if (f.location) items.push({ key: "location", label: locLabels[f.location] || f.location });
+  if (badge) { badge.hidden = !items.length; badge.textContent = items.length; }
+  if (chipsEl) {
+    chipsEl.innerHTML = items.map((it) =>
+      `<span class="map-active-chip" data-chip-key="${escapeHtml(it.key)}"><span>${escapeHtml(it.label)}</span><button type="button" aria-label="Quitar filtro">&times;</button></span>`
+    ).join("");
+    chipsEl.querySelectorAll(".map-active-chip button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const key = btn.closest("[data-chip-key]").dataset.chipKey;
+        if (key === "type") {
+          mapFilterState.type = "all";
+          document.querySelectorAll("#mapFilters .map-chip").forEach((c) => c.classList.toggle("active", c.dataset.mapFilter === "all"));
+        } else {
+          mapFilterState[key] = "";
+          const idMap = { city: "mapCityFilter", zone: "mapZoneFilter", business: "mapBusinessFilter", location: "mapLocationFilter" };
+          const el = document.getElementById(idMap[key]);
+          if (el) el.value = "";
+        }
+        refreshCommercialMap();
+        updateMapFilterBadge();
+      });
+    });
+  }
+};
+
 const refreshCommercialMap = () => {
   if (!document.getElementById("commercialMapSection")) return;
   commercialMapEntities = buildCommercialMapEntities();
   const filtered = applyMapFilters(commercialMapEntities);
   updateMapIndicators(filtered);
   renderMapVisibleList(filtered);
+  updateMapFilterBadge();
   if (commercialMap && commercialMap.getSource && commercialMap.getSource("commercial")) {
     commercialMap.getSource("commercial").setData(commercialEntitiesToGeoJSON(filtered));
   }
@@ -10877,6 +10910,62 @@ const setupCommercialMap = () => {
     if (commercialMap && MAP_STYLES[key]) commercialMap.setStyle(MAP_STYLES[key]);
   });
 
+  // ===== Menus compactos: Filtros / Capas / Opciones =====
+  const mapFilterPanel = document.getElementById("mapFilterPanel");
+  const mapFilterBtn = document.getElementById("mapFilterBtn");
+  const mapLayersMenu = document.getElementById("mapLayersMenu");
+  const mapLayersBtn = document.getElementById("mapLayersBtn");
+  const mapOptionsMenu = document.getElementById("mapOptionsMenu");
+  const mapOptionsBtn = document.getElementById("mapOptionsBtn");
+
+  const closeMapFilterPanel = () => {
+    if (mapFilterPanel) mapFilterPanel.hidden = true;
+    mapFilterBtn?.setAttribute("aria-expanded", "false");
+  };
+  const closeMapLayersMenu = () => {
+    if (mapLayersMenu) mapLayersMenu.hidden = true;
+    mapLayersBtn?.setAttribute("aria-expanded", "false");
+  };
+  const closeMapOptionsMenu = () => {
+    if (mapOptionsMenu) mapOptionsMenu.hidden = true;
+    mapOptionsBtn?.setAttribute("aria-expanded", "false");
+  };
+
+  mapFilterBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isOpen = !mapFilterPanel?.hidden;
+    closeMapLayersMenu(); closeMapOptionsMenu();
+    if (isOpen) { closeMapFilterPanel(); } else { if (mapFilterPanel) mapFilterPanel.hidden = false; mapFilterBtn.setAttribute("aria-expanded", "true"); }
+  });
+
+  mapLayersBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isOpen = !mapLayersMenu?.hidden;
+    closeMapFilterPanel(); closeMapOptionsMenu();
+    if (isOpen) { closeMapLayersMenu(); } else { if (mapLayersMenu) mapLayersMenu.hidden = false; mapLayersBtn.setAttribute("aria-expanded", "true"); }
+  });
+
+  mapOptionsBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isOpen = !mapOptionsMenu?.hidden;
+    closeMapFilterPanel(); closeMapLayersMenu();
+    if (isOpen) { closeMapOptionsMenu(); } else { if (mapOptionsMenu) mapOptionsMenu.hidden = false; mapOptionsBtn.setAttribute("aria-expanded", "true"); }
+  });
+
+  // Botones de estilo en el menu Capas
+  mapLayersMenu?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-style-btn]");
+    if (!btn) return;
+    const sel = document.getElementById("mapStyleSelect");
+    if (sel) { sel.value = btn.dataset.styleBtn; sel.dispatchEvent(new Event("change")); }
+    mapLayersMenu.querySelectorAll("[data-style-btn]").forEach((b) => b.classList.toggle("active", b === btn));
+    closeMapLayersMenu();
+  });
+
+  // Aplicar / cerrar panel de filtros
+  document.getElementById("mapApplyFiltersBtn")?.addEventListener("click", () => { closeMapFilterPanel(); updateMapFilterBadge(); });
+  document.getElementById("mapCloseFilterBtn")?.addEventListener("click", closeMapFilterPanel);
+
   // Toggle "Agrupar puntos"
   const clusterToggle = document.getElementById("mapClusterToggle");
   if (clusterToggle) {
@@ -10973,14 +11062,20 @@ const setupCommercialMap = () => {
     if (row) { const e = getMapEntityById(row.dataset.mapEntity); if (e?.hasLocation) flyToMapEntity(e); openMapDetail(row.dataset.mapEntity); }
   });
 
-  // Cerrar resultados al clickear fuera
+  // Cerrar resultados y menus al clickear fuera
   document.addEventListener("click", (event) => {
     if (!event.target.closest("#mapGeoSearch") && !event.target.closest("#mapGeoResults") && geoResults) geoResults.hidden = true;
     if (!event.target.closest("#mapBizSearch") && !event.target.closest("#mapBizResults") && bizResults) bizResults.hidden = true;
+    if (!event.target.closest("#mapFilterBtn") && !event.target.closest("#mapFilterPanel")) closeMapFilterPanel?.();
+    if (!event.target.closest("#mapLayersWrap")) closeMapLayersMenu?.();
+    if (!event.target.closest("#mapOptionsWrap")) closeMapOptionsMenu?.();
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && quickMapProspectState.active) {
-      finishQuickMapProspectMode({ showSummary: false });
+    if (event.key === "Escape") {
+      closeMapFilterPanel?.();
+      closeMapLayersMenu?.();
+      closeMapOptionsMenu?.();
+      if (quickMapProspectState.active) finishQuickMapProspectMode({ showSummary: false });
     }
   });
 
