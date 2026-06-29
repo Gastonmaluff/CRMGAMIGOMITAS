@@ -1441,18 +1441,15 @@ body {
   }
 
   .map-action-row {
-    display: flex;
-    align-items: center;
-    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    padding-bottom: 2px;
-  }
-
-  .map-action-row::-webkit-scrollbar {
-    display: none;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    height: auto;
+    overflow: visible;
   }
 
   .map-action-row .btn {
@@ -1460,16 +1457,18 @@ body {
     align-items: center;
     justify-content: center;
     gap: 6px;
-    flex: 0 0 auto;
-    white-space: nowrap;
+    width: 100%;
+    min-height: 44px;
+    height: auto;
+    padding: 8px 12px;
     font-size: 0.82rem;
     font-weight: 600;
-    height: 38px;
-    padding: 0 14px;
-    min-height: 0;
-    align-self: center;
-    border-radius: 999px;
+    line-height: 1.15;
+    white-space: normal;
+    text-align: center;
+    border-radius: 10px;
     box-shadow: none;
+    align-self: stretch;
   }
 
   .map-action-row .btn svg {
@@ -1482,6 +1481,11 @@ body {
     transform: none;
     box-shadow: none;
   }
+
+  /* Fila 1: Agregar prospecto | Crear jornada — Fila 2: Importar JSON a lo ancho */
+  .map-action-row .map-add-prospect-btn { order: 1; }
+  .map-action-row #mapCreateJourneyBtn { order: 2; }
+  .map-action-row .map-import-prospect-btn { order: 3; grid-column: 1 / -1; }
 
   .map-topbar {
     align-items: flex-start;
