@@ -482,86 +482,6 @@
             </div>
           </div>
 
-          <!-- ===== Modal: Nueva jornada ===== -->
-          <div class="modal-backdrop journey-modal-backdrop" id="newJourneyModal" hidden role="dialog" aria-modal="true" aria-labelledby="newJourneyModalTitle">
-            <div class="modal-box modal-box-lg">
-              <div class="modal-head">
-                <h2 class="modal-title" id="newJourneyModalTitle"><i data-lucide="route"></i> Nueva jornada de visitas</h2>
-                <button class="icon-btn" type="button" data-journey-modal-close aria-label="Cerrar"><i data-lucide="x"></i></button>
-              </div>
-              <div class="modal-body">
-                <div class="form-row">
-                  <label class="form-label" for="journeyName">Nombre de la jornada</label>
-                  <input class="form-input" type="text" id="journeyName" placeholder="Jornada Luque · 28 jun" />
-                </div>
-                <div class="form-row-inline">
-                  <div class="form-row">
-                    <label class="form-label" for="journeyDate">Fecha</label>
-                    <input class="form-input" type="date" id="journeyDate" />
-                  </div>
-                  <div class="form-row">
-                    <label class="form-label" for="journeyTime">Hora de salida (opcional)</label>
-                    <input class="form-input" type="time" id="journeyTime" />
-                  </div>
-                </div>
-
-                <div class="journey-origin-block">
-                  <div class="form-label">Punto de partida (mejora la optimizacion)</div>
-                  <div class="journey-origin-btns">
-                    <button class="btn ghost btn-sm" type="button" data-journey-gps><i data-lucide="locate"></i> Usar mi ubicacion</button>
-                    <button class="btn ghost btn-sm" type="button" data-journey-map-origin><i data-lucide="map-pin"></i> Marcar en el mapa</button>
-                  </div>
-                  <div class="journey-origin-status" id="journeyOriginStatus" hidden></div>
-                </div>
-
-                <div class="journey-stops-preview-head">
-                  <div class="form-label">Paradas (<span id="journeyStopCount">0</span>)</div>
-                  <button class="btn ghost btn-xs" type="button" data-journey-optimize><i data-lucide="zap"></i> Reoptimizar orden</button>
-                </div>
-                <div class="journey-stop-list-preview" id="journeyStopListPreview"></div>
-                <div class="journey-opt-result" id="journeyOptResult"></div>
-
-                <div class="journey-count-warn" id="journeyCountWarn" hidden>
-                  <i data-lucide="alert-triangle"></i>
-                  Mas de <strong>10 paradas</strong> — la jornada puede extenderse demasiado.
-                </div>
-              </div>
-              <div class="modal-footer">
-                <button class="btn ghost" type="button" data-journey-modal-close>Cancelar</button>
-                <button class="btn primary" type="button" id="journeySaveBtn"><i data-lucide="save"></i> Guardar jornada</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- ===== Modal: Registrar resultado de parada ===== -->
-          <div class="modal-backdrop journey-modal-backdrop" id="journeyResultModal" hidden role="dialog" aria-modal="true" aria-labelledby="resultModalTitle">
-            <div class="modal-box">
-              <div class="modal-head">
-                <h2 class="modal-title" id="resultModalTitle">Registrar resultado</h2>
-                <button class="icon-btn" type="button" data-result-close aria-label="Cerrar"><i data-lucide="x"></i></button>
-              </div>
-              <div class="modal-body">
-                <div class="result-modal-name" id="resultModalName"></div>
-                <div class="result-buttons">
-                  <button class="result-btn" type="button" data-result-value="sale"><i data-lucide="shopping-bag"></i> Venta realizada</button>
-                  <button class="result-btn" type="button" data-result-value="visited_no_sale"><i data-lucide="check"></i> Visitado sin venta</button>
-                  <button class="result-btn" type="button" data-result-value="closed"><i data-lucide="store-x"></i> Local cerrado</button>
-                  <button class="result-btn" type="button" data-result-value="unavailable"><i data-lucide="user-x"></i> No disponible</button>
-                  <button class="result-btn" type="button" data-result-value="rescheduled"><i data-lucide="calendar"></i> Reprogramar</button>
-                  <button class="result-btn" type="button" data-result-value="skipped"><i data-lucide="skip-forward"></i> Omitir</button>
-                </div>
-                <div class="form-row">
-                  <label class="form-label" for="resultNotes">Notas (opcional)</label>
-                  <textarea class="form-input" id="resultNotes" rows="2" placeholder="Comentarios del resultado..."></textarea>
-                </div>
-              </div>
-              <div class="modal-footer">
-                <button class="btn ghost" type="button" data-result-close>Cancelar</button>
-                <button class="btn primary" type="button" data-result-confirm>Confirmar resultado</button>
-              </div>
-            </div>
-          </div>
-
         </div>
         <!-- /commercial-map-section -->
 
@@ -2280,11 +2200,148 @@
     </div>
   </div>
 
+  <!-- ===== Modal: Nueva jornada de visitas ===== -->
+  <div class="journey-modal" id="newJourneyModal" hidden role="dialog" aria-modal="true" aria-labelledby="newJourneyModalTitle">
+    <div class="journey-modal-overlay" data-journey-modal-close></div>
+    <div class="journey-modal-box" role="document">
+      <header class="journey-modal-head">
+        <div class="journey-modal-head-text">
+          <h2 class="journey-modal-title" id="newJourneyModalTitle">Nueva jornada de visitas</h2>
+          <p class="journey-modal-subtitle">Configurá el origen, revisá las paradas y optimizá el recorrido.</p>
+        </div>
+        <button class="journey-modal-close" type="button" data-journey-modal-close aria-label="Cerrar"><i data-lucide="x"></i></button>
+      </header>
+
+      <div class="journey-modal-body" id="journeyModalBody">
+        <div class="journey-modal-grid">
+          <div class="journey-modal-col">
+
+            <section class="journey-card">
+              <h3 class="journey-card-title">Datos de la jornada</h3>
+              <div class="form-row">
+                <label class="form-label" for="journeyName">Nombre</label>
+                <input class="form-input" type="text" id="journeyName" autocomplete="off" placeholder="Jornada Luque · 28 jun" />
+              </div>
+              <div class="journey-field-2col">
+                <div class="form-row">
+                  <label class="form-label" for="journeyDate">Fecha</label>
+                  <input class="form-input" type="date" id="journeyDate" />
+                </div>
+                <div class="form-row">
+                  <label class="form-label" for="journeyTime">Hora de inicio</label>
+                  <input class="form-input" type="time" id="journeyTime" />
+                </div>
+              </div>
+              <div class="form-row">
+                <label class="form-label" for="journeyResponsable">Responsable</label>
+                <input class="form-input" type="text" id="journeyResponsable" readonly />
+              </div>
+            </section>
+
+            <section class="journey-card">
+              <h3 class="journey-card-title">Punto de partida</h3>
+              <p class="journey-card-desc">Mejora la optimización del recorrido.</p>
+              <div class="journey-origin-seg" role="group" aria-label="Punto de partida">
+                <button class="journey-origin-seg-btn" type="button" data-journey-gps>
+                  <i data-lucide="locate-fixed"></i>
+                  <span>Mi ubicación actual</span>
+                </button>
+                <button class="journey-origin-seg-btn" type="button" data-journey-map-origin>
+                  <i data-lucide="map-pin"></i>
+                  <span>Elegir en el mapa</span>
+                </button>
+              </div>
+              <div class="journey-origin-status" id="journeyOriginStatus" hidden></div>
+            </section>
+
+            <section class="journey-card">
+              <div class="journey-card-title-row">
+                <h3 class="journey-card-title">Negocios seleccionados</h3>
+                <span class="journey-count-pill"><span id="journeyStopCount">0</span> visitas</span>
+              </div>
+              <div class="journey-stop-list-preview" id="journeyStopListPreview"></div>
+              <div class="journey-count-warn" id="journeyCountWarn" hidden>
+                <i data-lucide="alert-triangle"></i>
+                <span>Más de <strong>10 paradas</strong> — la jornada puede extenderse demasiado.</span>
+              </div>
+            </section>
+
+          </div>
+          <div class="journey-modal-col">
+
+            <section class="journey-card">
+              <h3 class="journey-card-title">Vista previa de la ruta</h3>
+              <div class="journey-preview-map" id="journeyPreviewMap">
+                <div class="journey-preview-empty" id="journeyPreviewEmpty">El recorrido aparecerá acá al optimizar.</div>
+              </div>
+              <div class="journey-preview-legend">
+                <span><i class="map-dot" style="background:#1e40af"></i> Inicio</span>
+                <span><i class="map-dot map-dot-orange"></i> Prospecto</span>
+                <span><i class="map-dot map-dot-green"></i> Cliente activo</span>
+                <span><i class="map-dot map-dot-red"></i> Recompra vencida</span>
+              </div>
+            </section>
+
+            <section class="journey-card">
+              <h3 class="journey-card-title">Resumen del recorrido</h3>
+              <div class="journey-summary" id="journeyOptResult"></div>
+            </section>
+
+          </div>
+        </div>
+      </div>
+
+      <footer class="journey-modal-footer">
+        <button class="btn ghost journey-footer-cancel" type="button" data-journey-modal-close>Cancelar</button>
+        <div class="journey-footer-actions">
+          <button class="btn secondary" type="button" id="journeyOptimizeBtn" data-journey-optimize>
+            <i data-lucide="route"></i> <span class="journey-optimize-label">Optimizar orden</span>
+          </button>
+          <button class="btn primary" type="button" id="journeySaveBtn">
+            <i data-lucide="save"></i> <span class="journey-save-label">Guardar jornada</span>
+          </button>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ===== Modal: Registrar resultado de parada ===== -->
+  <div class="journey-modal journey-modal-sm" id="journeyResultModal" hidden role="dialog" aria-modal="true" aria-labelledby="resultModalTitle">
+    <div class="journey-modal-overlay" data-result-close></div>
+    <div class="journey-modal-box" role="document">
+      <header class="journey-modal-head">
+        <div class="journey-modal-head-text">
+          <h2 class="journey-modal-title" id="resultModalTitle">Registrar resultado</h2>
+          <p class="journey-modal-subtitle" id="resultModalName"></p>
+        </div>
+        <button class="journey-modal-close" type="button" data-result-close aria-label="Cerrar"><i data-lucide="x"></i></button>
+      </header>
+      <div class="journey-modal-body">
+        <div class="result-buttons">
+          <button class="result-btn" type="button" data-result-value="sale"><i data-lucide="shopping-bag"></i> Venta realizada</button>
+          <button class="result-btn" type="button" data-result-value="visited_no_sale"><i data-lucide="check"></i> Visitado sin venta</button>
+          <button class="result-btn" type="button" data-result-value="closed"><i data-lucide="store"></i> Local cerrado</button>
+          <button class="result-btn" type="button" data-result-value="unavailable"><i data-lucide="user-x"></i> No disponible</button>
+          <button class="result-btn" type="button" data-result-value="rescheduled"><i data-lucide="calendar"></i> Reprogramar</button>
+          <button class="result-btn" type="button" data-result-value="skipped"><i data-lucide="skip-forward"></i> Omitir</button>
+        </div>
+        <div class="form-row">
+          <label class="form-label" for="resultNotes">Notas (opcional)</label>
+          <textarea class="form-input" id="resultNotes" rows="2" placeholder="Comentarios del resultado..."></textarea>
+        </div>
+      </div>
+      <footer class="journey-modal-footer">
+        <button class="btn ghost" type="button" data-result-close>Cancelar</button>
+        <button class="btn primary" type="button" data-result-confirm>Confirmar resultado</button>
+      </footer>
+    </div>
+  </div>
+
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.js"></script>
-  <script type="module" src="app.js?v=20260625-06"></script>
+  <script type="module" src="app.js?v=20260629-07"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

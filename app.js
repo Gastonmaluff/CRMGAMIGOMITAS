@@ -445,6 +445,9 @@ let journeyRouteData = null;
 let activeJourneyId = null;
 let activeJourneyStopsUnsubscribe = null;
 let journeyStopsCache = [];
+let journeyPreviewMap = null;
+let journeyPreviewMarkers = [];
+let journeyPreviewReady = false;
 const repurchaseNotesOpenState = new Set();
 const repurchaseHistoryOpenState = new Set();
 const clientHistoryOpenState = new Set();
@@ -11734,35 +11737,100 @@ const openResultModal = (journeyId, stopId) => {
   const btns = modal.querySelectorAll("[data-result-value]");
   btns.forEach((b) => b.classList.remove("active"));
   modal.hidden = false;
+  document.body.classList.add("modal-open");
+  refreshIcons();
 };
 
 const closeResultModal = () => {
   const modal = document.getElementById("journeyResultModal");
   if (modal) modal.hidden = true;
+  document.body.classList.remove("modal-open");
 };
 
 // ----- Nuevo modal de jornada -----
-const openNewJourneyModal = () => {
-  const modal = document.getElementById("newJourneyModal");
-  if (!modal) return;
+const setOriginSegActive = () => {
+  document.querySelectorAll("#newJourneyModal .journey-origin-seg-btn").forEach((b) => b.classList.remove("active"));
+  const o = journeyCreatorState.origin;
+  if (!o) return;
+  const sel = o.type === "map-point" ? "[data-journey-map-origin]" : "[data-journey-gps]";
+  document.querySelector(`#newJourneyModal ${sel}`)?.classList.add("active");
+};
+
+const renderOriginStatus = () => {
+  const el = document.getElementById("journeyOriginStatus");
+  if (!el) return;
+  const o = journeyCreatorState.origin;
+  if (!o) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  const coords = `${Number(o.latitude).toFixed(5)}, ${Number(o.longitude).toFixed(5)}`;
+  el.innerHTML = `
+    <i data-lucide="circle-check-big"></i>
+    <div class="journey-origin-status-text">
+      <strong>Punto seleccionado</strong>
+      <span>${escapeHtml(o.label || (o.type === "map-point" ? "Punto en el mapa" : "Mi ubicacion"))}</span>
+      <span class="journey-origin-coords">${coords}</span>
+    </div>`;
+};
+
+const initJourneyFormDefaults = () => {
   const nameEl = document.getElementById("journeyName");
   const dateEl = document.getElementById("journeyDate");
-  if (nameEl) nameEl.value = suggestJourneyName();
-  if (dateEl) dateEl.value = todayStr();
-  document.getElementById("journeyOriginStatus")?.setAttribute("hidden", "");
+  const respEl = document.getElementById("journeyResponsable");
+  if (nameEl && !nameEl.value.trim()) nameEl.value = suggestJourneyName();
+  if (dateEl && !dateEl.value) dateEl.value = todayStr();
+  if (respEl) respEl.value = auth.currentUser?.email || auth.currentUser?.uid || "Usuario actual";
+};
+
+// Apertura fresca (desde "Continuar" o "Nueva jornada"): reinicia origen y orden.
+const openJourneyCreatorFresh = () => {
   journeyCreatorState.origin = null;
   journeyCreatorState.optimizedOrder = [];
   journeyCreatorState.routePolyline = null;
   journeyCreatorState.orderManuallyEdited = false;
+  journeyCreatorState.optimizationMethod = "";
+  journeyCreatorState.totalDistanceMeters = 0;
+  journeyCreatorState.estimatedDurationSeconds = 0;
+  journeyCreatorState.legs = [];
   journeyCreatorState.saving = false;
-  renderJourneyStopList();
-  renderJourneyOptimizationResult();
-  modal.hidden = false;
+  journeyCreatorState._savingRef = false;
+  journeyCreatorState.optimizing = false;
+  journeyCreatorState._lastOptimizeRan = false;
+  const nameEl = document.getElementById("journeyName");
+  if (nameEl) nameEl.value = "";
+  const dateEl = document.getElementById("journeyDate");
+  if (dateEl) dateEl.value = "";
+  showJourneyModal({ focusName: true });
 };
+
+// Solo muestra y refresca el modal sin tocar el estado (vuelta desde el mapa).
+const showJourneyModal = ({ focusName = false } = {}) => {
+  const modal = document.getElementById("newJourneyModal");
+  if (!modal) return;
+  initJourneyFormDefaults();
+  renderJourneyStopList();
+  renderJourneySummary();
+  setOriginSegActive();
+  renderOriginStatus();
+  modal.hidden = false;
+  document.body.classList.add("modal-open");
+  ensureJourneyPreviewMap();
+  refreshIcons();
+  window.setTimeout(() => {
+    try { journeyPreviewMap?.resize(); } catch (e) { /* noop */ }
+    drawJourneyPreview();
+    if (focusName) document.getElementById("journeyName")?.focus();
+  }, 90);
+};
+
+// Compatibilidad: apertura fresca por defecto.
+const openNewJourneyModal = () => openJourneyCreatorFresh();
 
 const closeNewJourneyModal = () => {
   const modal = document.getElementById("newJourneyModal");
   if (modal) modal.hidden = true;
+  document.body.classList.remove("modal-open");
+  const trigger = document.getElementById("mapCreateJourneyBtn");
+  if (trigger) try { trigger.focus(); } catch (e) { /* noop */ }
 };
 
 const renderJourneyStopList = () => {
@@ -11826,9 +11894,15 @@ const renderJourneyStopList = () => {
       journeyCreatorState.selectedEntities.splice(idx, 1);
       journeyCreatorState.optimizedOrder = [];
       journeyCreatorState.orderManuallyEdited = false;
+      journeyCreatorState._lastOptimizeRan = false;
+      journeyCreatorState.totalDistanceMeters = 0;
+      journeyCreatorState.estimatedDurationSeconds = 0;
       renderJourneyStopList();
+      renderJourneySummary();
+      drawJourneyPreview();
       syncMapJourneySelectState();
       renderJourneySelectionBar();
+      highlightJourneySelectedEntities();
     });
   });
   setupDragAndDropStops(el);
@@ -11859,59 +11933,100 @@ const setupDragAndDropStops = (container) => {
   });
 };
 
-const updateJourneyRouteAfterReorder = () => {
-  if (!journeyCreatorState.origin) return;
-  const order = journeyCreatorState.optimizedOrder;
-  const entities = journeyCreatorState.selectedEntities;
-  const stops = order.map((i) => entities[i]);
-  const stopCoords = stops.map((e) => ({ lat: Number(e.latitude), lng: Number(e.longitude) }));
-  const originCoords = { lat: journeyCreatorState.origin.latitude, lng: journeyCreatorState.origin.longitude };
-  const result = optimizeRouteHaversine(originCoords, stopCoords);
-  const legs = result.legs;
-  stops.forEach((stop, i) => {
-    stop._legDist = legs[i]?.distanceMeters || 0;
-    stop._legSec = legs[i]?.durationSeconds || 0;
+// Suma distancias Haversine a lo largo de un orden dado (sin reordenar).
+const computeLegsAlongOrder = (originCoords, orderedCoords) => {
+  const legs = [];
+  let total = 0, sec = 0, prev = originCoords;
+  orderedCoords.forEach((c) => {
+    const d = haversineMeters(prev.lat, prev.lng, c.lat, c.lng);
+    total += d; sec += estimateDriveSeconds(d);
+    legs.push({ distanceMeters: Math.round(d), durationSeconds: estimateDriveSeconds(d) });
+    prev = c;
   });
-  journeyCreatorState.totalDistanceMeters = result.totalDistanceMeters;
-  journeyCreatorState.estimatedDurationSeconds = result.estimatedDurationSeconds;
-  journeyCreatorState.legs = legs;
-  renderJourneyOptimizationResult();
-  drawJourneyRouteOnMap(originCoords, stops);
+  return { legs, totalDistanceMeters: Math.round(total), estimatedDurationSeconds: sec };
 };
 
-const renderJourneyOptimizationResult = () => {
+// Tras reordenar manualmente: recalcula distancias en ESE orden, sin re-optimizar.
+const updateJourneyRouteAfterReorder = () => {
+  const st = journeyCreatorState;
+  if (!st.origin) { renderJourneySummary(); drawJourneyPreview(); return; }
+  const entities = st.selectedEntities;
+  const order = st.optimizedOrder.length ? st.optimizedOrder : entities.map((_, i) => i);
+  const stops = order.map((i) => entities[i]);
+  const orderedCoords = stops.map((e) => ({ lat: Number(e.latitude), lng: Number(e.longitude) }));
+  const originCoords = { lat: st.origin.latitude, lng: st.origin.longitude };
+  const r = computeLegsAlongOrder(originCoords, orderedCoords);
+  stops.forEach((stop, i) => { stop._legDist = r.legs[i]?.distanceMeters || 0; stop._legSec = r.legs[i]?.durationSeconds || 0; });
+  st.totalDistanceMeters = r.totalDistanceMeters;
+  st.estimatedDurationSeconds = r.estimatedDurationSeconds;
+  st.legs = r.legs;
+  st._lastOptimizeRan = false;
+  renderJourneySummary();
+  drawJourneyPreview();
+};
+
+const renderJourneySummary = () => {
   const el = document.getElementById("journeyOptResult");
   if (!el) return;
-  if (!journeyCreatorState.origin || !journeyCreatorState.totalDistanceMeters) { el.innerHTML = ""; return; }
+  const st = journeyCreatorState;
+  const entities = st.selectedEntities;
+  if (!st.origin) {
+    el.innerHTML = '<div class="journey-summary-hint"><i data-lucide="info"></i> Elegí un punto de partida y optimizá para ver el recorrido.</div>';
+    refreshIcons(); return;
+  }
+  if (!st.totalDistanceMeters || !st.optimizedOrder.length) {
+    el.innerHTML = '<div class="journey-summary-hint"><i data-lucide="info"></i> Todavía no se calculó el recorrido. Pulsá “Optimizar orden”.</div>';
+    refreshIcons(); return;
+  }
+  const order = st.optimizedOrder;
+  const first = entities[order[0]];
+  const last = entities[order[order.length - 1]];
+  const method = st.orderManuallyEdited ? "Orden manual" : st.isApproximate ? "Aproximación geográfica" : "Optimización vial";
+  let banner = "";
+  if (st._lastOptimizeRan && !st.orderManuallyEdited) {
+    banner = st._lastOptimizeChanged
+      ? '<div class="journey-opt-banner journey-opt-ok"><i data-lucide="circle-check-big"></i> Orden optimizado correctamente.</div>'
+      : '<div class="journey-opt-banner journey-opt-info"><i data-lucide="circle-check-big"></i> El orden actual ya es el más eficiente según el punto de partida.</div>';
+  }
   el.innerHTML = `
-    <div class="journey-opt-summary">
-      <span><b>${journeyCreatorState.selectedEntities.length}</b> paradas</span>
-      <span><b>${formatDistance(journeyCreatorState.totalDistanceMeters)}</b> totales</span>
-      <span><b>${formatDuration(journeyCreatorState.estimatedDurationSeconds)}</b> estimados</span>
-      ${journeyCreatorState.isApproximate ? '<span class="journey-approx-badge">Orden aproximado — sin info vial</span>' : '<span class="journey-exact-badge">Ruta optimizada</span>'}
-      ${journeyCreatorState.orderManuallyEdited ? '<span class="journey-manual-badge">Editado manualmente</span>' : ""}
-    </div>`;
+    ${banner}
+    <div class="journey-summary-grid">
+      <div class="journey-summary-cell"><span>Visitas</span><strong>${entities.length}</strong></div>
+      <div class="journey-summary-cell"><span>Distancia total</span><strong>${formatDistance(st.totalDistanceMeters)}</strong></div>
+      <div class="journey-summary-cell"><span>Duración estim.</span><strong>${formatDuration(st.estimatedDurationSeconds)}</strong></div>
+      <div class="journey-summary-cell"><span>Método</span><strong>${method}</strong></div>
+      <div class="journey-summary-cell journey-summary-wide"><span>Primera parada</span><strong>${escapeHtml(first?.name || "-")}</strong></div>
+      <div class="journey-summary-cell journey-summary-wide"><span>Última parada</span><strong>${escapeHtml(last?.name || "-")}</strong></div>
+    </div>
+    ${st.isApproximate && !st.orderManuallyEdited ? '<p class="journey-summary-note">Orden aproximado basado en cercanía geográfica. No es una ruta vial óptima.</p>' : ""}`;
+  refreshIcons();
 };
 
 // ----- Origin selection -----
 const requestGPSOrigin = () => {
   const statusEl = document.getElementById("journeyOriginStatus");
-  if (statusEl) { statusEl.removeAttribute("hidden"); statusEl.textContent = "Obteniendo ubicacion..."; }
+  if (statusEl) { statusEl.hidden = false; statusEl.className = "journey-origin-status is-loading"; statusEl.innerHTML = '<span class="journey-spinner"></span> Obteniendo ubicación…'; }
   if (!navigator.geolocation) {
-    if (statusEl) statusEl.textContent = "El navegador no soporta geolocalizacion.";
+    if (statusEl) { statusEl.className = "journey-origin-status is-error"; statusEl.innerHTML = 'Tu navegador no soporta geolocalización. Elegí un punto en el mapa.'; }
     return;
   }
   navigator.geolocation.getCurrentPosition(
     (pos) => {
-      journeyCreatorState.origin = { type: "current-location", latitude: pos.coords.latitude, longitude: pos.coords.longitude, label: "Mi ubicacion actual", accuracy: pos.coords.accuracy };
-      if (statusEl) statusEl.textContent = `Ubicacion obtenida (precisión ~${Math.round(pos.coords.accuracy)}m)`;
-      triggerRouteOptimization();
+      journeyCreatorState.origin = { type: "current-location", latitude: pos.coords.latitude, longitude: pos.coords.longitude, label: `Mi ubicación actual (±${Math.round(pos.coords.accuracy)} m)`, accuracy: pos.coords.accuracy };
+      if (statusEl) statusEl.className = "journey-origin-status is-ok";
+      renderOriginStatus();
+      setOriginSegActive();
+      refreshIcons();
+      optimizeJourneyRoute({ auto: true });
     },
     (err) => {
-      const msg = err.code === 1 ? "Permiso de ubicacion denegado. Elige un punto en el mapa." : "No se pudo obtener la ubicacion. Intenta de nuevo.";
-      if (statusEl) statusEl.textContent = msg;
+      const denied = err.code === 1;
+      if (statusEl) {
+        statusEl.className = "journey-origin-status is-error";
+        statusEl.innerHTML = `${denied ? "Permiso de ubicación denegado." : "No se pudo obtener la ubicación."} <button type="button" class="journey-link-btn" data-journey-gps>Reintentar</button> o elegí un punto en el mapa.`;
+      }
     },
-    { timeout: 10000, maximumAge: 60000 }
+    { timeout: 10000, maximumAge: 60000, enableHighAccuracy: true }
   );
 };
 
@@ -11930,26 +12045,71 @@ const deactivateMapOriginPicker = () => {
   if (toast) toast.hidden = true;
 };
 
-// ----- Route optimization trigger -----
-const triggerRouteOptimization = () => {
+// ----- Optimizar orden -----
+const showOptSummaryWarn = (msg) => {
+  const el = document.getElementById("journeyOptResult");
+  if (el) el.innerHTML = `<div class="journey-summary-hint journey-summary-warn"><i data-lucide="alert-circle"></i> ${escapeHtml(msg)}</div>`;
+  refreshIcons();
+};
+
+const optimizeJourneyRoute = ({ auto = false } = {}) => {
+  if (journeyCreatorState.optimizing) return;
   const entities = journeyCreatorState.selectedEntities;
   const origin = journeyCreatorState.origin;
-  if (!origin || entities.length < MIN_VISIT_STOPS) { renderJourneyOptimizationResult(); return; }
-  const stopCoords = entities.map((e) => ({ lat: Number(e.latitude), lng: Number(e.longitude) }));
-  const originCoords = { lat: origin.latitude, lng: origin.longitude };
-  const result = optimizeRouteHaversine(originCoords, stopCoords);
-  journeyCreatorState.optimizedOrder = result.order;
-  journeyCreatorState.legs = result.legs;
-  journeyCreatorState.totalDistanceMeters = result.totalDistanceMeters;
-  journeyCreatorState.estimatedDurationSeconds = result.estimatedDurationSeconds;
-  journeyCreatorState.isApproximate = true;
-  journeyCreatorState.optimizationMethod = "haversine-heuristic";
-  journeyCreatorState.orderManuallyEdited = false;
-  const orderedStops = result.order.map((i) => entities[i]);
-  result.legs.forEach((leg, i) => { if (orderedStops[i]) { orderedStops[i]._legDist = leg.distanceMeters; orderedStops[i]._legSec = leg.durationSeconds; } });
-  renderJourneyStopList();
-  renderJourneyOptimizationResult();
-  drawJourneyRouteOnMap(originCoords, orderedStops);
+
+  if (!origin) {
+    if (!auto) showOptSummaryWarn("Seleccioná un punto de partida antes de optimizar.");
+    return;
+  }
+  if (entities.length < MIN_VISIT_STOPS) {
+    if (!auto) showOptSummaryWarn(`Necesitás al menos ${MIN_VISIT_STOPS} paradas para optimizar.`);
+    return;
+  }
+  const invalid = entities.filter((e) => !(Number(e.latitude) && Number(e.longitude)));
+  if (invalid.length) {
+    showOptSummaryWarn(`${invalid.length} negocio(s) sin coordenadas válidas. Quitalos para optimizar.`);
+    return;
+  }
+
+  journeyCreatorState.optimizing = true;
+  const prevOrder = (journeyCreatorState.optimizedOrder.length ? journeyCreatorState.optimizedOrder : entities.map((_, i) => i)).join(",");
+  const btn = document.getElementById("journeyOptimizeBtn");
+  const saveBtn = document.getElementById("journeySaveBtn");
+  const lbl = btn?.querySelector(".journey-optimize-label");
+  if (btn) { btn.disabled = true; btn.classList.add("is-loading"); }
+  if (lbl) lbl.textContent = "Optimizando…";
+  if (saveBtn) saveBtn.disabled = true;
+
+  window.setTimeout(() => {
+    try {
+      const stopCoords = entities.map((e) => ({ lat: Number(e.latitude), lng: Number(e.longitude) }));
+      const originCoords = { lat: origin.latitude, lng: origin.longitude };
+      const result = optimizeRouteHaversine(originCoords, stopCoords);
+      journeyCreatorState.optimizedOrder = result.order;
+      journeyCreatorState.legs = result.legs;
+      journeyCreatorState.totalDistanceMeters = result.totalDistanceMeters;
+      journeyCreatorState.estimatedDurationSeconds = result.estimatedDurationSeconds;
+      journeyCreatorState.isApproximate = true;
+      journeyCreatorState.optimizationMethod = "haversine-heuristic";
+      journeyCreatorState.orderManuallyEdited = false;
+      journeyCreatorState._lastOptimizeRan = true;
+      journeyCreatorState._lastOptimizeChanged = result.order.join(",") !== prevOrder;
+      const orderedStops = result.order.map((i) => entities[i]);
+      result.legs.forEach((leg, i) => { if (orderedStops[i]) { orderedStops[i]._legDist = leg.distanceMeters; orderedStops[i]._legSec = leg.durationSeconds; } });
+      renderJourneyStopList();
+      renderJourneySummary();
+      drawJourneyPreview();
+    } catch (err) {
+      console.error("[jornada] error optimizando", err);
+      showOptSummaryWarn("No se pudo optimizar. Intentá de nuevo.");
+    } finally {
+      journeyCreatorState.optimizing = false;
+      if (btn) { btn.disabled = false; btn.classList.remove("is-loading"); }
+      if (lbl) lbl.textContent = "Optimizar orden";
+      if (saveBtn) saveBtn.disabled = false;
+      refreshIcons();
+    }
+  }, auto ? 0 : 200);
 };
 
 // ----- Route polyline on MapLibre -----
@@ -12005,17 +12165,109 @@ const clearJourneyRouteFromMap = () => {
   commercialMap.getSource(JOURNEY_SOURCE).setData({ type: "FeatureCollection", features: [] });
 };
 
+// ----- Mapa de vista previa dentro del modal -----
+const ensureJourneyPreviewMap = () => {
+  const container = document.getElementById("journeyPreviewMap");
+  if (!container || journeyPreviewMap || !window.maplibregl) return;
+  try {
+    journeyPreviewMap = new maplibregl.Map({
+      container,
+      style: MAP_STYLES.streets,
+      center: [-57.5, -25.3],
+      zoom: 10,
+      attributionControl: false
+    });
+    journeyPreviewMap.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    journeyPreviewMap.on("error", (e) => console.warn("[preview-map]", e?.error?.message || e));
+    journeyPreviewMap.on("load", () => {
+      journeyPreviewReady = true;
+      if (!journeyPreviewMap.getSource("preview-route")) {
+        journeyPreviewMap.addSource("preview-route", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+        journeyPreviewMap.addLayer({
+          id: "preview-route-line", type: "line", source: "preview-route",
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: { "line-color": "#1e40af", "line-width": 3.5, "line-opacity": 0.85 }
+        });
+      }
+      try { journeyPreviewMap.resize(); } catch (e) { /* noop */ }
+      drawJourneyPreview();
+    });
+  } catch (err) {
+    console.error("[preview-map] no se pudo iniciar", err);
+  }
+};
+
+const clearJourneyPreviewMarkers = () => {
+  journeyPreviewMarkers.forEach((m) => { try { m.remove(); } catch (e) { /* noop */ } });
+  journeyPreviewMarkers = [];
+};
+
+const drawJourneyPreview = () => {
+  const emptyEl = document.getElementById("journeyPreviewEmpty");
+  if (!journeyPreviewMap || !journeyPreviewReady) return;
+  const st = journeyCreatorState;
+  const entities = st.selectedEntities;
+  const order = st.optimizedOrder.length ? st.optimizedOrder : entities.map((_, i) => i);
+  const orderedStops = order.map((i) => entities[i]).filter((e) => e && Number(e.latitude) && Number(e.longitude));
+  clearJourneyPreviewMarkers();
+
+  const hasContent = orderedStops.length > 0 || (st.origin && Number(st.origin.latitude));
+  if (emptyEl) emptyEl.style.display = hasContent ? "none" : "flex";
+
+  const pts = [];
+
+  if (st.origin && Number(st.origin.latitude) && Number(st.origin.longitude)) {
+    const el = document.createElement("div");
+    el.className = "preview-marker preview-marker-origin";
+    el.innerHTML = '<i data-lucide="home"></i>';
+    const lngLat = [Number(st.origin.longitude), Number(st.origin.latitude)];
+    journeyPreviewMarkers.push(new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat(lngLat).addTo(journeyPreviewMap));
+    pts.push(lngLat);
+  }
+
+  orderedStops.forEach((e, idx) => {
+    const colorClass = e.status === "overdue" ? "red" : e.entityType === "client" ? "green" : "orange";
+    const el = document.createElement("div");
+    el.className = `preview-marker preview-marker-${colorClass}`;
+    el.textContent = String(idx + 1);
+    const lngLat = [Number(e.longitude), Number(e.latitude)];
+    journeyPreviewMarkers.push(new maplibregl.Marker({ element: el, anchor: "center" }).setLngLat(lngLat).addTo(journeyPreviewMap));
+    pts.push(lngLat);
+  });
+
+  const lineCoords = [];
+  if (st.origin && Number(st.origin.latitude)) lineCoords.push([Number(st.origin.longitude), Number(st.origin.latitude)]);
+  orderedStops.forEach((e) => lineCoords.push([Number(e.longitude), Number(e.latitude)]));
+  const src = journeyPreviewMap.getSource("preview-route");
+  if (src) src.setData({ type: "FeatureCollection", features: lineCoords.length > 1 ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: lineCoords } }] : [] });
+
+  if (pts.length === 1) {
+    journeyPreviewMap.easeTo({ center: pts[0], zoom: 13, duration: 450 });
+  } else if (pts.length > 1) {
+    let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+    pts.forEach(([lng, lat]) => { minLng = Math.min(minLng, lng); maxLng = Math.max(maxLng, lng); minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat); });
+    try { journeyPreviewMap.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 48, maxZoom: 14, duration: 450 }); } catch (e) { /* noop */ }
+  }
+  refreshIcons();
+};
+
 // ----- Save journey -----
 const doSaveJourney = async () => {
-  if (journeyCreatorState.saving) return;
+  if (journeyCreatorState._savingRef || journeyCreatorState.saving) return;
   const user = auth.currentUser;
   if (!user) { window.alert("Debes estar autenticado."); return; }
   const entities = journeyCreatorState.selectedEntities;
-  if (entities.length < MIN_VISIT_STOPS) { window.alert(`Agrega al menos ${MIN_VISIT_STOPS} paradas.`); return; }
-  const name = document.getElementById("journeyName")?.value.trim() || suggestJourneyName();
+  if (entities.length < MIN_VISIT_STOPS) { window.alert(`Agregá al menos ${MIN_VISIT_STOPS} paradas.`); return; }
+  const nameEl = document.getElementById("journeyName");
+  const name = nameEl?.value.trim() || suggestJourneyName();
+  if (!name) { window.alert("Poné un nombre a la jornada."); nameEl?.focus(); return; }
   const scheduledDate = document.getElementById("journeyDate")?.value || todayStr();
+  if (!scheduledDate) { window.alert("Elegí una fecha para la jornada."); return; }
   const startTime = document.getElementById("journeyTime")?.value || "";
   const origin = journeyCreatorState.origin;
+  if (!origin) { window.alert("Seleccioná un punto de partida antes de guardar."); return; }
+  const invalid = entities.filter((e) => !(Number(e.latitude) && Number(e.longitude)));
+  if (invalid.length) { window.alert(`${invalid.length} negocio(s) sin coordenadas válidas. Quitalos antes de guardar.`); return; }
   const order = journeyCreatorState.optimizedOrder.length ? journeyCreatorState.optimizedOrder : entities.map((_, i) => i);
   const orderedEntities = order.map((i) => entities[i]);
   const journeyData = {
@@ -12056,24 +12308,31 @@ const doSaveJourney = async () => {
     arrivedAt: null,
     completedAt: null
   }));
+  journeyCreatorState._savingRef = true;
   journeyCreatorState.saving = true;
   const saveBtn = document.getElementById("journeySaveBtn");
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Guardando..."; }
+  const saveLbl = saveBtn?.querySelector(".journey-save-label");
+  const optBtn = document.getElementById("journeyOptimizeBtn");
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.classList.add("is-loading"); }
+  if (saveLbl) saveLbl.textContent = "Guardando…";
+  if (optBtn) optBtn.disabled = true;
   try {
     const journeyId = await saveNewJourney(journeyData, stops);
     closeNewJourneyModal();
     deactivateMapJourneySelectMode();
     clearJourneyRouteFromMap();
-    window.alert(`Jornada "${name}" guardada. Ahora puedes iniciarla desde Jornadas de visitas.`);
     setActiveAppSection("journeys");
     activeJourneyId = journeyId;
     setTimeout(() => renderActiveJourney(journeyId), 300);
   } catch (error) {
     console.error("Error guardando jornada:", error);
-    window.alert("Error al guardar la jornada. Intenta de nuevo.");
+    window.alert("Error al guardar la jornada. Intentá de nuevo.");
   } finally {
+    journeyCreatorState._savingRef = false;
     journeyCreatorState.saving = false;
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "Guardar jornada"; }
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.classList.remove("is-loading"); }
+    if (saveLbl) saveLbl.textContent = "Guardar jornada";
+    if (optBtn) optBtn.disabled = false;
   }
 };
 
@@ -12246,10 +12505,15 @@ const setupJourneysModule = () => {
 
   // New journey modal actions
   document.getElementById("newJourneyModal")?.addEventListener("click", (event) => {
-    if (event.target.closest("[data-journey-modal-close]")) closeNewJourneyModal();
-    if (event.target.closest("[data-journey-gps]")) requestGPSOrigin();
-    if (event.target.closest("[data-journey-map-origin]")) activateMapOriginPicker();
-    if (event.target.closest("[data-journey-optimize]")) triggerRouteOptimization();
+    if (event.target.closest("[data-journey-modal-close]")) { if (!journeyCreatorState.saving && !journeyCreatorState.optimizing) closeNewJourneyModal(); return; }
+    if (event.target.closest("[data-journey-gps]")) { requestGPSOrigin(); return; }
+    if (event.target.closest("[data-journey-map-origin]")) { activateMapOriginPicker(); return; }
+    if (event.target.closest("[data-journey-optimize]")) { optimizeJourneyRoute(); return; }
+  });
+
+  // Escape cierra el modal cuando no esta procesando
+  document.getElementById("newJourneyModal")?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !journeyCreatorState.saving && !journeyCreatorState.optimizing) closeNewJourneyModal();
   });
 
   document.getElementById("journeySaveBtn")?.addEventListener("click", () => { void doSaveJourney(); });
@@ -12273,15 +12537,15 @@ const setupJourneysModule = () => {
     }
     if (event.target.closest("[data-journey-cancel]")) deactivateMapJourneySelectMode();
     if (event.target.closest("[data-journey-continue]")) {
-      openNewJourneyModal();
+      openJourneyCreatorFresh();
     }
   });
 
-  // Origin picker toast cancel
+  // Origin picker toast cancel — vuelve al modal conservando el estado
   document.getElementById("journeyOriginPickerToast")?.addEventListener("click", (event) => {
     if (event.target.closest("[data-cancel-origin-pick]")) {
       deactivateMapOriginPicker();
-      openNewJourneyModal();
+      showJourneyModal();
     }
   });
 
@@ -12310,12 +12574,10 @@ const setupJourneysModule = () => {
 const handleMapClickForJourneySelect = (e) => {
   if (journeyCreatorState.mapOriginPicking) {
     const { lng, lat } = e.lngLat;
-    journeyCreatorState.origin = { type: "map-point", latitude: lat, longitude: lng, label: `${lat.toFixed(5)}, ${lng.toFixed(5)}` };
+    journeyCreatorState.origin = { type: "map-point", latitude: lat, longitude: lng, label: "Punto en el mapa" };
     deactivateMapOriginPicker();
-    openNewJourneyModal();
-    const statusEl = document.getElementById("journeyOriginStatus");
-    if (statusEl) { statusEl.removeAttribute("hidden"); statusEl.textContent = `Punto seleccionado: ${lat.toFixed(5)}, ${lng.toFixed(5)}`; }
-    triggerRouteOptimization();
+    showJourneyModal();
+    optimizeJourneyRoute({ auto: true });
     return true;
   }
   // La seleccion de pines la manejan los handlers de capa "points"/"points-emph".
