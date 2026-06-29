@@ -10964,11 +10964,7 @@ const ensureCommercialMap = () => {
   });
   commercialMap.on("click", "points", (e) => {
     if (quickMapProspectState.active) return;
-    if (mapJourneySelectState.active) {
-      const id = e.features?.[0]?.properties?.id;
-      if (id) { toggleMapEntityForJourney(id); e.stopPropagation?.(); }
-      return;
-    }
+    if (mapJourneySelectState.active) return; // handled by general click via handleMapClickForJourneySelect
     const id = e.features?.[0]?.properties?.id;
     if (id) openMapDetail(id);
   });
