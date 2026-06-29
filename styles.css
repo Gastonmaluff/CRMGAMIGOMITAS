@@ -358,6 +358,10 @@ body {
   justify-content: flex-end;
 }
 
+.map-action-row {
+  display: contents; /* transparent on desktop — buttons stay in parent flex */
+}
+
 .map-add-prospect-btn {
   white-space: nowrap;
   min-height: 42px;
@@ -1413,9 +1417,34 @@ body {
     flex: 1 1 100%;
   }
 
+  .map-action-row {
+    display: flex;
+    width: 100%;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+
+  .map-action-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .map-action-row .btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: 0.83rem;
+    padding: 8px 12px;
+    min-height: unset;
+    align-self: auto;
+    border-radius: 10px;
+  }
+
   .map-add-prospect-btn,
   .map-import-prospect-btn {
-    flex: 1 1 calc(50% - 4px);
+    flex: 0 0 auto;
+    min-height: unset;
     justify-content: center;
   }
 
