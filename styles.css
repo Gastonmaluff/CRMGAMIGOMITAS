@@ -1430,19 +1430,31 @@ body {
     min-height: 400px;
   }
 
+  /* CAUSA RAIZ del bloque gris: en .map-topbar (flex column) el flex-basis
+     420px heredado se aplicaba al eje vertical -> el grupo medía 420px de alto.
+     Reseteado a contenido. */
   .map-search-group {
-    justify-content: stretch;
+    flex: none;
     width: 100%;
+    justify-content: stretch;
+    align-content: flex-start;
+    align-items: flex-start;
   }
 
   .map-search {
     max-width: none;
-    flex: 1 1 100%;
+    flex: 0 0 100%;
+    width: 100%;
+  }
+
+  .map-search input {
+    min-height: 48px;
+    border-radius: 12px;
   }
 
   .map-action-row {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
     width: 100%;
     margin: 0;
@@ -1454,26 +1466,27 @@ body {
 
   .map-action-row .btn {
     display: inline-flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: 4px;
     width: 100%;
-    min-height: 44px;
+    min-height: 52px;
     height: auto;
-    padding: 8px 12px;
-    font-size: 0.82rem;
+    padding: 8px 6px;
+    font-size: 0.78rem;
     font-weight: 600;
     line-height: 1.15;
     white-space: normal;
     text-align: center;
-    border-radius: 10px;
+    border-radius: 12px;
     box-shadow: none;
     align-self: stretch;
   }
 
   .map-action-row .btn svg {
-    width: 15px;
-    height: 15px;
+    width: 18px;
+    height: 18px;
     flex: 0 0 auto;
   }
 
@@ -1481,11 +1494,6 @@ body {
     transform: none;
     box-shadow: none;
   }
-
-  /* Fila 1: Agregar prospecto | Crear jornada — Fila 2: Importar JSON a lo ancho */
-  .map-action-row .map-add-prospect-btn { order: 1; }
-  .map-action-row #mapCreateJourneyBtn { order: 2; }
-  .map-action-row .map-import-prospect-btn { order: 3; grid-column: 1 / -1; }
 
   .map-topbar {
     align-items: flex-start;
@@ -1586,25 +1594,18 @@ body {
     padding: 6px 9px;
   }
 
-  /* Indicadores: chips chicos en una sola fila, justo arriba del mapa */
+  /* Indicadores: capsulas chicas que se acomodan en filas (sin scroll) */
   .map-indicators {
     gap: 6px;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    padding-bottom: 1px;
-    margin-bottom: 2px;
-  }
-
-  .map-indicators::-webkit-scrollbar {
-    display: none;
+    flex-wrap: wrap;
+    overflow: visible;
+    margin-bottom: 0;
   }
 
   .map-cap {
-    flex: 0 0 auto;
+    flex: 0 1 auto;
     gap: 5px;
-    padding: 4px 10px;
+    padding: 5px 10px;
     font-size: 0.74rem;
     border-radius: 999px;
     box-shadow: none;
@@ -1619,6 +1620,13 @@ body {
     width: 8px;
     height: 8px;
     border-width: 1.5px;
+  }
+
+  /* Telefonos muy angostos: ajustar botones para que entren los tres */
+  @media (max-width: 360px) {
+    .map-action-row { gap: 6px; }
+    .map-action-row .btn { font-size: 0.72rem; padding: 8px 4px; }
+    .map-action-row .btn svg { width: 16px; height: 16px; }
   }
 }
 
