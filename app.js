@@ -448,6 +448,10 @@ let journeyStopsCache = [];
 let journeyPreviewMap = null;
 let journeyPreviewMarkers = [];
 let journeyPreviewReady = false;
+let journeysUnsub = null;
+let journeysCache = null; // null = aun no cargado; [] = cargado vacio
+let journeysError = null;
+let lastCreatedJourneyId = null;
 const repurchaseNotesOpenState = new Set();
 const repurchaseHistoryOpenState = new Set();
 const clientHistoryOpenState = new Set();
@@ -11586,47 +11590,149 @@ const buildOpenMapsUrl = (stop) => {
   return address ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}&travelmode=driving` : "";
 };
 
+// ----- Fechas y estados seguros -----
+const toMillisSafe = (v) => {
+  if (!v) return 0;
+  if (typeof v === "number") return v;
+  if (typeof v.toMillis === "function") return v.toMillis();          // Firestore Timestamp
+  if (typeof v.seconds === "number") return v.seconds * 1000;          // Timestamp plano
+  const d = new Date(v); return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+};
+
+const journeySortKey = (j) => {
+  const c = toMillisSafe(j.createdAt);
+  if (c) return c;
+  if (j.scheduledDate) { const d = new Date(`${j.scheduledDate}T00:00:00`); if (!Number.isNaN(d.getTime())) return d.getTime(); }
+  return 0;
+};
+
+const normalizeJourneyStatus = (s) => {
+  const v = String(s || "").toLowerCase();
+  if (["draft", "planned", "active", "completed", "cancelled"].includes(v)) return v;
+  const map = { new: "draft", pending: "planned", saved: "planned", started: "active", inprogress: "active", finished: "completed", done: "completed", canceled: "cancelled" };
+  return map[v] || (s ? "planned" : "draft");
+};
+
+const formatJourneyDate = (j) => {
+  if (j.scheduledDate) { const out = formatDate(j.scheduledDate); if (out && out !== "-") return out; }
+  const ms = toMillisSafe(j.createdAt);
+  return ms ? formatDate(toDateInputValue(new Date(ms))) : "Sin fecha";
+};
+
+// ----- Listener en tiempo real (sin orderBy -> sin indice compuesto) -----
+const startJourneysListener = () => {
+  const user = auth.currentUser;
+  if (!user) return;
+  if (journeysUnsub) { try { journeysUnsub(); } catch (e) { /* noop */ } journeysUnsub = null; }
+  journeysCache = null;
+  journeysError = null;
+  const q = query(collection(db, "visitJourneys"), where("assignedUserId", "==", user.uid));
+  journeysUnsub = onSnapshot(q,
+    (snap) => {
+      journeysError = null;
+      journeysCache = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => journeySortKey(b) - journeySortKey(a));
+      console.log(`[jornadas] snapshot: ${journeysCache.length} jornada(s) para ${user.uid}`);
+      if (activeAppSection === "journeys" && !activeJourneyId) renderJourneysList(journeysCache);
+    },
+    (err) => {
+      journeysError = err;
+      console.error("[jornadas] onSnapshot error:", err?.code, err?.message, err);
+      if (activeAppSection === "journeys" && !activeJourneyId) renderJourneysError(err);
+    }
+  );
+};
+
+const stopJourneysListener = () => {
+  if (journeysUnsub) { try { journeysUnsub(); } catch (e) { /* noop */ } journeysUnsub = null; }
+  journeysCache = null;
+  journeysError = null;
+};
+
 // ----- Journey list rendering -----
+const renderJourneysError = (err) => {
+  const el = document.getElementById("journeysList");
+  if (!el) return;
+  const code = err?.code || "";
+  const needsIndex = code === "failed-precondition" || /index/i.test(err?.message || "");
+  const denied = code === "permission-denied";
+  const detail = needsIndex ? "La consulta necesita un índice de Firestore."
+    : denied ? "No tenés permisos para leer estas jornadas."
+    : "Revisá tu conexión e intentá de nuevo.";
+  el.innerHTML = `
+    <div class="journeys-state journeys-state-error">
+      <i data-lucide="alert-triangle"></i>
+      <div class="journeys-state-title">No pudimos cargar las jornadas.</div>
+      <div class="journeys-state-desc">${detail}</div>
+      <button class="btn primary btn-sm" type="button" id="journeysRetryBtn"><i data-lucide="refresh-cw"></i> Reintentar</button>
+    </div>`;
+  document.getElementById("journeysRetryBtn")?.addEventListener("click", () => {
+    el.innerHTML = '<div class="empty-hint">Cargando jornadas…</div>';
+    startJourneysListener();
+  });
+  refreshIcons();
+};
+
+const renderJourneysEmpty = () => {
+  const el = document.getElementById("journeysList");
+  if (!el) return;
+  el.innerHTML = `
+    <div class="journeys-state">
+      <i data-lucide="route"></i>
+      <div class="journeys-state-title">Todavía no tenés jornadas de visitas.</div>
+      <div class="journeys-state-desc">Creá una jornada desde el Mapa comercial seleccionando los negocios que querés visitar.</div>
+      <div class="journeys-state-actions">
+        <button class="btn primary" type="button" id="journeysEmptyCreate"><i data-lucide="plus"></i> Crear nueva jornada</button>
+        <button class="btn ghost" type="button" id="journeysEmptyMap"><i data-lucide="map-pinned"></i> Ir al Mapa comercial</button>
+      </div>
+    </div>`;
+  const goMap = () => { setActiveAppSection("map"); activateMapJourneySelectMode(); };
+  document.getElementById("journeysEmptyCreate")?.addEventListener("click", goMap);
+  document.getElementById("journeysEmptyMap")?.addEventListener("click", () => setActiveAppSection("map"));
+  refreshIcons();
+};
+
 const renderJourneysList = (journeys) => {
   const el = document.getElementById("journeysList");
   if (!el) return;
-  if (!journeys.length) {
-    el.innerHTML = '<div class="empty-hint">Sin jornadas todavia. Crea una desde el Mapa comercial.</div>';
-    return;
-  }
-  const sorted = [...journeys].sort((a, b) => (b.scheduledDate || "").localeCompare(a.scheduledDate || ""));
-  el.innerHTML = sorted.map((j) => {
-    const pct = j.totalStops > 0 ? Math.round((j.completedStops || 0) / j.totalStops * 100) : 0;
-    const statusLabel = JOURNEY_STATUS_LABELS[j.status] || j.status || "Borrador";
-    const statusClass = { draft: "muted", planned: "blue", active: "green", completed: "green-dark", cancelled: "red" }[j.status] || "muted";
+  if (!journeys || !journeys.length) { renderJourneysEmpty(); return; }
+  el.innerHTML = journeys.map((j) => {
+    const status = normalizeJourneyStatus(j.status);
+    const total = Number(j.totalStops) || 0;
+    const done = Number(j.completedStops) || 0;
+    const pct = total > 0 ? Math.round(done / total * 100) : 0;
+    const statusLabel = JOURNEY_STATUS_LABELS[status] || "Borrador";
+    const statusClass = { draft: "muted", planned: "blue", active: "green", completed: "green-dark", cancelled: "red" }[status] || "muted";
+    const incomplete = total === 0;
     return `
-    <div class="journey-card" data-journey-id="${j.id}">
+    <div class="journey-card${j.id === lastCreatedJourneyId ? " journey-card-new" : ""}" data-journey-id="${j.id}">
       <div class="journey-card-head">
-        <div class="journey-card-title">${escapeHtml(j.name || "Sin nombre")}</div>
+        <div class="journey-card-title">${escapeHtml(j.name || "Jornada sin nombre")}</div>
         <span class="journey-status-badge journey-status-${statusClass}">${statusLabel}</span>
       </div>
       <div class="journey-card-meta">
-        <span>${j.scheduledDate ? formatDate(j.scheduledDate) : "-"}</span>
-        <span>${j.totalStops || 0} paradas</span>
+        <span><i data-lucide="calendar"></i> ${formatJourneyDate(j)}${j.startTime ? " · " + escapeHtml(j.startTime) : ""}</span>
+        <span><i data-lucide="user"></i> ${escapeHtml(j.assignedUserName || "—")}</span>
+        <span><i data-lucide="map-pin"></i> ${total} parada${total === 1 ? "" : "s"}</span>
         ${j.totalDistanceMeters ? `<span>${formatDistance(j.totalDistanceMeters)}</span>` : ""}
         ${j.estimatedDurationSeconds ? `<span>${formatDuration(j.estimatedDurationSeconds)}</span>` : ""}
         ${j.isApproximate ? '<span class="muted" title="Orden aproximado sin informacion vial">~Aprox.</span>' : ""}
       </div>
-      ${j.totalStops > 0 ? `
-        <div class="journey-progress-wrap">
-          <div class="journey-progress-bar" style="width:${pct}%"></div>
-        </div>
-        <div class="journey-progress-label">${j.completedStops || 0} de ${j.totalStops} completadas</div>
-      ` : ""}
+      ${incomplete ? '<div class="journey-incomplete-note">Jornada incompleta (sin paradas)</div>' : `
+        <div class="journey-progress-wrap"><div class="journey-progress-bar" style="width:${pct}%"></div></div>
+        <div class="journey-progress-label">${done} de ${total} visitas completadas</div>`}
       <div class="journey-card-actions">
-        ${j.status === "planned" || j.status === "draft" ? `<button class="btn primary btn-xs" type="button" data-journey-start="${j.id}">Iniciar</button>` : ""}
-        ${j.status === "active" ? `<button class="btn primary btn-xs" type="button" data-journey-open="${j.id}">Continuar</button>` : ""}
-        ${j.status === "completed" ? `<button class="btn ghost btn-xs" type="button" data-journey-open="${j.id}">Ver resumen</button>` : ""}
-        <button class="btn ghost btn-xs" type="button" data-journey-open="${j.id}">Abrir</button>
-        ${j.status !== "completed" ? `<button class="btn ghost btn-xs" type="button" data-journey-cancel="${j.id}">Cancelar</button>` : ""}
+        ${status === "planned" ? `<button class="btn primary btn-xs" type="button" data-journey-start="${j.id}">Iniciar jornada</button>` : ""}
+        ${status === "active" ? `<button class="btn primary btn-xs" type="button" data-journey-open="${j.id}">Continuar</button>` : ""}
+        ${status === "completed" ? `<button class="btn ghost btn-xs" type="button" data-journey-open="${j.id}">Ver resumen</button>` : ""}
+        ${status === "draft" || status === "planned" ? `<button class="btn ghost btn-xs" type="button" data-journey-open="${j.id}">Abrir</button>` : ""}
+        ${status !== "completed" && status !== "cancelled" ? `<button class="btn ghost btn-xs" type="button" data-journey-cancel="${j.id}">Cancelar</button>` : ""}
       </div>
     </div>`;
   }).join("");
+  refreshIcons();
+  lastCreatedJourneyId = null;
 };
 
 // ----- Active journey rendering -----
@@ -11636,6 +11742,7 @@ const renderActiveJourney = async (journeyId) => {
   const journeySnap = await getDoc(doc(db, "visitJourneys", journeyId));
   if (!journeySnap.exists()) { jEl.innerHTML = '<div class="empty-hint">Jornada no encontrada.</div>'; return; }
   const j = { id: journeySnap.id, ...journeySnap.data() };
+  const status = normalizeJourneyStatus(j.status);
   const stopsSnap = await getDocs(query(collection(db, "visitJourneys", journeyId, "stops"), orderBy("order", "asc")));
   const stops = stopsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
   journeyStopsCache = stops;
@@ -11647,8 +11754,8 @@ const renderActiveJourney = async (journeyId) => {
         <div class="journey-active-sub">${j.completedStops || 0} de ${j.totalStops || 0} visitas completadas</div>
       </div>
       <div class="journey-active-controls">
-        ${j.status === "planned" || j.status === "draft" ? '<button class="btn primary" type="button" id="journeyStartBtn">Iniciar jornada</button>' : ""}
-        ${j.status === "active" ? '<button class="btn ghost" type="button" id="journeyFinalizeBtn">Finalizar</button>' : ""}
+        ${status === "planned" || status === "draft" ? '<button class="btn primary" type="button" id="journeyStartBtn">Iniciar jornada</button>' : ""}
+        ${status === "active" ? '<button class="btn ghost" type="button" id="journeyFinalizeBtn">Finalizar</button>' : ""}
       </div>
     </div>
     <div class="journey-active-progress">
@@ -11661,9 +11768,9 @@ const renderActiveJourney = async (journeyId) => {
       ${j.isApproximate ? '<span class="muted">Orden aproximado</span>' : '<span class="journey-stat-exact">Ruta optimizada</span>'}
     </div>` : ""}
     <div class="journey-stops-list" id="journeyStopsList">
-      ${stops.map((stop, idx) => renderStopCard(stop, idx, j.status)).join("")}
+      ${stops.map((stop, idx) => renderStopCard(stop, idx, status)).join("")}
     </div>
-    ${j.status === "active" ? `
+    ${status === "active" ? `
     <div class="journey-active-footer">
       <button class="btn ghost" type="button" id="journeyFinalizeBtn2">Finalizar jornada</button>
     </div>` : ""}
@@ -12318,12 +12425,14 @@ const doSaveJourney = async () => {
   if (optBtn) optBtn.disabled = true;
   try {
     const journeyId = await saveNewJourney(journeyData, stops);
+    console.log(`[jornadas] creada ${journeyId} con ${stops.length} parada(s)`);
+    lastCreatedJourneyId = journeyId;
+    activeJourneyId = null;
     closeNewJourneyModal();
     deactivateMapJourneySelectMode();
     clearJourneyRouteFromMap();
+    showToast("Jornada guardada correctamente.");
     setActiveAppSection("journeys");
-    activeJourneyId = journeyId;
-    setTimeout(() => renderActiveJourney(journeyId), 300);
   } catch (error) {
     console.error("Error guardando jornada:", error);
     window.alert("Error al guardar la jornada. Intentá de nuevo.");
@@ -12584,17 +12693,18 @@ const handleMapClickForJourneySelect = (e) => {
   return false;
 };
 
-// ----- Load journeys for section -----
-const loadAndRenderJourneys = async () => {
-  const user = auth.currentUser;
-  if (!user) return;
+// ----- Render de la seccion (usa el cache del listener en tiempo real) -----
+const loadAndRenderJourneys = () => {
   const el = document.getElementById("journeysList");
-  if (el) el.innerHTML = '<div class="empty-hint">Cargando...</div>';
-  try {
-    const snap = await getDocs(query(collection(db, "visitJourneys"), where("assignedUserId", "==", user.uid), orderBy("createdAt", "desc")));
-    const journeys = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    renderJourneysList(journeys);
-  } catch (e) { console.error("Error cargando jornadas:", e); if (el) el.innerHTML = '<div class="empty-hint">Error al cargar jornadas.</div>'; }
+  if (!el) return;
+  if (!auth.currentUser) { el.innerHTML = '<div class="empty-hint">Iniciá sesión para ver tus jornadas.</div>'; return; }
+  if (journeysError) { renderJourneysError(journeysError); return; }
+  if (journeysCache === null) {
+    el.innerHTML = '<div class="empty-hint">Cargando jornadas…</div>';
+    if (!journeysUnsub) startJourneysListener();
+    return;
+  }
+  renderJourneysList(journeysCache);
 };
 
 const setupProspectImport = () => {
@@ -12751,12 +12861,14 @@ onAuthStateChanged(auth, (user) => {
   console.log("[auth] state changed", user ? user.uid : "signed-out");
   unsubscribers.forEach((unsubscribe) => unsubscribe());
   unsubscribers = [];
+  stopJourneysListener();
   if (!user) {
     showAuth();
     return;
   }
   setAuthFeedback("");
   showDashboard(user);
+  startJourneysListener();
   listenCollection("raw_materials", "rawMaterials");
   listenCollection("raw_purchases", "purchases");
   listenCollection("recipes", "recipes");
