@@ -10964,9 +10964,19 @@ const ensureCommercialMap = () => {
   });
   commercialMap.on("click", "points", (e) => {
     if (quickMapProspectState.active) return;
-    if (mapJourneySelectState.active) return; // handled by general click via handleMapClickForJourneySelect
+    if (journeyCreatorState.mapOriginPicking) return; // el origen lo maneja el click general
+    if (mapJourneySelectState.active) {
+      guardedToggleMapEntityForJourney(e.features?.[0]?.properties?.id);
+      return;
+    }
     const id = e.features?.[0]?.properties?.id;
     if (id) openMapDetail(id);
+  });
+  commercialMap.on("click", "points-emph", (e) => {
+    if (quickMapProspectState.active || journeyCreatorState.mapOriginPicking) return;
+    if (mapJourneySelectState.active) {
+      guardedToggleMapEntityForJourney(e.features?.[0]?.properties?.id);
+    }
   });
   commercialMap.on("click", (e) => {
     if (handleMapClickForJourneySelect(e)) return;
@@ -12093,9 +12103,19 @@ const syncMapJourneySelectState = () => {
   mapJourneySelectState.selectedIds = new Set(journeyCreatorState.selectedEntities.map((e) => e.id));
 };
 
+// Evita doble-toggle cuando "points" y "points-emph" disparan en el mismo click nativo.
+let journeyToggleGuardId = null;
+const guardedToggleMapEntityForJourney = (entityId) => {
+  if (!entityId) return;
+  if (journeyToggleGuardId === entityId) return;
+  journeyToggleGuardId = entityId;
+  setTimeout(() => { journeyToggleGuardId = null; }, 0);
+  toggleMapEntityForJourney(entityId);
+};
+
 const toggleMapEntityForJourney = (entityId) => {
   const entity = commercialMapEntities.find((e) => e.id === entityId);
-  if (!entity) return;
+  if (!entity) { console.warn("[jornada] entidad no encontrada para id:", entityId); return; }
   if (!entity.hasLocation) { window.alert("Este negocio todavia no tiene ubicacion registrada."); return; }
   const idx = journeyCreatorState.selectedEntities.findIndex((e) => e.id === entityId);
   if (idx >= 0) {
@@ -12298,13 +12318,7 @@ const handleMapClickForJourneySelect = (e) => {
     triggerRouteOptimization();
     return true;
   }
-  if (mapJourneySelectState.active) {
-    const features = commercialMap.queryRenderedFeatures(e.point, { layers: ["points", "points-emph"] });
-    if (features.length) {
-      const entityId = features[0].properties?.id;
-      if (entityId) { toggleMapEntityForJourney(entityId); return true; }
-    }
-  }
+  // La seleccion de pines la manejan los handlers de capa "points"/"points-emph".
   return false;
 };
 
