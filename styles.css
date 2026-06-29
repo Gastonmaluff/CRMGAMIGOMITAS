@@ -584,6 +584,39 @@ body {
 .map-pin-green { background: #16a34a; }
 .map-pin-red { background: #dc2626; }
 
+/* Punto de leyenda para clusters (circulo azul grisaceo neutral) */
+.map-cluster-dot-legend {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #4a6fa5;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1.5px #4a6fa5;
+  flex: 0 0 auto;
+}
+
+/* Toggle "Agrupar puntos" */
+.map-cluster-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.map-cluster-checkbox {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: #4a6fa5;
+  flex: 0 0 auto;
+}
+
 .map-shell {
   position: relative;
   width: 100%;

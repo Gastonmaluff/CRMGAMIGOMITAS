@@ -9043,6 +9043,16 @@ let mapHoverId = "";
 let mapGeoSearchTimer = null;
 const mapFilterState = { type: "all", city: "", zone: "", business: "", location: "" };
 let commercialMapImportSessionFilter = "";
+let commercialClusterEnabled = sessionStorage.getItem("mapClusterEnabled") !== "false";
+
+// --- Clustering del mapa comercial ---
+// clusterMaxZoom: zoom maximo en que se generan clusters (inclusive).
+// Al superar este zoom todos los puntos son individuales.
+// Zoom 9+ = vista de ciudad/barrio → pines individuales.
+// Zoom 8   = departamento (Alto Parana) → empieza clustering.
+// Zoom 7   = pais → clustering activo.
+const COMMERCIAL_CLUSTER_MAX_ZOOM = 8;
+const COMMERCIAL_CLUSTER_RADIUS = 30;
 const quickMapProspectState = {
   active: false,
   selecting: false,
@@ -10512,6 +10522,21 @@ const refreshCommercialMap = () => {
 
 const getMapEntityById = (id) => commercialMapEntities.find((e) => e.id === id) || null;
 
+// Reconstruye la fuente y las capas del mapa conservando zoom/centro/filtros.
+// Solo se usa al activar o desactivar el clustering, ya que el parametro
+// `cluster` de una fuente GeoJSON no se puede cambiar en caliente.
+const rebuildCommercialMapSource = () => {
+  if (!commercialMap || !commercialMapReady) return;
+  // Eliminar capas en orden (de mas alta a mas baja).
+  ["points-emph", "points", "select-glow", "cluster-count", "clusters"].forEach((id) => {
+    try { if (commercialMap.getLayer(id)) commercialMap.removeLayer(id); } catch (e) { /* noop */ }
+  });
+  try { if (commercialMap.getSource("commercial")) commercialMap.removeSource("commercial"); } catch (e) { /* noop */ }
+  addCommercialMapLayers();
+  updateMapEmphasis();
+  refreshCommercialMap();
+};
+
 // Resalta el pin activo (hover y/o seleccionado) sin mover la punta de la coordenada.
 const updateMapEmphasis = () => {
   if (!commercialMap || !commercialMap.getLayer) return;
@@ -10647,15 +10672,16 @@ const addCommercialMapLayers = () => {
   commercialMap.addSource("commercial", {
     type: "geojson",
     data: MAP_EMPTY_FC,
-    cluster: true,
-    clusterRadius: 50,
-    clusterMaxZoom: 14
+    cluster: commercialClusterEnabled,
+    clusterRadius: COMMERCIAL_CLUSTER_RADIUS,
+    clusterMaxZoom: COMMERCIAL_CLUSTER_MAX_ZOOM
   });
   commercialMap.addLayer({
     id: "clusters", type: "circle", source: "commercial", filter: ["has", "point_count"],
     paint: {
-      "circle-color": "#15803d", "circle-opacity": 0.85,
-      "circle-stroke-color": "#ffffff", "circle-stroke-width": 2,
+      // Azul grisaceo neutral: no confundir con verde de cliente activo.
+      "circle-color": "#4a6fa5", "circle-opacity": 0.92,
+      "circle-stroke-color": "#ffffff", "circle-stroke-width": 2.5,
       "circle-radius": ["step", ["get", "point_count"], 16, 10, 22, 50, 30]
     }
   });
@@ -10850,6 +10876,22 @@ const setupCommercialMap = () => {
     const key = event.target.value;
     if (commercialMap && MAP_STYLES[key]) commercialMap.setStyle(MAP_STYLES[key]);
   });
+
+  // Toggle "Agrupar puntos"
+  const clusterToggle = document.getElementById("mapClusterToggle");
+  if (clusterToggle) {
+    clusterToggle.checked = commercialClusterEnabled;
+    // Sincronizar leyenda al estado inicial
+    const legendCluster = document.getElementById("mapLegendCluster");
+    if (legendCluster) legendCluster.style.display = commercialClusterEnabled ? "" : "none";
+    clusterToggle.addEventListener("change", () => {
+      commercialClusterEnabled = clusterToggle.checked;
+      sessionStorage.setItem("mapClusterEnabled", commercialClusterEnabled);
+      const lc = document.getElementById("mapLegendCluster");
+      if (lc) lc.style.display = commercialClusterEnabled ? "" : "none";
+      rebuildCommercialMapSource();
+    });
+  }
 
   // Buscador geografico (MapTiler)
   const geoInput = document.getElementById("mapGeoSearch");

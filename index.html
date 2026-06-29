@@ -265,6 +265,10 @@
                 <option value="satellite">Satelite</option>
                 <option value="hybrid">Hibrido</option>
               </select>
+              <label class="map-cluster-label" for="mapClusterToggle" title="Agrupar puntos cercanos en zonas alejadas">
+                <input type="checkbox" id="mapClusterToggle" class="map-cluster-checkbox" />
+                <span class="map-cluster-text">Agrupar puntos</span>
+              </label>
             </div>
           </div>
 
@@ -290,6 +294,7 @@
               <span><i class="map-pin map-pin-orange"></i> Prospecto</span>
               <span><i class="map-pin map-pin-green"></i> Cliente activo</span>
               <span><i class="map-pin map-pin-red"></i> Recompra vencida</span>
+              <span id="mapLegendCluster"><i class="map-cluster-dot-legend"></i> Grupo</span>
             </div>
             <div class="map-fallback" id="mapFallback" hidden></div>
             <aside class="map-detail" id="mapDetail" hidden></aside>
