@@ -10626,10 +10626,10 @@ const updateMapIndicators = (filtered) => {
   const overdue = filtered.filter((e) => e.status === "overdue").length;
   const noLoc = filtered.filter((e) => !e.hasLocation).length;
   el.innerHTML = `
-    <span class="map-cap"><i class="map-dot map-dot-orange"></i>${formatInteger(prospects)} prospectos</span>
-    <span class="map-cap"><i class="map-dot map-dot-green"></i>${formatInteger(clients)} clientes activos</span>
-    <span class="map-cap"><i class="map-dot map-dot-red"></i>${formatInteger(overdue)} recompras vencidas</span>
-    <span class="map-cap map-cap-muted">Sin ubicacion: ${formatInteger(noLoc)}</span>
+    <span class="map-cap"><i class="map-dot map-dot-orange"></i><strong>${formatInteger(prospects)}</strong><span class="map-cap-label">prospectos</span></span>
+    <span class="map-cap"><i class="map-dot map-dot-green"></i><strong>${formatInteger(clients)}</strong><span class="map-cap-label">clientes activos</span></span>
+    <span class="map-cap"><i class="map-dot map-dot-red"></i><strong>${formatInteger(overdue)}</strong><span class="map-cap-label">recompras vencidas</span></span>
+    <span class="map-cap map-cap-muted"><strong>${formatInteger(noLoc)}</strong><span class="map-cap-label">sin ubicacion</span></span>
   `;
 };
 

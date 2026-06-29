@@ -820,7 +820,21 @@ body {
   box-shadow: var(--shadow-soft);
 }
 
+.map-cap strong {
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.map-cap-label {
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .map-cap-muted {
+  color: var(--muted);
+}
+
+.map-cap-muted strong {
   color: var(--muted);
 }
 
@@ -1402,9 +1416,18 @@ body {
 }
 
 @media (max-width: 720px) {
+  .dashboard[data-app-section="map"] .commercial-map-section {
+    gap: 8px;
+  }
+
+  .commercial-map-section .page-title {
+    font-size: 1.25rem;
+    margin-bottom: 2px;
+  }
+
   .map-canvas {
-    height: 62vh;
-    min-height: 420px;
+    height: 58vh;
+    min-height: 400px;
   }
 
   .map-search-group {
@@ -1419,6 +1442,7 @@ body {
 
   .map-action-row {
     display: flex;
+    align-items: center;
     width: 100%;
     gap: 8px;
     overflow-x: auto;
@@ -1432,20 +1456,31 @@ body {
   }
 
   .map-action-row .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     flex: 0 0 auto;
     white-space: nowrap;
-    font-size: 0.83rem;
-    padding: 8px 12px;
-    min-height: unset;
-    align-self: auto;
-    border-radius: 10px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    height: 38px;
+    padding: 0 14px;
+    min-height: 0;
+    align-self: center;
+    border-radius: 999px;
+    box-shadow: none;
   }
 
-  .map-add-prospect-btn,
-  .map-import-prospect-btn {
+  .map-action-row .btn svg {
+    width: 15px;
+    height: 15px;
     flex: 0 0 auto;
-    min-height: unset;
-    justify-content: center;
+  }
+
+  .map-action-row .btn:hover {
+    transform: none;
+    box-shadow: none;
   }
 
   .map-topbar {
@@ -1455,16 +1490,19 @@ body {
   }
 
   .map-toolbar {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 8px;
   }
 
   .map-toolbar-left {
-    width: 100%;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: nowrap;
   }
 
   .map-toolbar-right {
     margin-left: auto;
+    flex: 0 0 auto;
   }
 
   .map-filter-panel-body {
@@ -1542,6 +1580,41 @@ body {
     font-size: 0.74rem;
     gap: 9px;
     padding: 6px 9px;
+  }
+
+  /* Indicadores: chips chicos en una sola fila, justo arriba del mapa */
+  .map-indicators {
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 1px;
+    margin-bottom: 2px;
+  }
+
+  .map-indicators::-webkit-scrollbar {
+    display: none;
+  }
+
+  .map-cap {
+    flex: 0 0 auto;
+    gap: 5px;
+    padding: 4px 10px;
+    font-size: 0.74rem;
+    border-radius: 999px;
+    box-shadow: none;
+    border: 1px solid var(--border);
+  }
+
+  .map-cap strong {
+    font-size: 0.82rem;
+  }
+
+  .map-cap .map-dot {
+    width: 8px;
+    height: 8px;
+    border-width: 1.5px;
   }
 }
 
