@@ -13,13 +13,17 @@ import {
   addDoc,
   doc,
   getDoc,
+  getDocs,
   setDoc,
   writeBatch,
   updateDoc,
   deleteDoc,
   onSnapshot,
   serverTimestamp,
-  arrayUnion
+  arrayUnion,
+  query,
+  where,
+  orderBy
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 import {
   buildDuplicateMatches,
@@ -82,6 +86,7 @@ const APP_SECTION_CONFIG = {
   prospects: { tab: "sales", collapses: ["prospectsSection"], label: "Prospectos" },
   repurchase: { tab: "sales", collapses: ["repurchaseSection"], label: "Recompra de clientes" },
   map: { tab: "sales", collapses: [], label: "Mapa comercial" },
+  journeys: { tab: "sales", collapses: [], label: "Jornadas de visitas" },
   production: { tab: "production", collapses: ["prodToday"], label: "Produccion" },
   products: { tab: "production", collapses: ["recipeSection"], label: "Productos" },
   "raw-materials": { tab: "production", collapses: ["rawMaterialSection", "recipeSection"], label: "Materias primas" },
@@ -393,6 +398,53 @@ const visitPlannerState = {
 };
 let prospectImportHistoryOpen = false;
 const MAX_ROUTE_STOPS = 10;
+
+// ===== Modulo Jornadas de visitas =====
+const MIN_VISIT_STOPS = 2;
+const RECOMMENDED_MAX_VISIT_STOPS = 10;
+const ABSOLUTE_MAX_VISIT_STOPS = 20;
+
+const JOURNEY_STATUS_LABELS = {
+  draft: "Borrador", planned: "Planificada", active: "En curso",
+  completed: "Completada", cancelled: "Cancelada"
+};
+const STOP_STATUS_LABELS = {
+  pending: "Pendiente", en_route: "En camino",
+  sale: "Venta realizada", visited_no_sale: "Visitado sin venta",
+  closed: "Local cerrado", unavailable: "No disponible",
+  rescheduled: "Reprogramado", skipped: "Omitido"
+};
+const STOP_TERMINAL_STATES = new Set(["sale", "visited_no_sale", "closed", "unavailable", "rescheduled", "skipped"]);
+
+const mapJourneySelectState = {
+  active: false,
+  selectedIds: new Set(),
+  drawerOpen: false
+};
+
+const journeyCreatorState = {
+  selectedEntities: [],
+  name: "",
+  scheduledDate: "",
+  startTime: "",
+  origin: null,
+  mapOriginPicking: false,
+  optimizedOrder: [],
+  routePolyline: null,
+  totalDistanceMeters: 0,
+  estimatedDurationSeconds: 0,
+  legs: [],
+  orderManuallyEdited: false,
+  optimizationMethod: "",
+  isApproximate: true,
+  saving: false
+};
+
+let journeyOriginMarker = null;
+let journeyRouteData = null;
+let activeJourneyId = null;
+let activeJourneyStopsUnsubscribe = null;
+let journeyStopsCache = [];
 const repurchaseNotesOpenState = new Set();
 const repurchaseHistoryOpenState = new Set();
 const clientHistoryOpenState = new Set();
@@ -4455,6 +4507,97 @@ const getRouteStopValue = (item) => {
   return String(item?.mapsLink || "").trim();
 };
 
+// ===== Optimizacion de rutas (fallback Haversine) =====
+const haversineMeters = (lat1, lng1, lat2, lng2) => {
+  const R = 6371000, toRad = (d) => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+};
+
+const estimateDriveSeconds = (meters) => Math.round((meters / 30000) * 3600);
+
+const buildHaversineMatrix = (points) =>
+  points.map((a) => points.map((b) => haversineMeters(a.lat, a.lng, b.lat, b.lng)));
+
+const nearestNeighborOpen = (matrix) => {
+  const n = matrix.length - 1;
+  const unvisited = new Set(Array.from({ length: n }, (_, i) => i + 1));
+  const tour = [];
+  let cur = 0;
+  while (unvisited.size > 0) {
+    let best = -1, bestDist = Infinity;
+    for (const j of unvisited) { if (matrix[cur][j] < bestDist) { bestDist = matrix[cur][j]; best = j; } }
+    tour.push(best); unvisited.delete(best); cur = best;
+  }
+  return tour;
+};
+
+const twoOptImprove = (tour, matrix) => {
+  const cost = (t) => { let d = matrix[0][t[0]]; for (let i = 0; i < t.length - 1; i++) d += matrix[t[i]][t[i + 1]]; return d; };
+  let best = [...tour], improved = true;
+  while (improved) {
+    improved = false;
+    for (let i = 0; i < best.length - 1; i++) {
+      for (let j = i + 1; j < best.length; j++) {
+        const cand = [...best.slice(0, i), ...best.slice(i, j + 1).reverse(), ...best.slice(j + 1)];
+        if (cost(cand) < cost(best)) { best = cand; improved = true; }
+      }
+    }
+  }
+  return best;
+};
+
+const heldKarpOpen = (matrix) => {
+  const n = matrix.length - 1;
+  if (n === 0) return [];
+  if (n === 1) return [1];
+  const INF = Infinity, size = 1 << n;
+  const dp = Array.from({ length: size }, () => new Float64Array(n + 1).fill(INF));
+  const parent = Array.from({ length: size }, () => new Int8Array(n + 1).fill(-1));
+  for (let i = 1; i <= n; i++) { dp[1 << (i - 1)][i] = matrix[0][i]; }
+  for (let mask = 1; mask < size; mask++) {
+    for (let i = 1; i <= n; i++) {
+      if (!(mask & (1 << (i - 1))) || dp[mask][i] === INF) continue;
+      for (let j = 1; j <= n; j++) {
+        if (mask & (1 << (j - 1))) continue;
+        const nm = mask | (1 << (j - 1)), nc = dp[mask][i] + matrix[i][j];
+        if (nc < dp[nm][j]) { dp[nm][j] = nc; parent[nm][j] = i; }
+      }
+    }
+  }
+  const full = size - 1;
+  let bestEnd = 1, bestCost = dp[full][1];
+  for (let i = 2; i <= n; i++) { if (dp[full][i] < bestCost) { bestCost = dp[full][i]; bestEnd = i; } }
+  const tour = [];
+  let mask = full, cur = bestEnd;
+  while (cur !== -1) { tour.unshift(cur); const prev = parent[mask][cur]; mask ^= (1 << (cur - 1)); cur = prev; }
+  return tour;
+};
+
+const optimizeRouteHaversine = (originCoords, stopCoords) => {
+  if (!stopCoords.length) return { order: [], legs: [], totalDistanceMeters: 0, estimatedDurationSeconds: 0 };
+  const points = [originCoords, ...stopCoords];
+  const matrix = buildHaversineMatrix(points);
+  let tour;
+  try {
+    tour = stopCoords.length <= 12 ? heldKarpOpen(matrix) : nearestNeighborOpen(matrix);
+  } catch (e) { tour = nearestNeighborOpen(matrix); }
+  tour = twoOptImprove(tour, matrix);
+  const legs = [];
+  let totalDist = matrix[0][tour[0]], totalSec = estimateDriveSeconds(matrix[0][tour[0]]);
+  legs.push({ fromIndex: -1, toIndex: tour[0] - 1, distanceMeters: Math.round(matrix[0][tour[0]]), durationSeconds: estimateDriveSeconds(matrix[0][tour[0]]) });
+  for (let i = 0; i < tour.length - 1; i++) {
+    const d = matrix[tour[i]][tour[i + 1]];
+    totalDist += d; totalSec += estimateDriveSeconds(d);
+    legs.push({ fromIndex: tour[i] - 1, toIndex: tour[i + 1] - 1, distanceMeters: Math.round(d), durationSeconds: estimateDriveSeconds(d) });
+  }
+  return { order: tour.map((i) => i - 1), legs, totalDistanceMeters: Math.round(totalDist), estimatedDurationSeconds: totalSec };
+};
+
+const formatDistance = (meters) => !meters ? "0 m" : meters < 1000 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(1)} km`;
+const formatDuration = (sec) => { if (!sec) return "0 min"; const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60); return h > 0 ? `${h} h ${m} min` : `${m} min`; };
+
 const buildGoogleMapsRouteUrl = (items) => {
   const stops = items
     .map((item) => getRouteStopValue(item))
@@ -6139,6 +6282,17 @@ const setActiveAppSection = (section) => {
     if (safeSection === "sales") focusFirstSaleProductField();
     if (safeSection === "dashboard") renderCommercialDashboard();
     if (safeSection === "map") { ensureCommercialMap(); resizeCommercialMap(80); resizeCommercialMap(380); }
+    if (safeSection === "journeys") {
+      document.getElementById("journeyListSection")?.removeAttribute("hidden");
+      document.getElementById("journeyActiveSection")?.setAttribute("hidden", "");
+      if (activeJourneyId) {
+        document.getElementById("journeyListSection")?.setAttribute("hidden", "");
+        document.getElementById("journeyActiveSection")?.removeAttribute("hidden");
+        renderActiveJourney(activeJourneyId);
+      } else {
+        loadAndRenderJourneys();
+      }
+    }
     if (config.collapses?.includes("coverageSection")) renderSalesCoverage({ animatePins: true });
   });
 };
@@ -10446,7 +10600,8 @@ const commercialEntitiesToGeoJSON = (entities) => ({
       daysLate: e.daysLate ?? 0,
       importSessionId: e.importSessionId || "",
       sourceCollection: e.sourceCollection,
-      sourceDocumentId: e.sourceDocumentId
+      sourceDocumentId: e.sourceDocumentId,
+      journeySelected: mapJourneySelectState.selectedIds.has(e.id)
     }
   }))
 });
@@ -10809,10 +10964,16 @@ const ensureCommercialMap = () => {
   });
   commercialMap.on("click", "points", (e) => {
     if (quickMapProspectState.active) return;
+    if (mapJourneySelectState.active) {
+      const id = e.features?.[0]?.properties?.id;
+      if (id) { toggleMapEntityForJourney(id); e.stopPropagation?.(); }
+      return;
+    }
     const id = e.features?.[0]?.properties?.id;
     if (id) openMapDetail(id);
   });
   commercialMap.on("click", (e) => {
+    if (handleMapClickForJourneySelect(e)) return;
     if (!quickMapProspectState.active || !quickMapProspectState.selecting) return;
     const features = commercialMap.queryRenderedFeatures(e.point, { layers: ["points", "points-emph", "clusters"] });
     if (features.length) {
@@ -11338,6 +11499,832 @@ const setupRubroModal = () => {
   });
 };
 
+// ============================================================
+// MODULO JORNADAS DE VISITAS
+// ============================================================
+
+// ----- Firestore CRUD -----
+const saveNewJourney = async (journeyData, stops) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error("No autenticado");
+  const journeyRef = doc(collection(db, "visitJourneys"));
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+  batch.set(journeyRef, {
+    ...journeyData,
+    assignedUserId: user.uid,
+    assignedUserName: user.email || user.uid,
+    createdBy: user.uid,
+    createdAt: now,
+    updatedAt: now
+  });
+  stops.forEach((stop) => {
+    const stopRef = doc(collection(db, "visitJourneys", journeyRef.id, "stops"));
+    batch.set(stopRef, { ...stop, createdAt: now, updatedAt: now });
+  });
+  await batch.commit();
+  return journeyRef.id;
+};
+
+const updateStopResult = async (journeyId, stopId, result, notes = "") => {
+  if (!journeyId || !stopId) return;
+  const stopRef = doc(db, "visitJourneys", journeyId, "stops", stopId);
+  const isComplete = STOP_TERMINAL_STATES.has(result);
+  const update = { status: result, resultNotes: notes, updatedAt: serverTimestamp() };
+  if (isComplete) update.completedAt = serverTimestamp();
+  await updateDoc(stopRef, update);
+  await recalcJourneyProgress(journeyId);
+};
+
+const recalcJourneyProgress = async (journeyId) => {
+  const snap = await getDocs(collection(db, "visitJourneys", journeyId, "stops"));
+  const stops = snap.docs.map((d) => d.data());
+  const completed = stops.filter((s) => STOP_TERMINAL_STATES.has(s.status)).length;
+  await updateDoc(doc(db, "visitJourneys", journeyId), {
+    completedStops: completed,
+    totalStops: stops.length,
+    status: completed === stops.length && stops.length > 0 ? "completed" : "active",
+    updatedAt: serverTimestamp()
+  });
+};
+
+const startJourney = async (journeyId) => {
+  await updateDoc(doc(db, "visitJourneys", journeyId), { status: "active", startedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+};
+
+const finalizeJourney = async (journeyId) => {
+  await updateDoc(doc(db, "visitJourneys", journeyId), { status: "completed", completedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+};
+
+const deleteJourney = async (journeyId) => {
+  await updateDoc(doc(db, "visitJourneys", journeyId), { status: "cancelled", updatedAt: serverTimestamp() });
+};
+
+// ----- Helpers -----
+const todayStr = () => toDateInputValue(new Date());
+const suggestJourneyName = () => {
+  const entities = journeyCreatorState.selectedEntities;
+  const cities = [...new Set(entities.map((e) => e.city).filter(Boolean))];
+  const cityStr = cities.slice(0, 2).join(" y ") || "Visitas";
+  return `Jornada ${cityStr} · ${formatDate(todayStr())}`;
+};
+
+const buildOpenMapsUrl = (stop) => {
+  if (stop.latitude && stop.longitude) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${stop.latitude},${stop.longitude}&travelmode=driving`;
+  }
+  const address = [stop.address, stop.city].filter(Boolean).join(", ");
+  return address ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}&travelmode=driving` : "";
+};
+
+// ----- Journey list rendering -----
+const renderJourneysList = (journeys) => {
+  const el = document.getElementById("journeysList");
+  if (!el) return;
+  if (!journeys.length) {
+    el.innerHTML = '<div class="empty-hint">Sin jornadas todavia. Crea una desde el Mapa comercial.</div>';
+    return;
+  }
+  const sorted = [...journeys].sort((a, b) => (b.scheduledDate || "").localeCompare(a.scheduledDate || ""));
+  el.innerHTML = sorted.map((j) => {
+    const pct = j.totalStops > 0 ? Math.round((j.completedStops || 0) / j.totalStops * 100) : 0;
+    const statusLabel = JOURNEY_STATUS_LABELS[j.status] || j.status || "Borrador";
+    const statusClass = { draft: "muted", planned: "blue", active: "green", completed: "green-dark", cancelled: "red" }[j.status] || "muted";
+    return `
+    <div class="journey-card" data-journey-id="${j.id}">
+      <div class="journey-card-head">
+        <div class="journey-card-title">${escapeHtml(j.name || "Sin nombre")}</div>
+        <span class="journey-status-badge journey-status-${statusClass}">${statusLabel}</span>
+      </div>
+      <div class="journey-card-meta">
+        <span>${j.scheduledDate ? formatDate(j.scheduledDate) : "-"}</span>
+        <span>${j.totalStops || 0} paradas</span>
+        ${j.totalDistanceMeters ? `<span>${formatDistance(j.totalDistanceMeters)}</span>` : ""}
+        ${j.estimatedDurationSeconds ? `<span>${formatDuration(j.estimatedDurationSeconds)}</span>` : ""}
+        ${j.isApproximate ? '<span class="muted" title="Orden aproximado sin informacion vial">~Aprox.</span>' : ""}
+      </div>
+      ${j.totalStops > 0 ? `
+        <div class="journey-progress-wrap">
+          <div class="journey-progress-bar" style="width:${pct}%"></div>
+        </div>
+        <div class="journey-progress-label">${j.completedStops || 0} de ${j.totalStops} completadas</div>
+      ` : ""}
+      <div class="journey-card-actions">
+        ${j.status === "planned" || j.status === "draft" ? `<button class="btn primary btn-xs" type="button" data-journey-start="${j.id}">Iniciar</button>` : ""}
+        ${j.status === "active" ? `<button class="btn primary btn-xs" type="button" data-journey-open="${j.id}">Continuar</button>` : ""}
+        ${j.status === "completed" ? `<button class="btn ghost btn-xs" type="button" data-journey-open="${j.id}">Ver resumen</button>` : ""}
+        <button class="btn ghost btn-xs" type="button" data-journey-open="${j.id}">Abrir</button>
+        ${j.status !== "completed" ? `<button class="btn ghost btn-xs" type="button" data-journey-cancel="${j.id}">Cancelar</button>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+};
+
+// ----- Active journey rendering -----
+const renderActiveJourney = async (journeyId) => {
+  const jEl = document.getElementById("journeyActiveSectionContent");
+  if (!jEl) return;
+  const journeySnap = await getDoc(doc(db, "visitJourneys", journeyId));
+  if (!journeySnap.exists()) { jEl.innerHTML = '<div class="empty-hint">Jornada no encontrada.</div>'; return; }
+  const j = { id: journeySnap.id, ...journeySnap.data() };
+  const stopsSnap = await getDocs(query(collection(db, "visitJourneys", journeyId, "stops"), orderBy("order", "asc")));
+  const stops = stopsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  journeyStopsCache = stops;
+  const pct = j.totalStops > 0 ? Math.round((j.completedStops || 0) / j.totalStops * 100) : 0;
+  jEl.innerHTML = `
+    <div class="journey-active-head">
+      <div>
+        <div class="journey-active-title">${escapeHtml(j.name || "Jornada")}</div>
+        <div class="journey-active-sub">${j.completedStops || 0} de ${j.totalStops || 0} visitas completadas</div>
+      </div>
+      <div class="journey-active-controls">
+        ${j.status === "planned" || j.status === "draft" ? '<button class="btn primary" type="button" id="journeyStartBtn">Iniciar jornada</button>' : ""}
+        ${j.status === "active" ? '<button class="btn ghost" type="button" id="journeyFinalizeBtn">Finalizar</button>' : ""}
+      </div>
+    </div>
+    <div class="journey-active-progress">
+      <div class="journey-active-progress-bar" style="width:${pct}%"></div>
+    </div>
+    ${j.totalDistanceMeters || j.estimatedDurationSeconds ? `
+    <div class="journey-active-stats">
+      ${j.totalDistanceMeters ? `<span>${formatDistance(j.totalDistanceMeters)} totales</span>` : ""}
+      ${j.estimatedDurationSeconds ? `<span>${formatDuration(j.estimatedDurationSeconds)} estimados</span>` : ""}
+      ${j.isApproximate ? '<span class="muted">Orden aproximado</span>' : '<span class="journey-stat-exact">Ruta optimizada</span>'}
+    </div>` : ""}
+    <div class="journey-stops-list" id="journeyStopsList">
+      ${stops.map((stop, idx) => renderStopCard(stop, idx, j.status)).join("")}
+    </div>
+    ${j.status === "active" ? `
+    <div class="journey-active-footer">
+      <button class="btn ghost" type="button" id="journeyFinalizeBtn2">Finalizar jornada</button>
+    </div>` : ""}
+  `;
+  refreshIcons();
+  // journeyBackToList is a static button handled in setupJourneysModule
+  document.getElementById("journeyStartBtn")?.addEventListener("click", async () => {
+    await startJourney(journeyId);
+    renderActiveJourney(journeyId);
+  });
+  const finalize = async () => {
+    if (!window.confirm("Finalizar la jornada? Las paradas pendientes quedarán sin visitar.")) return;
+    await finalizeJourney(journeyId);
+    renderActiveJourney(journeyId);
+  };
+  document.getElementById("journeyFinalizeBtn")?.addEventListener("click", finalize);
+  document.getElementById("journeyFinalizeBtn2")?.addEventListener("click", finalize);
+  jEl.querySelectorAll("[data-stop-maps]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const stop = journeyStopsCache.find((s) => s.id === btn.dataset.stopMaps);
+      const url = stop ? buildOpenMapsUrl(stop) : "";
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
+      else window.alert("Este negocio no tiene coordenadas para navegar.");
+    });
+  });
+  jEl.querySelectorAll("[data-stop-result]").forEach((btn) => {
+    btn.addEventListener("click", () => openResultModal(journeyId, btn.dataset.stopResult));
+  });
+};
+
+const renderStopCard = (stop, idx, journeyStatus) => {
+  const isComplete = STOP_TERMINAL_STATES.has(stop.status);
+  const isPending = stop.status === "pending" || stop.status === "en_route";
+  const statusLabel = STOP_STATUS_LABELS[stop.status] || stop.status || "Pendiente";
+  const typeLabel = stop.commercialStatus === "overdue" ? "Recompra vencida" : stop.entityType === "client" ? "Cliente activo" : "Prospecto";
+  const dotClass = stop.commercialStatus === "overdue" ? "red" : stop.entityType === "client" ? "green" : "orange";
+  return `
+  <div class="stop-card ${isComplete ? "stop-complete" : isPending ? "stop-pending" : ""}" data-stop-id="${stop.id}">
+    <div class="stop-number">${idx + 1}</div>
+    <div class="stop-info">
+      <div class="stop-name"><i class="map-dot map-dot-${dotClass}"></i> ${escapeHtml(stop.businessName || "-")}</div>
+      <div class="stop-meta">${typeLabel}${stop.city ? " · " + escapeHtml(stop.city) : ""}${stop.address ? " · " + escapeHtml(stop.address) : ""}</div>
+      ${stop.distanceFromPreviousMeters || stop.durationFromPreviousSeconds ? `
+      <div class="stop-leg">${stop.distanceFromPreviousMeters ? formatDistance(stop.distanceFromPreviousMeters) : ""} ${stop.durationFromPreviousSeconds ? "· " + formatDuration(stop.durationFromPreviousSeconds) : ""}</div>` : ""}
+      <div class="stop-status-label">${statusLabel}</div>
+      ${stop.resultNotes ? `<div class="stop-notes">${escapeHtml(stop.resultNotes)}</div>` : ""}
+    </div>
+    <div class="stop-actions">
+      ${journeyStatus === "active" && isPending ? `
+        <button class="btn primary btn-xs" type="button" data-stop-maps="${stop.id}">
+          <i data-lucide="navigation"></i> Ir ahora
+        </button>
+        <button class="btn ghost btn-xs" type="button" data-stop-result="${stop.id}">Registrar resultado</button>
+      ` : ""}
+      ${isComplete ? `<span class="stop-check"><i data-lucide="check-circle"></i></span>` : ""}
+    </div>
+  </div>`;
+};
+
+// ----- Result modal -----
+const openResultModal = (journeyId, stopId) => {
+  const stop = journeyStopsCache.find((s) => s.id === stopId);
+  const modal = document.getElementById("journeyResultModal");
+  if (!modal) return;
+  modal.dataset.journeyId = journeyId;
+  modal.dataset.stopId = stopId;
+  const name = document.getElementById("resultModalName");
+  if (name) name.textContent = stop?.businessName || "Sin nombre";
+  const notesEl = document.getElementById("resultNotes");
+  if (notesEl) notesEl.value = "";
+  const btns = modal.querySelectorAll("[data-result-value]");
+  btns.forEach((b) => b.classList.remove("active"));
+  modal.hidden = false;
+};
+
+const closeResultModal = () => {
+  const modal = document.getElementById("journeyResultModal");
+  if (modal) modal.hidden = true;
+};
+
+// ----- Nuevo modal de jornada -----
+const openNewJourneyModal = () => {
+  const modal = document.getElementById("newJourneyModal");
+  if (!modal) return;
+  const nameEl = document.getElementById("journeyName");
+  const dateEl = document.getElementById("journeyDate");
+  if (nameEl) nameEl.value = suggestJourneyName();
+  if (dateEl) dateEl.value = todayStr();
+  document.getElementById("journeyOriginStatus")?.setAttribute("hidden", "");
+  journeyCreatorState.origin = null;
+  journeyCreatorState.optimizedOrder = [];
+  journeyCreatorState.routePolyline = null;
+  journeyCreatorState.orderManuallyEdited = false;
+  journeyCreatorState.saving = false;
+  renderJourneyStopList();
+  renderJourneyOptimizationResult();
+  modal.hidden = false;
+};
+
+const closeNewJourneyModal = () => {
+  const modal = document.getElementById("newJourneyModal");
+  if (modal) modal.hidden = true;
+};
+
+const renderJourneyStopList = () => {
+  const el = document.getElementById("journeyStopListPreview");
+  if (!el) return;
+  const entities = journeyCreatorState.selectedEntities;
+  const countEl = document.getElementById("journeyStopCount");
+  if (countEl) countEl.textContent = entities.length;
+  const warnEl = document.getElementById("journeyCountWarn");
+  if (warnEl) warnEl.hidden = entities.length <= RECOMMENDED_MAX_VISIT_STOPS;
+  if (!entities.length) { el.innerHTML = '<div class="empty-hint">Sin negocios seleccionados.</div>'; return; }
+  const order = journeyCreatorState.optimizedOrder.length ? journeyCreatorState.optimizedOrder : entities.map((_, i) => i);
+  el.innerHTML = order.map((idx, pos) => {
+    const e = entities[idx];
+    if (!e) return "";
+    const dotClass = e.status === "overdue" ? "red" : e.entityType === "client" ? "green" : "orange";
+    return `
+    <div class="journey-stop-row" data-stop-pos="${pos}" data-stop-idx="${idx}">
+      <span class="stop-drag-handle" title="Arrastrar">⠿</span>
+      <span class="stop-num">${pos + 1}</span>
+      <span class="map-dot map-dot-${dotClass}"></span>
+      <div class="stop-row-info">
+        <div class="stop-row-name">${escapeHtml(e.name || "-")}</div>
+        <div class="stop-row-meta">${e.city || ""}${e.neighborhood ? " · " + e.neighborhood : ""}</div>
+      </div>
+      <div class="stop-row-actions">
+        <button class="icon-btn" type="button" data-move-up="${pos}" title="Subir" ${pos === 0 ? "disabled" : ""}><i data-lucide="chevron-up"></i></button>
+        <button class="icon-btn" type="button" data-move-down="${pos}" title="Bajar" ${pos === order.length - 1 ? "disabled" : ""}><i data-lucide="chevron-down"></i></button>
+        <button class="icon-btn icon-btn-danger" type="button" data-remove-stop="${idx}" title="Quitar"><i data-lucide="x"></i></button>
+      </div>
+    </div>`;
+  }).join("");
+  refreshIcons();
+  el.querySelectorAll("[data-move-up]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const pos = Number(btn.dataset.moveUp);
+      if (pos <= 0) return;
+      const o = [...journeyCreatorState.optimizedOrder.length ? journeyCreatorState.optimizedOrder : entities.map((_, i) => i)];
+      [o[pos - 1], o[pos]] = [o[pos], o[pos - 1]];
+      journeyCreatorState.optimizedOrder = o;
+      journeyCreatorState.orderManuallyEdited = true;
+      renderJourneyStopList();
+      updateJourneyRouteAfterReorder();
+    });
+  });
+  el.querySelectorAll("[data-move-down]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const pos = Number(btn.dataset.moveDown);
+      const o = [...journeyCreatorState.optimizedOrder.length ? journeyCreatorState.optimizedOrder : entities.map((_, i) => i)];
+      if (pos >= o.length - 1) return;
+      [o[pos], o[pos + 1]] = [o[pos + 1], o[pos]];
+      journeyCreatorState.optimizedOrder = o;
+      journeyCreatorState.orderManuallyEdited = true;
+      renderJourneyStopList();
+      updateJourneyRouteAfterReorder();
+    });
+  });
+  el.querySelectorAll("[data-remove-stop]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.removeStop);
+      journeyCreatorState.selectedEntities.splice(idx, 1);
+      journeyCreatorState.optimizedOrder = [];
+      journeyCreatorState.orderManuallyEdited = false;
+      renderJourneyStopList();
+      syncMapJourneySelectState();
+      renderJourneySelectionBar();
+    });
+  });
+  setupDragAndDropStops(el);
+};
+
+const setupDragAndDropStops = (container) => {
+  let dragging = null;
+  container.querySelectorAll(".journey-stop-row").forEach((row) => {
+    row.setAttribute("draggable", "true");
+    row.addEventListener("dragstart", () => { dragging = row; row.classList.add("dragging"); });
+    row.addEventListener("dragend", () => { row.classList.remove("dragging"); dragging = null; });
+    row.addEventListener("dragover", (e) => { e.preventDefault(); if (dragging && dragging !== row) row.classList.add("drag-over"); });
+    row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
+    row.addEventListener("drop", (e) => {
+      e.preventDefault(); row.classList.remove("drag-over");
+      if (!dragging || dragging === row) return;
+      const fromPos = Number(dragging.dataset.stopPos);
+      const toPos = Number(row.dataset.stopPos);
+      const entities = journeyCreatorState.selectedEntities;
+      const o = [...journeyCreatorState.optimizedOrder.length ? journeyCreatorState.optimizedOrder : entities.map((_, i) => i)];
+      const [moved] = o.splice(fromPos, 1);
+      o.splice(toPos, 0, moved);
+      journeyCreatorState.optimizedOrder = o;
+      journeyCreatorState.orderManuallyEdited = true;
+      renderJourneyStopList();
+      updateJourneyRouteAfterReorder();
+    });
+  });
+};
+
+const updateJourneyRouteAfterReorder = () => {
+  if (!journeyCreatorState.origin) return;
+  const order = journeyCreatorState.optimizedOrder;
+  const entities = journeyCreatorState.selectedEntities;
+  const stops = order.map((i) => entities[i]);
+  const stopCoords = stops.map((e) => ({ lat: Number(e.latitude), lng: Number(e.longitude) }));
+  const originCoords = { lat: journeyCreatorState.origin.latitude, lng: journeyCreatorState.origin.longitude };
+  const result = optimizeRouteHaversine(originCoords, stopCoords);
+  const legs = result.legs;
+  stops.forEach((stop, i) => {
+    stop._legDist = legs[i]?.distanceMeters || 0;
+    stop._legSec = legs[i]?.durationSeconds || 0;
+  });
+  journeyCreatorState.totalDistanceMeters = result.totalDistanceMeters;
+  journeyCreatorState.estimatedDurationSeconds = result.estimatedDurationSeconds;
+  journeyCreatorState.legs = legs;
+  renderJourneyOptimizationResult();
+  drawJourneyRouteOnMap(originCoords, stops);
+};
+
+const renderJourneyOptimizationResult = () => {
+  const el = document.getElementById("journeyOptResult");
+  if (!el) return;
+  if (!journeyCreatorState.origin || !journeyCreatorState.totalDistanceMeters) { el.innerHTML = ""; return; }
+  el.innerHTML = `
+    <div class="journey-opt-summary">
+      <span><b>${journeyCreatorState.selectedEntities.length}</b> paradas</span>
+      <span><b>${formatDistance(journeyCreatorState.totalDistanceMeters)}</b> totales</span>
+      <span><b>${formatDuration(journeyCreatorState.estimatedDurationSeconds)}</b> estimados</span>
+      ${journeyCreatorState.isApproximate ? '<span class="journey-approx-badge">Orden aproximado — sin info vial</span>' : '<span class="journey-exact-badge">Ruta optimizada</span>'}
+      ${journeyCreatorState.orderManuallyEdited ? '<span class="journey-manual-badge">Editado manualmente</span>' : ""}
+    </div>`;
+};
+
+// ----- Origin selection -----
+const requestGPSOrigin = () => {
+  const statusEl = document.getElementById("journeyOriginStatus");
+  if (statusEl) { statusEl.removeAttribute("hidden"); statusEl.textContent = "Obteniendo ubicacion..."; }
+  if (!navigator.geolocation) {
+    if (statusEl) statusEl.textContent = "El navegador no soporta geolocalizacion.";
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      journeyCreatorState.origin = { type: "current-location", latitude: pos.coords.latitude, longitude: pos.coords.longitude, label: "Mi ubicacion actual", accuracy: pos.coords.accuracy };
+      if (statusEl) statusEl.textContent = `Ubicacion obtenida (precisión ~${Math.round(pos.coords.accuracy)}m)`;
+      triggerRouteOptimization();
+    },
+    (err) => {
+      const msg = err.code === 1 ? "Permiso de ubicacion denegado. Elige un punto en el mapa." : "No se pudo obtener la ubicacion. Intenta de nuevo.";
+      if (statusEl) statusEl.textContent = msg;
+    },
+    { timeout: 10000, maximumAge: 60000 }
+  );
+};
+
+const activateMapOriginPicker = () => {
+  closeNewJourneyModal();
+  const toast = document.getElementById("journeyOriginPickerToast");
+  if (toast) { toast.hidden = false; toast.textContent = "Haz clic en el mapa para marcar el punto de partida"; }
+  if (commercialMap) commercialMap.getCanvas().style.cursor = "crosshair";
+  journeyCreatorState.mapOriginPicking = true;
+};
+
+const deactivateMapOriginPicker = () => {
+  journeyCreatorState.mapOriginPicking = false;
+  if (commercialMap) commercialMap.getCanvas().style.cursor = "";
+  const toast = document.getElementById("journeyOriginPickerToast");
+  if (toast) toast.hidden = true;
+};
+
+// ----- Route optimization trigger -----
+const triggerRouteOptimization = () => {
+  const entities = journeyCreatorState.selectedEntities;
+  const origin = journeyCreatorState.origin;
+  if (!origin || entities.length < MIN_VISIT_STOPS) { renderJourneyOptimizationResult(); return; }
+  const stopCoords = entities.map((e) => ({ lat: Number(e.latitude), lng: Number(e.longitude) }));
+  const originCoords = { lat: origin.latitude, lng: origin.longitude };
+  const result = optimizeRouteHaversine(originCoords, stopCoords);
+  journeyCreatorState.optimizedOrder = result.order;
+  journeyCreatorState.legs = result.legs;
+  journeyCreatorState.totalDistanceMeters = result.totalDistanceMeters;
+  journeyCreatorState.estimatedDurationSeconds = result.estimatedDurationSeconds;
+  journeyCreatorState.isApproximate = true;
+  journeyCreatorState.optimizationMethod = "haversine-heuristic";
+  journeyCreatorState.orderManuallyEdited = false;
+  const orderedStops = result.order.map((i) => entities[i]);
+  result.legs.forEach((leg, i) => { if (orderedStops[i]) { orderedStops[i]._legDist = leg.distanceMeters; orderedStops[i]._legSec = leg.durationSeconds; } });
+  renderJourneyStopList();
+  renderJourneyOptimizationResult();
+  drawJourneyRouteOnMap(originCoords, orderedStops);
+};
+
+// ----- Route polyline on MapLibre -----
+const JOURNEY_SOURCE = "journey-route";
+const JOURNEY_LINE_LAYER = "journey-line";
+const JOURNEY_ORIGIN_LAYER = "journey-origin";
+
+const ensureJourneyMapLayers = () => {
+  if (!commercialMap || !commercialMapReady) return;
+  if (!commercialMap.getSource(JOURNEY_SOURCE)) {
+    commercialMap.addSource(JOURNEY_SOURCE, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    commercialMap.addLayer({ id: JOURNEY_LINE_LAYER, type: "line", source: JOURNEY_SOURCE, filter: ["==", ["get", "type"], "route"], layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#1e40af", "line-width": 3.5, "line-opacity": 0.85 } }, "clusters");
+  }
+  // Anillo de seleccion sobre los pines seleccionados para jornada
+  if (!commercialMap.getLayer("journey-selected-ring")) {
+    commercialMap.addLayer({
+      id: "journey-selected-ring",
+      type: "circle",
+      source: "commercial",
+      filter: ["==", ["get", "journeySelected"], true],
+      paint: {
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 7, 14, 11, 20, 15, 28],
+        "circle-color": "#1e40af",
+        "circle-opacity": 0.18,
+        "circle-stroke-color": "#1e40af",
+        "circle-stroke-width": 2.5,
+        "circle-stroke-opacity": 0.7
+      }
+    }, "points");
+  }
+};
+
+const drawJourneyRouteOnMap = (originCoords, orderedStops) => {
+  if (!commercialMap || !commercialMapReady) return;
+  ensureJourneyMapLayers();
+  const coords = [[originCoords.lng, originCoords.lat], ...orderedStops.filter((s) => s.latitude && s.longitude).map((s) => [Number(s.longitude), Number(s.latitude)])];
+  const fc = {
+    type: "FeatureCollection",
+    features: [
+      { type: "Feature", properties: { type: "route" }, geometry: { type: "LineString", coordinates: coords } }
+    ]
+  };
+  commercialMap.getSource(JOURNEY_SOURCE)?.setData(fc);
+  if (coords.length > 1) {
+    let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+    coords.forEach(([lng, lat]) => { minLng = Math.min(minLng, lng); maxLng = Math.max(maxLng, lng); minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat); });
+    try { commercialMap.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 60, maxZoom: 14, duration: 900 }); } catch (e) { /* noop */ }
+  }
+};
+
+const clearJourneyRouteFromMap = () => {
+  if (!commercialMap || !commercialMap.getSource(JOURNEY_SOURCE)) return;
+  commercialMap.getSource(JOURNEY_SOURCE).setData({ type: "FeatureCollection", features: [] });
+};
+
+// ----- Save journey -----
+const doSaveJourney = async () => {
+  if (journeyCreatorState.saving) return;
+  const user = auth.currentUser;
+  if (!user) { window.alert("Debes estar autenticado."); return; }
+  const entities = journeyCreatorState.selectedEntities;
+  if (entities.length < MIN_VISIT_STOPS) { window.alert(`Agrega al menos ${MIN_VISIT_STOPS} paradas.`); return; }
+  const name = document.getElementById("journeyName")?.value.trim() || suggestJourneyName();
+  const scheduledDate = document.getElementById("journeyDate")?.value || todayStr();
+  const startTime = document.getElementById("journeyTime")?.value || "";
+  const origin = journeyCreatorState.origin;
+  const order = journeyCreatorState.optimizedOrder.length ? journeyCreatorState.optimizedOrder : entities.map((_, i) => i);
+  const orderedEntities = order.map((i) => entities[i]);
+  const journeyData = {
+    name, scheduledDate, startTime, status: "planned",
+    origin: origin || null,
+    endMode: "last-stop",
+    optimizationMethod: journeyCreatorState.optimizationMethod || "none",
+    isApproximate: journeyCreatorState.isApproximate,
+    optimizedAt: origin ? new Date().toISOString() : null,
+    optimizedOrder: order,
+    finalOrder: order,
+    orderWasManuallyEdited: journeyCreatorState.orderManuallyEdited,
+    totalStops: orderedEntities.length,
+    completedStops: 0,
+    totalDistanceMeters: journeyCreatorState.totalDistanceMeters || 0,
+    estimatedDurationSeconds: journeyCreatorState.estimatedDurationSeconds || 0,
+    routePolyline: null
+  };
+  const stops = orderedEntities.map((e, pos) => ({
+    order: pos,
+    originalOrder: order[pos],
+    entityId: e.id,
+    entityType: e.entityType,
+    commercialStatus: e.status,
+    businessName: e.name || "",
+    phone: e.phone || "",
+    address: e.address || "",
+    city: e.city || "",
+    zone: e.neighborhood || "",
+    latitude: Number(e.latitude) || 0,
+    longitude: Number(e.longitude) || 0,
+    distanceFromPreviousMeters: e._legDist || 0,
+    durationFromPreviousSeconds: e._legSec || 0,
+    status: "pending",
+    resultNotes: "",
+    saleId: null,
+    rescheduledDate: null,
+    arrivedAt: null,
+    completedAt: null
+  }));
+  journeyCreatorState.saving = true;
+  const saveBtn = document.getElementById("journeySaveBtn");
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Guardando..."; }
+  try {
+    const journeyId = await saveNewJourney(journeyData, stops);
+    closeNewJourneyModal();
+    deactivateMapJourneySelectMode();
+    clearJourneyRouteFromMap();
+    window.alert(`Jornada "${name}" guardada. Ahora puedes iniciarla desde Jornadas de visitas.`);
+    setActiveAppSection("journeys");
+    activeJourneyId = journeyId;
+    setTimeout(() => renderActiveJourney(journeyId), 300);
+  } catch (error) {
+    console.error("Error guardando jornada:", error);
+    window.alert("Error al guardar la jornada. Intenta de nuevo.");
+  } finally {
+    journeyCreatorState.saving = false;
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "Guardar jornada"; }
+  }
+};
+
+// ----- Map selection mode -----
+const activateMapJourneySelectMode = () => {
+  mapJourneySelectState.active = true;
+  mapJourneySelectState.selectedIds = new Set();
+  journeyCreatorState.selectedEntities = [];
+  document.getElementById("mapJourneySelectBar")?.removeAttribute("hidden");
+  document.getElementById("mapCreateJourneyBtn")?.setAttribute("aria-pressed", "true");
+  renderJourneySelectionBar();
+  ensureJourneyMapLayers();
+};
+
+const deactivateMapJourneySelectMode = () => {
+  mapJourneySelectState.active = false;
+  mapJourneySelectState.drawerOpen = false;
+  document.getElementById("mapJourneySelectBar")?.setAttribute("hidden", "");
+  document.getElementById("mapJourneySelectDrawer")?.setAttribute("hidden", "");
+  document.getElementById("mapCreateJourneyBtn")?.removeAttribute("aria-pressed");
+  clearJourneyRouteFromMap();
+  if (journeyOriginMarker) { try { journeyOriginMarker.remove(); } catch (e) {} journeyOriginMarker = null; }
+  refreshCommercialMap();
+};
+
+const syncMapJourneySelectState = () => {
+  mapJourneySelectState.selectedIds = new Set(journeyCreatorState.selectedEntities.map((e) => e.id));
+};
+
+const toggleMapEntityForJourney = (entityId) => {
+  const entity = commercialMapEntities.find((e) => e.id === entityId);
+  if (!entity) return;
+  if (!entity.hasLocation) { window.alert("Este negocio todavia no tiene ubicacion registrada."); return; }
+  const idx = journeyCreatorState.selectedEntities.findIndex((e) => e.id === entityId);
+  if (idx >= 0) {
+    journeyCreatorState.selectedEntities.splice(idx, 1);
+    mapJourneySelectState.selectedIds.delete(entityId);
+  } else {
+    if (journeyCreatorState.selectedEntities.length >= ABSOLUTE_MAX_VISIT_STOPS) {
+      window.alert(`Maximo ${ABSOLUTE_MAX_VISIT_STOPS} paradas por jornada.`); return;
+    }
+    if (journeyCreatorState.selectedEntities.length >= RECOMMENDED_MAX_VISIT_STOPS) {
+      if (!window.confirm(`Las jornadas extensas pueden tardar mas en optimizarse. Agregar igual?`)) return;
+    }
+    journeyCreatorState.selectedEntities.push(entity);
+    mapJourneySelectState.selectedIds.add(entityId);
+  }
+  journeyCreatorState.optimizedOrder = [];
+  renderJourneySelectionBar();
+  highlightJourneySelectedEntities();
+};
+
+const highlightJourneySelectedEntities = () => {
+  if (!commercialMap || !commercialMap.getSource) return;
+  const source = commercialMap.getSource("commercial");
+  if (!source) return;
+  const filtered = applyMapFilters(commercialMapEntities);
+  const geoJson = commercialEntitiesToGeoJSON(filtered);
+  geoJson.features.forEach((f) => {
+    if (mapJourneySelectState.selectedIds.has(f.properties.id)) f.properties.journeySelected = true;
+    else f.properties.journeySelected = false;
+  });
+  source.setData(geoJson);
+};
+
+const renderJourneySelectionBar = () => {
+  const bar = document.getElementById("mapJourneySelectBar");
+  if (!bar) return;
+  const count = journeyCreatorState.selectedEntities.length;
+  const countEl = bar.querySelector("[data-journey-count]");
+  if (countEl) countEl.textContent = `${count} negocio${count !== 1 ? "s" : ""} seleccionado${count !== 1 ? "s" : ""}`;
+  const continueBtn = bar.querySelector("[data-journey-continue]");
+  if (continueBtn) continueBtn.disabled = count < MIN_VISIT_STOPS;
+};
+
+const renderJourneySelectionDrawer = () => {
+  const el = document.getElementById("journeySelectDrawerList");
+  if (!el) return;
+  const entities = journeyCreatorState.selectedEntities;
+  if (!entities.length) { el.innerHTML = '<div class="empty-hint">Sin negocios seleccionados.</div>'; return; }
+  el.innerHTML = entities.map((e, i) => {
+    const dotClass = e.status === "overdue" ? "red" : e.entityType === "client" ? "green" : "orange";
+    return `
+    <div class="journey-select-item">
+      <i class="map-dot map-dot-${dotClass}"></i>
+      <div class="journey-select-item-info">
+        <div class="journey-select-item-name">${escapeHtml(e.name || "-")}</div>
+        <div class="journey-select-item-meta">${e.city || ""}${e.neighborhood ? " · " + e.neighborhood : ""}</div>
+      </div>
+      <button class="icon-btn icon-btn-danger" type="button" data-remove-entity="${i}" title="Quitar"><i data-lucide="x"></i></button>
+    </div>`;
+  }).join("");
+  refreshIcons();
+  el.querySelectorAll("[data-remove-entity]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.removeEntity);
+      journeyCreatorState.selectedEntities.splice(idx, 1);
+      syncMapJourneySelectState();
+      renderJourneySelectionBar();
+      renderJourneySelectionDrawer();
+      highlightJourneySelectedEntities();
+    });
+  });
+};
+
+// ----- Journeys section setup -----
+const setupJourneysModule = () => {
+  // Journey list actions (delegated)
+  document.getElementById("journeysList")?.parentElement?.addEventListener("click", async (event) => {
+    const openBtn = event.target.closest("[data-journey-open]");
+    const startBtn = event.target.closest("[data-journey-start]");
+    const cancelBtn = event.target.closest("[data-journey-cancel]");
+    if (openBtn) {
+      activeJourneyId = openBtn.dataset.journeyOpen;
+      document.getElementById("journeyActiveSection")?.removeAttribute("hidden");
+      document.getElementById("journeyListSection")?.setAttribute("hidden", "");
+      await renderActiveJourney(activeJourneyId);
+    }
+    if (startBtn) {
+      await startJourney(startBtn.dataset.journeyStart);
+      activeJourneyId = startBtn.dataset.journeyStart;
+      document.getElementById("journeyActiveSection")?.removeAttribute("hidden");
+      document.getElementById("journeyListSection")?.setAttribute("hidden", "");
+      await renderActiveJourney(activeJourneyId);
+    }
+    if (cancelBtn) {
+      if (!window.confirm("Cancelar esta jornada?")) return;
+      await deleteJourney(cancelBtn.dataset.journeyCancel);
+    }
+  });
+
+  // Result modal actions
+  document.getElementById("journeyResultModal")?.addEventListener("click", async (event) => {
+    const modal = document.getElementById("journeyResultModal");
+    const journeyId = modal?.dataset.journeyId;
+    const stopId = modal?.dataset.stopId;
+    const resultBtn = event.target.closest("[data-result-value]");
+    const closeBtn = event.target.closest("[data-result-close]");
+    const confirmBtn = event.target.closest("[data-result-confirm]");
+    if (closeBtn) closeResultModal();
+    if (resultBtn) {
+      modal.querySelectorAll("[data-result-value]").forEach((b) => b.classList.toggle("active", b === resultBtn));
+    }
+    if (confirmBtn) {
+      const selected = modal.querySelector("[data-result-value].active");
+      if (!selected) { window.alert("Elige un resultado."); return; }
+      const result = selected.dataset.resultValue;
+      const notes = document.getElementById("resultNotes")?.value.trim() || "";
+      confirmBtn.disabled = true;
+      try {
+        await updateStopResult(journeyId, stopId, result, notes);
+        closeResultModal();
+        await renderActiveJourney(journeyId);
+      } catch (e) {
+        console.error("Error registrando resultado:", e);
+        window.alert("Error al registrar. Intenta de nuevo.");
+      } finally { confirmBtn.disabled = false; }
+    }
+  });
+
+  // New journey modal actions
+  document.getElementById("newJourneyModal")?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-journey-modal-close]")) closeNewJourneyModal();
+    if (event.target.closest("[data-journey-gps]")) requestGPSOrigin();
+    if (event.target.closest("[data-journey-map-origin]")) activateMapOriginPicker();
+    if (event.target.closest("[data-journey-optimize]")) triggerRouteOptimization();
+  });
+
+  document.getElementById("journeySaveBtn")?.addEventListener("click", () => { void doSaveJourney(); });
+
+  // Map selection bar actions
+  document.getElementById("mapJourneySelectBar")?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-journey-view-selection]")) {
+      const drawer = document.getElementById("mapJourneySelectDrawer");
+      if (drawer) {
+        mapJourneySelectState.drawerOpen = !mapJourneySelectState.drawerOpen;
+        drawer.hidden = !mapJourneySelectState.drawerOpen;
+        if (mapJourneySelectState.drawerOpen) renderJourneySelectionDrawer();
+      }
+    }
+    if (event.target.closest("[data-journey-clear]")) {
+      journeyCreatorState.selectedEntities = [];
+      mapJourneySelectState.selectedIds.clear();
+      journeyCreatorState.optimizedOrder = [];
+      renderJourneySelectionBar();
+      highlightJourneySelectedEntities();
+    }
+    if (event.target.closest("[data-journey-cancel]")) deactivateMapJourneySelectMode();
+    if (event.target.closest("[data-journey-continue]")) {
+      openNewJourneyModal();
+    }
+  });
+
+  // Origin picker toast cancel
+  document.getElementById("journeyOriginPickerToast")?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-cancel-origin-pick]")) {
+      deactivateMapOriginPicker();
+      openNewJourneyModal();
+    }
+  });
+
+  // Crear jornada desde mapa
+  document.getElementById("mapCreateJourneyBtn")?.addEventListener("click", () => {
+    if (mapJourneySelectState.active) { deactivateMapJourneySelectMode(); }
+    else { setActiveAppSection("map"); activateMapJourneySelectMode(); }
+  });
+
+  // Crear jornada desde la lista de jornadas
+  document.getElementById("journeyNewFromListBtn")?.addEventListener("click", () => {
+    setActiveAppSection("map");
+    activateMapJourneySelectMode();
+  });
+
+  // Volver a lista desde vista activa
+  document.getElementById("journeyBackToList")?.addEventListener("click", () => {
+    document.getElementById("journeyActiveSection")?.setAttribute("hidden", "");
+    document.getElementById("journeyListSection")?.removeAttribute("hidden");
+    activeJourneyId = null;
+    loadAndRenderJourneys();
+  });
+};
+
+// ----- Wiring into map clicks -----
+const handleMapClickForJourneySelect = (e) => {
+  if (journeyCreatorState.mapOriginPicking) {
+    const { lng, lat } = e.lngLat;
+    journeyCreatorState.origin = { type: "map-point", latitude: lat, longitude: lng, label: `${lat.toFixed(5)}, ${lng.toFixed(5)}` };
+    deactivateMapOriginPicker();
+    openNewJourneyModal();
+    const statusEl = document.getElementById("journeyOriginStatus");
+    if (statusEl) { statusEl.removeAttribute("hidden"); statusEl.textContent = `Punto seleccionado: ${lat.toFixed(5)}, ${lng.toFixed(5)}`; }
+    triggerRouteOptimization();
+    return true;
+  }
+  if (mapJourneySelectState.active) {
+    const features = commercialMap.queryRenderedFeatures(e.point, { layers: ["points", "points-emph"] });
+    if (features.length) {
+      const entityId = features[0].properties?.id;
+      if (entityId) { toggleMapEntityForJourney(entityId); return true; }
+    }
+  }
+  return false;
+};
+
+// ----- Load journeys for section -----
+const loadAndRenderJourneys = async () => {
+  const user = auth.currentUser;
+  if (!user) return;
+  const el = document.getElementById("journeysList");
+  if (el) el.innerHTML = '<div class="empty-hint">Cargando...</div>';
+  try {
+    const snap = await getDocs(query(collection(db, "visitJourneys"), where("assignedUserId", "==", user.uid), orderBy("createdAt", "desc")));
+    const journeys = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderJourneysList(journeys);
+  } catch (e) { console.error("Error cargando jornadas:", e); if (el) el.innerHTML = '<div class="empty-hint">Error al cargar jornadas.</div>'; }
+};
+
 const setupProspectImport = () => {
   importProspectsBtn?.addEventListener("click", openProspectImportModal);
   mapImportProspectsBtn?.addEventListener("click", openProspectImportModal);
@@ -11486,6 +12473,7 @@ setupProspectImport();
 setupCommercialMap();
 setupLocationPicker();
 setupRubroModal();
+setupJourneysModule();
 
 onAuthStateChanged(auth, (user) => {
   console.log("[auth] state changed", user ? user.uid : "signed-out");
