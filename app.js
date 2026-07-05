@@ -1598,7 +1598,16 @@ const getAppBaseUrl = () => {
   const base = new URL("./", scriptSrc || document.baseURI);
   return base.href.replace(/\/$/, "");
 };
-const buildQrDynamicUrl = (slug) => `${getAppBaseUrl()}/q/${encodeURIComponent(slug || "")}`;
+const getQrRedirectBaseUrl = () => {
+  const configured = String(window.CRM_QR_REDIRECT_BASE_URL || "").trim().replace(/\/$/, "");
+  if (configured) return configured;
+  const host = window.location.hostname;
+  if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".web.app") || host.endsWith(".firebaseapp.com")) {
+    return window.location.origin;
+  }
+  return `https://${firebaseConfig.projectId}.web.app`;
+};
+const buildQrDynamicUrl = (slug) => `${getQrRedirectBaseUrl()}/q/${encodeURIComponent(slug || "")}`;
 
 const validateHttpUrl = (value) => {
   try {

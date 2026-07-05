@@ -1,16 +1,33 @@
 {
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default"
+    }
+  ],
   "hosting": {
     "public": ".",
     "ignore": [
       "firebase.json",
       "firestore.rules",
       "firestore.indexes.json",
+      ".git/**",
+      ".claude/**",
+      ".playwright-cli/**",
+      "output/**",
       "**/.*",
       "**/node_modules/**",
+      "functions/**",
       "debug.log",
       "tests/**"
     ],
     "rewrites": [
+      {
+        "source": "/q/**",
+        "function": {
+          "functionId": "redirectQr"
+        }
+      },
       { "source": "**", "destination": "/index.html" }
     ]
   },
