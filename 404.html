@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CRM Gami Gomitas</title>
+  <script>
+    (function () {
+      var parts = window.location.pathname.split("/").filter(Boolean);
+      var basePath = parts[0] && parts[0] !== "q" && !parts[0].includes(".") ? "/" + parts[0] + "/" : "/";
+      try {
+        window.sessionStorage.setItem("crmGamiSpaRedirect", window.location.href);
+      } catch (error) {}
+      window.location.replace(window.location.origin + basePath);
+    })();
+  </script>
+</head>
+<body>
+  Redirigiendo...
+</body>
+</html>

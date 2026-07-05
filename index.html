@@ -6,12 +6,36 @@
   <meta name="apple-mobile-web-app-title" content="CRM Gami Gomitas" />
   <meta name="theme-color" content="#ffffff" />
   <title>CRM Gami Gomitas</title>
+  <script>
+    (function () {
+      try {
+        var redirected = window.sessionStorage.getItem("crmGamiSpaRedirect");
+        if (redirected) {
+          window.sessionStorage.removeItem("crmGamiSpaRedirect");
+          window.history.replaceState(null, "", redirected);
+        }
+      } catch (error) {}
+      var parts = window.location.pathname.split("/").filter(Boolean);
+      var basePath = parts[0] && parts[0] !== "q" && !parts[0].includes(".") ? "/" + parts[0] + "/" : "/";
+      document.write('<base href="' + basePath + '">');
+    })();
+  </script>
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
   <link rel="icon" type="image/png" href="apple-touch-icon.png" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="styles.css?v=20260625-06" />
+  <link rel="stylesheet" href="styles.css?v=20260705-01" />
 </head>
 <body>
+  <div class="app-loader" id="appLoader" role="status" aria-live="polite" aria-label="Cargando sistema">
+    <div class="app-loader-panel">
+      <img class="app-loader-logo" src="IMG_8867.PNG" alt="MiMar Alimentos" />
+      <div class="app-loader-track" aria-hidden="true">
+        <span class="app-loader-bar"></span>
+      </div>
+      <div class="app-loader-text">Preparando sistema</div>
+    </div>
+  </div>
+
   <div class="app">
     <header class="topbar">
       <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Abrir menu" aria-controls="appSidebar" aria-expanded="false" title="Abrir menu">
@@ -22,7 +46,9 @@
       </div>
       <div class="user-area" id="userArea">
         <span class="user-email" id="userEmail"></span>
-        <button class="btn ghost" id="logoutBtn">Salir</button>
+        <button class="icon-btn logout-icon-btn" id="logoutBtn" type="button" aria-label="Cerrar sesion" title="Cerrar sesion">
+          <i data-lucide="log-out"></i>
+        </button>
       </div>
     </header>
 
@@ -2021,6 +2047,139 @@
                 <div class="list" id="financeCategorySummaryList"></div>
               </div>
             </div>
+
+            <div class="card qr-manager-card finance-wide-card">
+              <h2 class="section-title">
+                <span class="section-title-text"><i data-lucide="qr-code"></i><span class="section-title-label">Generador de codigos QR</span></span>
+                <button class="collapse-toggle" type="button" data-collapse="qrManagerSection" aria-expanded="false"><span class="chevron">&gt;</span></button>
+              </h2>
+              <div class="collapse-body" id="qrManagerSection">
+                <div class="qr-manager-layout">
+                  <form id="qrForm" class="form-grid qr-form" novalidate>
+                    <input type="hidden" name="editId" />
+                    <input type="hidden" name="mode" value="create" />
+                    <div class="finance-form-heading qr-form-heading">
+                      <strong id="qrFormTitle">Crear codigo QR dinamico</strong>
+                      <span class="muted" id="qrFormHelp">El QR apuntara a una URL interna y el destino podra cambiarse despues.</span>
+                    </div>
+                    <label>
+                      Nombre del QR
+                      <input name="name" type="text" maxlength="120" placeholder="Ej: Instagram Gami Gomitas" required />
+                    </label>
+                    <label>
+                      Enlace de destino
+                      <input name="destinationUrl" type="url" placeholder="https://..." required />
+                    </label>
+                    <label>
+                      Identificador
+                      <input name="slug" type="text" maxlength="80" placeholder="instagram-gami-gomitas" required />
+                    </label>
+                    <label>
+                      Tipo o categoria
+                      <select name="category">
+                        <option value="General">General</option>
+                        <option value="Producto">Producto</option>
+                        <option value="Campana">Campana</option>
+                        <option value="Vendedor">Vendedor</option>
+                        <option value="Cliente">Cliente</option>
+                        <option value="Catalogo">Catalogo</option>
+                        <option value="Redes sociales">Redes sociales</option>
+                        <option value="WhatsApp">WhatsApp</option>
+                        <option value="Ubicacion">Ubicacion</option>
+                        <option value="Otro">Otro</option>
+                      </select>
+                    </label>
+                    <label>
+                      Estado
+                      <select name="status">
+                        <option value="active">Activo</option>
+                        <option value="inactive">Inactivo</option>
+                      </select>
+                    </label>
+                    <label class="qr-wide-field">
+                      Descripcion o notas
+                      <textarea name="description" rows="3" maxlength="500" placeholder="Uso interno, campana o detalle administrativo"></textarea>
+                    </label>
+                    <label class="qr-check">
+                      <input name="includeName" type="checkbox" />
+                      <span>Incluir nombre debajo del QR al exportar</span>
+                    </label>
+                    <div class="qr-dynamic-url" id="qrDynamicUrlPreview">URL dinamica: -</div>
+                    <div class="qr-destination-warning hidden" id="qrDestinationWarning">
+                      El codigo QR impreso seguira siendo el mismo. Solamente cambiara el destino al que redirige.
+                    </div>
+                    <div class="qr-form-actions">
+                      <button class="btn primary" type="submit" id="qrSubmitBtn">Crear codigo QR</button>
+                      <button class="btn ghost" type="button" id="qrCancelEditBtn" hidden>Cancelar edicion</button>
+                    </div>
+                    <div class="error" id="qrNotice" role="alert" aria-live="polite"></div>
+                  </form>
+
+                  <aside class="qr-preview-card" aria-live="polite">
+                    <div class="qr-preview-canvas-wrap">
+                      <canvas id="qrPreviewCanvas" width="220" height="220"></canvas>
+                    </div>
+                    <div class="qr-preview-meta" id="qrPreviewMeta"></div>
+                    <div class="qr-export-actions">
+                      <button class="btn ghost btn-xs" type="button" data-qr-download="png">Descargar PNG</button>
+                      <button class="btn ghost btn-xs" type="button" data-qr-download="svg">Descargar SVG</button>
+                      <button class="btn ghost btn-xs" type="button" data-qr-copy="dynamic">Copiar enlace</button>
+                      <button class="btn ghost btn-xs" type="button" data-qr-copy="destination">Copiar destino</button>
+                      <button class="btn ghost btn-xs" type="button" data-qr-open>Abrir URL</button>
+                      <button class="btn ghost btn-xs" type="button" data-qr-print>Imprimir</button>
+                    </div>
+                  </aside>
+                </div>
+
+                <section class="qr-list-section">
+                  <div class="section-title-with-meta">
+                    <h3>Codigos QR creados</h3>
+                    <span id="qrListMeta" class="section-title-meta"></span>
+                  </div>
+                  <div class="qr-toolbar">
+                    <label>
+                      Buscar
+                      <input id="qrSearchInput" type="search" placeholder="Nombre, slug, enlace o categoria" />
+                    </label>
+                    <label>
+                      Estado
+                      <select id="qrStatusFilter">
+                        <option value="">Todos</option>
+                        <option value="active">Activos</option>
+                        <option value="inactive">Inactivos</option>
+                      </select>
+                    </label>
+                    <label>
+                      Categoria
+                      <select id="qrCategoryFilter">
+                        <option value="">Todas</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="qr-table-wrap">
+                    <table class="data-table qr-table">
+                      <thead>
+                        <tr>
+                          <th>QR</th>
+                          <th>Nombre</th>
+                          <th>Categoria</th>
+                          <th>Slug</th>
+                          <th>Destino</th>
+                          <th>Estado</th>
+                          <th>Escaneos</th>
+                          <th>Ultimo escaneo</th>
+                          <th>Creado</th>
+                          <th>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody id="qrTableBody"></tbody>
+                    </table>
+                  </div>
+                  <div class="qr-card-list" id="qrCardList"></div>
+                  <div class="qr-history-panel hidden" id="qrHistoryPanel"></div>
+                </section>
+              </div>
+            </div>
           </div>
         </section>
           </div>
@@ -2341,7 +2500,8 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.js"></script>
-  <script type="module" src="app.js?v=20260629-08"></script>
+  <script src="vendor/qrcode.min.js?v=20260705-01"></script>
+  <script type="module" src="app.js?v=20260705-01"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

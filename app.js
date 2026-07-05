@@ -20,6 +20,8 @@ import {
   deleteDoc,
   onSnapshot,
   serverTimestamp,
+  increment,
+  runTransaction,
   arrayUnion,
   query,
   where,
@@ -62,6 +64,7 @@ const dashboardSection = document.getElementById("dashboardSection");
 const userArea = document.getElementById("userArea");
 const userEmail = document.getElementById("userEmail");
 const authError = document.getElementById("authError");
+const appLoader = document.getElementById("appLoader");
 
 const loginForm = document.getElementById("loginForm");
 const loginSubmitBtn = document.getElementById("loginSubmitBtn");
@@ -95,6 +98,16 @@ const APP_SECTION_CONFIG = {
   settings: { tab: "finance", collapses: ["salesGoalSection", "coverageSection", "financeMovementSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection"], label: "Configuracion" }
 };
 let activeAppSection = "dashboard";
+let appLoaderHidden = false;
+
+const hideAppLoader = () => {
+  if (!appLoader || appLoaderHidden) return;
+  appLoaderHidden = true;
+  appLoader.classList.add("is-done");
+  window.setTimeout(() => {
+    appLoader.hidden = true;
+  }, 320);
+};
 
 const rawMaterialForm = document.getElementById("rawMaterialForm");
 const rawMaterialFormPanel = document.getElementById("rawMaterialFormPanel");
@@ -285,6 +298,24 @@ const financeMovementList = document.getElementById("financeMovementList");
 const financeReceivablesList = document.getElementById("financeReceivablesList");
 const financeCategorySummaryList = document.getElementById("financeCategorySummaryList");
 const financeActiveSummary = document.getElementById("financeActiveSummary");
+const qrManagerSection = document.getElementById("qrManagerSection");
+const qrForm = document.getElementById("qrForm");
+const qrFormTitle = document.getElementById("qrFormTitle");
+const qrFormHelp = document.getElementById("qrFormHelp");
+const qrSubmitBtn = document.getElementById("qrSubmitBtn");
+const qrCancelEditBtn = document.getElementById("qrCancelEditBtn");
+const qrNotice = document.getElementById("qrNotice");
+const qrDynamicUrlPreview = document.getElementById("qrDynamicUrlPreview");
+const qrDestinationWarning = document.getElementById("qrDestinationWarning");
+const qrPreviewCanvas = document.getElementById("qrPreviewCanvas");
+const qrPreviewMeta = document.getElementById("qrPreviewMeta");
+const qrListMeta = document.getElementById("qrListMeta");
+const qrSearchInput = document.getElementById("qrSearchInput");
+const qrStatusFilter = document.getElementById("qrStatusFilter");
+const qrCategoryFilter = document.getElementById("qrCategoryFilter");
+const qrTableBody = document.getElementById("qrTableBody");
+const qrCardList = document.getElementById("qrCardList");
+const qrHistoryPanel = document.getElementById("qrHistoryPanel");
 const historyFilters = document.getElementById("historyFilters");
 const historyCustomerSearch = document.getElementById("historyCustomerSearch");
 const historyCustomerResults = document.getElementById("historyCustomerResults");
@@ -359,7 +390,8 @@ const state = {
   finishedStockAdjustments: [],
   rawMaterialAdjustments: [],
   businessTypes: [],
-  prospectImportSessions: []
+  prospectImportSessions: [],
+  qrCodes: []
 };
 
 let unsubscribers = [];
@@ -386,6 +418,14 @@ const salesHistoryState = {
   search: "",
   payment: "",
   credit: ""
+};
+const qrManagerState = {
+  search: "",
+  status: "",
+  category: "",
+  selectedId: "",
+  history: [],
+  historyOpenId: ""
 };
 const clientListState = {
   search: ""
@@ -1512,6 +1552,737 @@ const saveDoc = async (collectionName, form, payload) => {
     const docRef = await addDoc(collection(db, collectionName), payload);
     return docRef.id;
   }
+};
+
+const QR_RESERVED_SLUGS = new Set([
+  "admin", "api", "app", "auth", "dashboard", "firebase", "login", "logout",
+  "q", "qr", "static", "assets", "vendor", "index", "settings"
+]);
+const QR_CATEGORIES = ["General", "Producto", "Campana", "Vendedor", "Cliente", "Catalogo", "Redes sociales", "WhatsApp", "Ubicacion", "Otro"];
+const QR_STATUS_LABELS = { active: "Activo", inactive: "Inactivo" };
+const QR_REDIRECT_COLLECTION = "qrRedirects";
+
+const qrTimestampMs = (value) => {
+  if (!value) return 0;
+  if (Number.isFinite(value.seconds)) return Number(value.seconds) * 1000;
+  if (typeof value.toDate === "function") return value.toDate().getTime();
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const qrDateLabel = (value) => {
+  const ms = qrTimestampMs(value);
+  return ms ? `${formatDate(new Date(ms))} ${formatTime(new Date(ms))}` : "-";
+};
+
+const qrNormalizeSearch = (value) => String(value ?? "")
+  .toLowerCase()
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .trim();
+
+const buildQrSlug = (value) => qrNormalizeSearch(value)
+  .replace(/[^a-z0-9]+/g, "-")
+  .replace(/^-+|-+$/g, "")
+  .slice(0, 80);
+
+const sanitizeQrSlug = (value) => String(value ?? "")
+  .toLowerCase()
+  .replace(/[^a-z0-9-]/g, "")
+  .replace(/-+/g, "-")
+  .replace(/^-+|-+$/g, "")
+  .slice(0, 80);
+
+const getAppBaseUrl = () => {
+  const scriptSrc = document.querySelector('script[src*="app.js"]')?.src;
+  const base = new URL("./", scriptSrc || document.baseURI);
+  return base.href.replace(/\/$/, "");
+};
+const buildQrDynamicUrl = (slug) => `${getAppBaseUrl()}/q/${encodeURIComponent(slug || "")}`;
+
+const validateHttpUrl = (value) => {
+  try {
+    const url = new URL(String(value || "").trim());
+    if (!["http:", "https:"].includes(url.protocol)) return null;
+    return url.toString();
+  } catch (error) {
+    return null;
+  }
+};
+
+const setQrNotice = (message, type = "error") => {
+  if (!qrNotice) return;
+  qrNotice.classList.remove("info", "success");
+  if (type === "info" || type === "success") qrNotice.classList.add(type);
+  qrNotice.textContent = message || "";
+};
+
+const qrField = (name) => qrForm?.elements?.[name] || null;
+
+const getQrFormValues = () => {
+  if (!qrForm) return null;
+  const name = String(qrField("name")?.value || "").trim();
+  const slug = sanitizeQrSlug(qrField("slug")?.value || "");
+  const destinationUrl = validateHttpUrl(qrField("destinationUrl")?.value);
+  const categoryValue = qrField("category")?.value || "";
+  const category = QR_CATEGORIES.includes(categoryValue) ? categoryValue : "General";
+  const status = qrField("status")?.value === "inactive" ? "inactive" : "active";
+  const description = String(qrField("description")?.value || "").trim().slice(0, 500);
+  return {
+    name,
+    slug,
+    destinationUrl,
+    category,
+    status,
+    description,
+    dynamicUrl: slug ? buildQrDynamicUrl(slug) : "",
+    includeName: Boolean(qrField("includeName")?.checked),
+    mode: qrField("mode")?.value || "create",
+    editId: qrField("editId")?.value || ""
+  };
+};
+
+const validateQrFormValues = (values, { requireDestination = true } = {}) => {
+  if (!values.name) return "Ingresa un nombre para el codigo QR.";
+  if (!values.slug) return "Ingresa un identificador valido.";
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(values.slug)) return "El identificador solo puede usar minusculas, numeros y guiones.";
+  if (QR_RESERVED_SLUGS.has(values.slug)) return "Ese identificador esta reservado por el sistema.";
+  if (requireDestination && !values.destinationUrl) return "Ingresa un enlace valido con http:// o https://.";
+  return "";
+};
+
+const getQrById = (id) => state.qrCodes.find((item) => item.id === id);
+const getQrBySlug = (slug, exceptId = "") => state.qrCodes.find((item) => !item.archived && item.slug === slug && item.id !== exceptId);
+
+const drawQrToCanvas = async (canvas, url, size = 220) => {
+  if (!canvas || !window.QRCode?.toCanvas || !url) return;
+  await window.QRCode.toCanvas(canvas, url, {
+    errorCorrectionLevel: "M",
+    margin: 4,
+    width: size,
+    color: { dark: "#000000", light: "#ffffff" }
+  });
+};
+
+const getQrSvg = async (url, name = "", includeName = false) => {
+  if (!window.QRCode?.toString || !url) return "";
+  const raw = await window.QRCode.toString(url, {
+    type: "svg",
+    errorCorrectionLevel: "M",
+    margin: 4,
+    color: { dark: "#000000", light: "#ffffff" }
+  });
+  if (!includeName || !name) return raw;
+  const viewBox = raw.match(/viewBox="([^"]+)"/)?.[1] || "0 0 41 41";
+  const inner = raw.replace(/^<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
+  const safeName = escapeHtml(name).slice(0, 80);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 368" width="320" height="368"><rect width="320" height="368" fill="#fff"/><svg x="24" y="18" width="272" height="272" viewBox="${viewBox}">${inner}</svg><text x="160" y="328" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#111827">${safeName}</text></svg>`;
+};
+
+const renderQrPreview = async () => {
+  const values = getQrFormValues();
+  if (!values || !qrPreviewMeta) return;
+  const dynamicUrl = values.dynamicUrl || buildQrDynamicUrl(values.slug || "mi-codigo");
+  if (qrDynamicUrlPreview) qrDynamicUrlPreview.textContent = values.slug ? `URL dinamica: ${dynamicUrl}` : "URL dinamica: -";
+  qrPreviewMeta.innerHTML = `
+    <strong>${escapeHtml(values.name || "Nombre del QR")}</strong>
+    <span>URL dinamica: ${escapeHtml(values.slug ? dynamicUrl : "-")}</span>
+    <span>Destino actual: ${escapeHtml(values.destinationUrl || "-")}</span>
+    <span>Estado: ${QR_STATUS_LABELS[values.status] || "Activo"}</span>
+  `;
+  await drawQrToCanvas(qrPreviewCanvas, dynamicUrl, 220);
+};
+
+const resetQrForm = () => {
+  if (!qrForm) return;
+  qrForm.reset();
+  qrField("editId").value = "";
+  qrField("mode").value = "create";
+  qrField("slug").disabled = false;
+  qrField("slug").dataset.touched = "";
+  qrField("name").disabled = false;
+  qrField("category").disabled = false;
+  qrField("status").disabled = false;
+  qrField("description").disabled = false;
+  qrField("destinationUrl").disabled = false;
+  if (qrFormTitle) qrFormTitle.textContent = "Crear codigo QR dinamico";
+  if (qrFormHelp) qrFormHelp.textContent = "El QR apuntara a una URL interna y el destino podra cambiarse despues.";
+  if (qrSubmitBtn) qrSubmitBtn.textContent = "Crear codigo QR";
+  if (qrCancelEditBtn) qrCancelEditBtn.hidden = true;
+  qrDestinationWarning?.classList.add("hidden");
+  setQrNotice("");
+  void renderQrPreview();
+};
+
+const loadQrIntoForm = (qr, mode = "info") => {
+  if (!qrForm || !qr) return;
+  qrField("editId").value = qr.id;
+  qrField("mode").value = mode;
+  qrField("name").value = qr.name || "";
+  qrField("destinationUrl").value = qr.destinationUrl || "";
+  qrField("slug").value = qr.slug || "";
+  qrField("category").value = qr.category || "General";
+  qrField("status").value = qr.status === "inactive" ? "inactive" : "active";
+  qrField("description").value = qr.description || "";
+  qrField("slug").disabled = true;
+  qrField("destinationUrl").disabled = mode === "info";
+  qrField("name").disabled = mode === "destination";
+  qrField("category").disabled = mode === "destination";
+  qrField("status").disabled = mode === "destination";
+  qrField("description").disabled = mode === "destination";
+  if (qrFormTitle) qrFormTitle.textContent = mode === "destination" ? "Editar destino del QR" : "Editar informacion del QR";
+  if (qrFormHelp) qrFormHelp.textContent = mode === "destination"
+    ? "El codigo QR impreso seguira siendo el mismo. Solo cambia el destino."
+    : "El identificador no se modifica para no romper codigos impresos.";
+  if (qrSubmitBtn) qrSubmitBtn.textContent = "Guardar cambios";
+  if (qrCancelEditBtn) qrCancelEditBtn.hidden = false;
+  qrDestinationWarning?.classList.toggle("hidden", mode !== "destination");
+  setQrNotice("");
+  openExclusiveCollapseSection("qrManagerSection");
+  qrForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  void renderQrPreview();
+};
+
+const setQrBusy = (busy) => {
+  if (qrSubmitBtn) {
+    qrSubmitBtn.disabled = busy;
+    qrSubmitBtn.classList.toggle("is-loading", busy);
+  }
+};
+
+const saveNewQr = async (values) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error("auth");
+  const qrDoc = doc(collection(db, "qrCodes"));
+  const redirectDoc = doc(db, QR_REDIRECT_COLLECTION, values.slug);
+  await runTransaction(db, async (transaction) => {
+    const slugSnap = await transaction.get(redirectDoc);
+    if (slugSnap.exists()) {
+      const error = new Error("slug-exists");
+      error.code = "slug-exists";
+      throw error;
+    }
+    const payload = {
+      id: qrDoc.id,
+      name: values.name,
+      slug: values.slug,
+      dynamicUrl: values.dynamicUrl,
+      destinationUrl: values.destinationUrl,
+      category: values.category,
+      description: values.description,
+      status: values.status,
+      scanCount: 0,
+      archived: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      createdBy: user.uid,
+      createdByEmail: user.email || "",
+      createdByName: user.displayName || "",
+      updatedBy: user.uid,
+      updatedByEmail: user.email || "",
+      updatedByName: user.displayName || "",
+      lastScannedAt: null
+    };
+    transaction.set(qrDoc, payload);
+    transaction.set(redirectDoc, {
+      qrId: qrDoc.id,
+      slug: values.slug,
+      destinationUrl: values.destinationUrl,
+      status: values.status,
+      updatedAt: serverTimestamp()
+    });
+  });
+  return qrDoc.id;
+};
+
+const updateQrDestination = async (qr, values) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error("auth");
+  const batch = writeBatch(db);
+  const qrRef = doc(db, "qrCodes", qr.id);
+  batch.update(qrRef, {
+    destinationUrl: values.destinationUrl,
+    updatedAt: serverTimestamp(),
+    updatedBy: user.uid,
+    updatedByEmail: user.email || "",
+    updatedByName: user.displayName || ""
+  });
+  batch.set(doc(collection(db, "qrCodes", qr.id, "history")), {
+    previousDestinationUrl: qr.destinationUrl || "",
+    newDestinationUrl: values.destinationUrl,
+    changedAt: serverTimestamp(),
+    changedBy: user.uid,
+    changedByEmail: user.email || "",
+    changedByName: user.displayName || ""
+  });
+  batch.set(doc(db, QR_REDIRECT_COLLECTION, qr.slug), {
+    qrId: qr.id,
+    slug: qr.slug,
+    destinationUrl: values.destinationUrl,
+    status: qr.status === "inactive" ? "inactive" : "active",
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+  await batch.commit();
+};
+
+const updateQrInfo = async (qr, values) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error("auth");
+  const batch = writeBatch(db);
+  batch.update(doc(db, "qrCodes", qr.id), {
+    name: values.name,
+    category: values.category,
+    description: values.description,
+    status: values.status,
+    updatedAt: serverTimestamp(),
+    updatedBy: user.uid,
+    updatedByEmail: user.email || "",
+    updatedByName: user.displayName || ""
+  });
+  batch.set(doc(db, QR_REDIRECT_COLLECTION, qr.slug), {
+    qrId: qr.id,
+    slug: qr.slug,
+    destinationUrl: qr.destinationUrl || "",
+    status: values.status,
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+  await batch.commit();
+};
+
+const archiveQr = async (qr) => {
+  const user = auth.currentUser;
+  const batch = writeBatch(db);
+  batch.update(doc(db, "qrCodes", qr.id), {
+    archived: true,
+    status: "inactive",
+    updatedAt: serverTimestamp(),
+    updatedBy: user?.uid || "",
+    updatedByEmail: user?.email || ""
+  });
+  batch.set(doc(db, QR_REDIRECT_COLLECTION, qr.slug), {
+    qrId: qr.id,
+    slug: qr.slug,
+    destinationUrl: qr.destinationUrl || "",
+    status: "inactive",
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+  await batch.commit();
+};
+
+const setQrStatus = async (qr, status) => {
+  const user = auth.currentUser;
+  const safeStatus = status === "inactive" ? "inactive" : "active";
+  const batch = writeBatch(db);
+  batch.update(doc(db, "qrCodes", qr.id), {
+    status: safeStatus,
+    updatedAt: serverTimestamp(),
+    updatedBy: user?.uid || "",
+    updatedByEmail: user?.email || ""
+  });
+  batch.set(doc(db, QR_REDIRECT_COLLECTION, qr.slug), {
+    qrId: qr.id,
+    slug: qr.slug,
+    destinationUrl: qr.destinationUrl || "",
+    status: safeStatus,
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+  await batch.commit();
+};
+
+const duplicateQr = (qr) => {
+  if (!qrForm || !qr) return;
+  resetQrForm();
+  qrField("name").value = `${qr.name || "Codigo QR"} copia`;
+  qrField("destinationUrl").value = qr.destinationUrl || "";
+  qrField("slug").value = buildQrSlug(`${qr.slug || qr.name || "codigo"} copia`);
+  qrField("category").value = qr.category || "General";
+  qrField("status").value = "active";
+  qrField("description").value = qr.description || "";
+  openExclusiveCollapseSection("qrManagerSection");
+  qrForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  void renderQrPreview();
+};
+
+const getFilteredQrCodes = () => {
+  const search = qrNormalizeSearch(qrManagerState.search);
+  return state.qrCodes
+    .filter((item) => !item.archived)
+    .filter((item) => {
+      if (qrManagerState.status && item.status !== qrManagerState.status) return false;
+      if (qrManagerState.category && item.category !== qrManagerState.category) return false;
+      if (!search) return true;
+      const haystack = qrNormalizeSearch([item.name, item.slug, item.dynamicUrl, item.destinationUrl, item.category].join(" "));
+      return haystack.includes(search);
+    })
+    .sort((a, b) => qrTimestampMs(b.createdAt) - qrTimestampMs(a.createdAt));
+};
+
+const renderQrCategories = () => {
+  if (!qrCategoryFilter) return;
+  const selected = qrCategoryFilter.value || "";
+  const categories = Array.from(new Set([...QR_CATEGORIES, ...state.qrCodes.map((item) => item.category).filter(Boolean)])).sort();
+  qrCategoryFilter.innerHTML = '<option value="">Todas</option>' + categories.map((cat) => `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`).join("");
+  qrCategoryFilter.value = categories.includes(selected) ? selected : "";
+};
+
+const renderQrActions = (item) => `
+  <div class="qr-actions">
+    <button class="icon-btn" type="button" data-qr-edit-destination="${item.id}" title="Editar destino"><i data-lucide="link"></i></button>
+    <button class="icon-btn" type="button" data-qr-edit-info="${item.id}" title="Editar informacion"><i data-lucide="pencil"></i></button>
+    <button class="icon-btn" type="button" data-qr-toggle="${item.id}" title="${item.status === "active" ? "Desactivar" : "Activar"}"><i data-lucide="${item.status === "active" ? "pause" : "play"}"></i></button>
+    <button class="icon-btn" type="button" data-qr-download-row="png:${item.id}" title="Descargar PNG"><i data-lucide="image-down"></i></button>
+    <button class="icon-btn" type="button" data-qr-download-row="svg:${item.id}" title="Descargar SVG"><i data-lucide="file-code"></i></button>
+    <button class="icon-btn" type="button" data-qr-copy-row="dynamic:${item.id}" title="Copiar enlace"><i data-lucide="copy"></i></button>
+    <button class="icon-btn" type="button" data-qr-open-row="${item.id}" title="Abrir"><i data-lucide="external-link"></i></button>
+    <button class="icon-btn" type="button" data-qr-history="${item.id}" title="Ver historial"><i data-lucide="history"></i></button>
+    <button class="icon-btn" type="button" data-qr-duplicate="${item.id}" title="Duplicar"><i data-lucide="copy-plus"></i></button>
+    <button class="icon-btn icon-btn-danger" type="button" data-qr-archive="${item.id}" title="Archivar"><i data-lucide="archive"></i></button>
+  </div>
+`;
+
+const renderQrManager = () => {
+  if (!qrTableBody || !qrCardList) return;
+  renderQrCategories();
+  const items = getFilteredQrCodes();
+  if (qrListMeta) qrListMeta.textContent = `${formatInteger(items.length)} visibles / ${formatInteger(state.qrCodes.filter((item) => !item.archived).length)} activos en sistema`;
+  if (!items.length) {
+    qrTableBody.innerHTML = '<tr class="empty-row"><td colspan="10">No hay codigos QR para mostrar.</td></tr>';
+    qrCardList.innerHTML = '<div class="list-item muted">No hay codigos QR para mostrar.</div>';
+    return;
+  }
+  qrTableBody.innerHTML = items.map((item) => `
+    <tr>
+      <td><canvas class="qr-mini-canvas" width="56" height="56" data-qr-url="${escapeHtml(item.dynamicUrl || buildQrDynamicUrl(item.slug))}"></canvas></td>
+      <td><strong>${escapeHtml(item.name || "Sin nombre")}</strong></td>
+      <td>${escapeHtml(item.category || "General")}</td>
+      <td><code>${escapeHtml(item.slug || "-")}</code><small>${escapeHtml(item.dynamicUrl || buildQrDynamicUrl(item.slug))}</small></td>
+      <td><a href="${escapeHtml(item.destinationUrl || "#")}" target="_blank" rel="noopener">${escapeHtml(item.destinationUrl || "-")}</a></td>
+      <td><span class="status-tag ${item.status === "active" ? "status-ok" : "status-low"}">${QR_STATUS_LABELS[item.status] || item.status}</span></td>
+      <td class="num">${formatInteger(item.scanCount || 0)}</td>
+      <td>${qrDateLabel(item.lastScannedAt)}</td>
+      <td>${qrDateLabel(item.createdAt)}</td>
+      <td>${renderQrActions(item)}</td>
+    </tr>
+  `).join("");
+  qrCardList.innerHTML = items.map((item) => `
+    <article class="qr-mobile-card">
+      <div class="qr-mobile-head">
+        <canvas class="qr-mini-canvas" width="64" height="64" data-qr-url="${escapeHtml(item.dynamicUrl || buildQrDynamicUrl(item.slug))}"></canvas>
+        <div>
+          <strong>${escapeHtml(item.name || "Sin nombre")}</strong>
+          <span>${escapeHtml(item.category || "General")} · ${QR_STATUS_LABELS[item.status] || item.status}</span>
+        </div>
+      </div>
+      <div class="qr-mobile-meta">
+        <span>Slug: <code>${escapeHtml(item.slug || "-")}</code></span>
+        <span>Destino: ${escapeHtml(item.destinationUrl || "-")}</span>
+        <span>Escaneos: ${formatInteger(item.scanCount || 0)} · Ultimo: ${qrDateLabel(item.lastScannedAt)}</span>
+      </div>
+      ${renderQrActions(item)}
+    </article>
+  `).join("");
+  requestAnimationFrame(renderQrMiniCanvases);
+};
+
+const renderQrMiniCanvases = () => {
+  document.querySelectorAll(".qr-mini-canvas[data-qr-url]").forEach((canvas) => {
+    if (canvas.dataset.renderedFor === canvas.dataset.qrUrl) return;
+    canvas.dataset.renderedFor = canvas.dataset.qrUrl;
+    void drawQrToCanvas(canvas, canvas.dataset.qrUrl, Number(canvas.width) || 56);
+  });
+};
+
+const downloadBlob = (blob, filename) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
+
+const exportQrPng = async (qr, includeName = false) => {
+  const url = qr.dynamicUrl || buildQrDynamicUrl(qr.slug);
+  const base = document.createElement("canvas");
+  await drawQrToCanvas(base, url, 640);
+  const out = document.createElement("canvas");
+  out.width = 760;
+  out.height = includeName && qr.name ? 860 : 760;
+  const ctx = out.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, out.width, out.height);
+  ctx.drawImage(base, 60, 60, 640, 640);
+  if (includeName && qr.name) {
+    ctx.fillStyle = "#111827";
+    ctx.font = "700 34px Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(qr.name.slice(0, 48), out.width / 2, 790);
+  }
+  out.toBlob((blob) => {
+    if (blob) downloadBlob(blob, `${qr.slug || "codigo-qr"}.png`);
+  }, "image/png");
+};
+
+const exportQrSvg = async (qr, includeName = false) => {
+  const svg = await getQrSvg(qr.dynamicUrl || buildQrDynamicUrl(qr.slug), qr.name || "", includeName);
+  downloadBlob(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }), `${qr.slug || "codigo-qr"}.svg`);
+};
+
+const copyText = async (text) => {
+  await navigator.clipboard.writeText(text);
+  setQrNotice("Enlace copiado al portapapeles.", "success");
+};
+
+const printQr = async (qr, includeName = false) => {
+  const svg = await getQrSvg(qr.dynamicUrl || buildQrDynamicUrl(qr.slug), qr.name || "", includeName);
+  const win = window.open("", "_blank", "noopener,noreferrer");
+  if (!win) return;
+  win.document.write(`<!doctype html><html><head><title>${escapeHtml(qr.name || "Codigo QR")}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#fff;font-family:Arial,sans-serif}.qr-print{width:min(82vw,640px)}</style></head><body><div class="qr-print">${svg}</div><script>window.onload=()=>{window.print();}</script></body></html>`);
+  win.document.close();
+};
+
+const getCurrentPreviewQr = () => {
+  const values = getQrFormValues();
+  if (!values?.slug) return null;
+  return {
+    id: values.editId,
+    name: values.name || values.slug,
+    slug: values.slug,
+    dynamicUrl: values.dynamicUrl,
+    destinationUrl: values.destinationUrl,
+    status: values.status
+  };
+};
+
+const handleQrDownload = async (format, qr, includeName) => {
+  if (!qr?.slug) {
+    setQrNotice("Primero completa un identificador valido.", "error");
+    return;
+  }
+  if (format === "svg") await exportQrSvg(qr, includeName);
+  else await exportQrPng(qr, includeName);
+};
+
+const loadQrHistory = async (qr) => {
+  if (!qrHistoryPanel || !qr) return;
+  if (qrManagerState.historyOpenId === qr.id) {
+    qrManagerState.historyOpenId = "";
+    qrHistoryPanel.classList.add("hidden");
+    qrHistoryPanel.innerHTML = "";
+    return;
+  }
+  qrManagerState.historyOpenId = qr.id;
+  qrHistoryPanel.classList.remove("hidden");
+  qrHistoryPanel.innerHTML = '<div class="list-item muted">Cargando historial...</div>';
+  const snapshot = await getDocs(collection(db, "qrCodes", qr.id, "history"));
+  const items = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+    .sort((a, b) => qrTimestampMs(b.changedAt) - qrTimestampMs(a.changedAt));
+  qrHistoryPanel.innerHTML = `
+    <div class="qr-history-head">
+      <strong>Historial de destino: ${escapeHtml(qr.name || qr.slug)}</strong>
+      <button class="icon-btn" type="button" data-qr-history-close aria-label="Cerrar historial"><i data-lucide="x"></i></button>
+    </div>
+    ${items.length ? items.map((item) => `
+      <div class="list-item">
+        <strong>${qrDateLabel(item.changedAt)}</strong>
+        <div>Anterior: ${escapeHtml(item.previousDestinationUrl || "-")}</div>
+        <div>Nuevo: ${escapeHtml(item.newDestinationUrl || "-")}</div>
+        <div class="muted">Usuario: ${escapeHtml(item.changedByName || item.changedByEmail || item.changedBy || "-")}</div>
+      </div>
+    `).join("") : '<div class="list-item muted">Todavia no hay cambios de destino registrados.</div>'}
+  `;
+  refreshIcons();
+  refreshCollapseHeights();
+};
+
+const setupQrManager = () => {
+  if (!qrForm) return;
+  qrField("name")?.addEventListener("input", () => {
+    if (qrField("mode")?.value === "create" && !qrField("slug")?.dataset.touched) {
+      qrField("slug").value = buildQrSlug(qrField("name")?.value);
+    }
+    void renderQrPreview();
+  });
+  qrField("slug")?.addEventListener("input", () => {
+    qrField("slug").dataset.touched = "1";
+    const clean = sanitizeQrSlug(qrField("slug")?.value);
+    if (qrField("slug").value !== clean) qrField("slug").value = clean;
+    void renderQrPreview();
+  });
+  ["destinationUrl", "category", "status", "description", "includeName"].forEach((name) => {
+    qrField(name)?.addEventListener("input", () => { void renderQrPreview(); });
+    qrField(name)?.addEventListener("change", () => { void renderQrPreview(); });
+  });
+  qrForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const values = getQrFormValues();
+    if (!values) return;
+    const existing = values.mode === "create" ? null : getQrById(values.editId);
+    const requireDestination = values.mode !== "info";
+    const validation = validateQrFormValues(values, { requireDestination });
+    if (validation) {
+      setQrNotice(validation, "error");
+      return;
+    }
+    if (values.mode === "create" && getQrBySlug(values.slug)) {
+      setQrNotice("Este identificador ya esta en uso.", "error");
+      return;
+    }
+    setQrBusy(true);
+    setQrNotice("Guardando...", "info");
+    try {
+      if (values.mode === "create") {
+        await saveNewQr(values);
+        resetQrForm();
+        setQrNotice("Codigo QR creado correctamente.", "success");
+      } else if (values.mode === "destination" && existing) {
+        await updateQrDestination(existing, values);
+        resetQrForm();
+        setQrNotice("Destino actualizado correctamente. El codigo QR impreso seguira funcionando con el nuevo destino.", "success");
+      } else if (existing) {
+        await updateQrInfo(existing, values);
+        resetQrForm();
+        setQrNotice("Codigo QR actualizado correctamente.", "success");
+      }
+    } catch (error) {
+      console.error("[qr] save error", error);
+      setQrNotice(error?.code === "slug-exists" ? "Este identificador ya esta en uso." : "No se pudo guardar el codigo QR. Intenta nuevamente.", "error");
+    } finally {
+      setQrBusy(false);
+      refreshCollapseHeights();
+    }
+  });
+  qrCancelEditBtn?.addEventListener("click", resetQrForm);
+  qrSearchInput?.addEventListener("input", () => {
+    qrManagerState.search = qrSearchInput.value;
+    renderQrManager();
+  });
+  qrStatusFilter?.addEventListener("change", () => {
+    qrManagerState.status = qrStatusFilter.value;
+    renderQrManager();
+  });
+  qrCategoryFilter?.addEventListener("change", () => {
+    qrManagerState.category = qrCategoryFilter.value;
+    renderQrManager();
+  });
+  document.addEventListener("click", async (event) => {
+    if (!qrManagerSection?.contains(event.target)) return;
+    const previewDownload = event.target.closest("[data-qr-download]");
+    if (previewDownload) {
+      await handleQrDownload(previewDownload.dataset.qrDownload, getCurrentPreviewQr(), Boolean(qrField("includeName")?.checked));
+      return;
+    }
+    const previewCopy = event.target.closest("[data-qr-copy]");
+    if (previewCopy) {
+      const qr = getCurrentPreviewQr();
+      const text = previewCopy.dataset.qrCopy === "destination" ? qr?.destinationUrl : qr?.dynamicUrl;
+      if (text) await copyText(text);
+      return;
+    }
+    if (event.target.closest("[data-qr-open]")) {
+      const qr = getCurrentPreviewQr();
+      if (qr?.dynamicUrl) window.open(qr.dynamicUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (event.target.closest("[data-qr-print]")) {
+      await printQr(getCurrentPreviewQr(), Boolean(qrField("includeName")?.checked));
+      return;
+    }
+    const target = event.target.closest("[data-qr-edit-destination],[data-qr-edit-info],[data-qr-toggle],[data-qr-download-row],[data-qr-copy-row],[data-qr-open-row],[data-qr-history],[data-qr-duplicate],[data-qr-archive],[data-qr-history-close]");
+    if (!target) return;
+    if (target.matches("[data-qr-history-close]")) {
+      qrManagerState.historyOpenId = "";
+      qrHistoryPanel?.classList.add("hidden");
+      return;
+    }
+    const getActionId = (attr) => target.getAttribute(attr);
+    const rowDownload = getActionId("data-qr-download-row");
+    const rowCopy = getActionId("data-qr-copy-row");
+    const id = getActionId("data-qr-edit-destination")
+      || getActionId("data-qr-edit-info")
+      || getActionId("data-qr-toggle")
+      || getActionId("data-qr-open-row")
+      || getActionId("data-qr-history")
+      || getActionId("data-qr-duplicate")
+      || getActionId("data-qr-archive")
+      || (rowDownload ? rowDownload.split(":")[1] : "")
+      || (rowCopy ? rowCopy.split(":")[1] : "");
+    const qr = getQrById(id);
+    if (!qr) return;
+    try {
+      if (target.hasAttribute("data-qr-edit-destination")) loadQrIntoForm(qr, "destination");
+      else if (target.hasAttribute("data-qr-edit-info")) loadQrIntoForm(qr, "info");
+      else if (target.hasAttribute("data-qr-toggle")) await setQrStatus(qr, qr.status === "active" ? "inactive" : "active");
+      else if (rowDownload) await handleQrDownload(rowDownload.split(":")[0], qr, Boolean(qrField("includeName")?.checked));
+      else if (rowCopy) await copyText(rowCopy.split(":")[0] === "destination" ? qr.destinationUrl : (qr.dynamicUrl || buildQrDynamicUrl(qr.slug)));
+      else if (target.hasAttribute("data-qr-open-row")) window.open(qr.dynamicUrl || buildQrDynamicUrl(qr.slug), "_blank", "noopener,noreferrer");
+      else if (target.hasAttribute("data-qr-history")) await loadQrHistory(qr);
+      else if (target.hasAttribute("data-qr-duplicate")) duplicateQr(qr);
+      else if (target.hasAttribute("data-qr-archive") && window.confirm("Archivar este codigo QR? La ruta publica quedara inactiva, pero el registro no se eliminara definitivamente.")) await archiveQr(qr);
+    } catch (error) {
+      console.error("[qr] action error", error);
+      setQrNotice("No se pudo completar la accion. Intenta nuevamente.", "error");
+    }
+  });
+  void renderQrPreview();
+};
+
+const getPublicQrSlug = () => {
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  const qIndex = parts.indexOf("q");
+  if (qIndex < 0 || !parts[qIndex + 1]) return "";
+  return sanitizeQrSlug(decodeURIComponent(parts[qIndex + 1]));
+};
+
+const renderPublicQrScreen = (message, tone = "loading") => {
+  document.body.classList.add("qr-public-mode");
+  document.body.innerHTML = `
+    <main class="qr-public-screen" data-tone="${escapeHtml(tone)}">
+      <section class="qr-public-card">
+        <img src="${escapeHtml(`${getAppBaseUrl()}/IMG_8867.PNG`)}" alt="MiMar Alimentos" />
+        <h1>${escapeHtml(message)}</h1>
+        ${tone === "loading" ? '<div class="qr-public-spinner" aria-hidden="true"></div>' : ""}
+      </section>
+    </main>
+  `;
+};
+
+const handlePublicQrRoute = async () => {
+  const slug = getPublicQrSlug();
+  if (!slug) return false;
+  renderPublicQrScreen("Redirigiendo...", "loading");
+  try {
+    const redirectSnap = await getDoc(doc(db, QR_REDIRECT_COLLECTION, slug));
+    if (!redirectSnap.exists()) {
+      renderPublicQrScreen("Codigo QR no encontrado.", "error");
+      return true;
+    }
+    const redirect = redirectSnap.data();
+    if (redirect.status !== "active") {
+      renderPublicQrScreen("Este codigo QR se encuentra temporalmente inactivo.", "inactive");
+      return true;
+    }
+    const destinationUrl = validateHttpUrl(redirect.destinationUrl);
+    if (!destinationUrl) {
+      renderPublicQrScreen("Este codigo QR no tiene un destino valido.", "error");
+      return true;
+    }
+    if (redirect.qrId) {
+      await updateDoc(doc(db, "qrCodes", redirect.qrId), {
+        scanCount: increment(1),
+        lastScannedAt: serverTimestamp()
+      }).catch((error) => {
+        console.warn("[qr] no se pudo registrar el escaneo", error?.message || error);
+      });
+    }
+    window.location.replace(destinationUrl);
+  } catch (error) {
+    console.error("[qr] redirect error", error);
+    renderPublicQrScreen("No se pudo abrir este codigo QR. Intenta nuevamente.", "error");
+  }
+  return true;
 };
 
 const renderList = (container, items, renderer) => {
@@ -6154,6 +6925,7 @@ const renderAll = () => {
   renderFinanceCategorySummary();
   renderFinanceActiveSummary();
   renderFinanceInitialHistory();
+  renderQrManager();
 
   requestAnimationFrame(refreshCollapseHeights);
   refreshIcons();
@@ -6234,7 +7006,12 @@ const classifyAppSectionCards = () => {
     productsSection: "products",
     salesGoalSection: "sales",
     repurchaseSection: "repurchase",
-    coverageSection: "sales"
+    coverageSection: "sales",
+    financeMovementSection: "settings",
+    financeExpenseSection: "settings",
+    financeReceivablesSection: "settings",
+    financeCategorySection: "settings",
+    qrManagerSection: "settings"
   };
   Object.entries(sectionByCollapse).forEach(([collapseId, section]) => {
     const card = document.getElementById(collapseId)?.closest(".card");
@@ -9110,7 +9887,7 @@ const INDEPENDENT_COLLAPSE_IDS = new Set([
 document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
   const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
-  if (["salesGoalSection", "productsSection", "clientFormSection", "clientListSection", "prospectsSection", "salesFormSection", "salesHistorySection", "repurchaseSection", "coverageSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection"].includes(toggle.dataset.collapse)) {
+  if (["salesGoalSection", "productsSection", "clientFormSection", "clientListSection", "prospectsSection", "salesFormSection", "salesHistorySection", "repurchaseSection", "coverageSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection", "qrManagerSection"].includes(toggle.dataset.collapse)) {
     closeSection(toggle, body);
   } else {
     openSection(toggle, body);
@@ -12851,43 +13628,50 @@ const setupProspectImport = () => {
   });
 };
 
-setupProspectImport();
-setupCommercialMap();
-setupLocationPicker();
-setupRubroModal();
-setupJourneysModule();
+if (await handlePublicQrRoute()) {
+  hideAppLoader();
+} else {
+  setupProspectImport();
+  setupCommercialMap();
+  setupLocationPicker();
+  setupRubroModal();
+  setupJourneysModule();
+  setupQrManager();
 
-onAuthStateChanged(auth, (user) => {
-  console.log("[auth] state changed", user ? user.uid : "signed-out");
-  unsubscribers.forEach((unsubscribe) => unsubscribe());
-  unsubscribers = [];
-  stopJourneysListener();
-  if (!user) {
-    showAuth();
-    return;
-  }
-  setAuthFeedback("");
-  showDashboard(user);
-  startJourneysListener();
-  listenCollection("raw_materials", "rawMaterials");
-  listenCollection("raw_purchases", "purchases");
-  listenCollection("recipes", "recipes");
-  listenCollection("batches", "batches");
-  listenCollection("products", "products");
-  listenCollection("clients", "clients");
-  listenCollection("prospects", "prospects");
-  listenCollection("sales", "sales");
-  listenCollection("sales_goals", "salesGoals");
-  listenCollection("financial_expenses", "financialExpenses");
-  listenCollection("financial_initial_settings", "financialInitialSettings");
-  listenCollection("financial_manual_adjustments", "financialManualAdjustments");
-  listenCollection("finished_stock_adjustments", "finishedStockAdjustments");
-  listenCollection("raw_material_adjustments", "rawMaterialAdjustments");
-  listenCollection("businessTypes", "businessTypes");
-  listenCollection("prospect_import_sessions", "prospectImportSessions");
-}, (error) => {
-  console.error("[auth] observer error", error);
-  setAuthFeedback(getAuthMessage(error), "error");
-});
-
-
+  onAuthStateChanged(auth, (user) => {
+    console.log("[auth] state changed", user ? user.uid : "signed-out");
+    unsubscribers.forEach((unsubscribe) => unsubscribe());
+    unsubscribers = [];
+    stopJourneysListener();
+    if (!user) {
+      showAuth();
+      hideAppLoader();
+      return;
+    }
+    setAuthFeedback("");
+    showDashboard(user);
+    hideAppLoader();
+    startJourneysListener();
+    listenCollection("raw_materials", "rawMaterials");
+    listenCollection("raw_purchases", "purchases");
+    listenCollection("recipes", "recipes");
+    listenCollection("batches", "batches");
+    listenCollection("products", "products");
+    listenCollection("clients", "clients");
+    listenCollection("prospects", "prospects");
+    listenCollection("sales", "sales");
+    listenCollection("sales_goals", "salesGoals");
+    listenCollection("financial_expenses", "financialExpenses");
+    listenCollection("financial_initial_settings", "financialInitialSettings");
+    listenCollection("financial_manual_adjustments", "financialManualAdjustments");
+    listenCollection("finished_stock_adjustments", "finishedStockAdjustments");
+    listenCollection("raw_material_adjustments", "rawMaterialAdjustments");
+    listenCollection("businessTypes", "businessTypes");
+    listenCollection("prospect_import_sessions", "prospectImportSessions");
+    listenCollection("qrCodes", "qrCodes");
+  }, (error) => {
+    console.error("[auth] observer error", error);
+    setAuthFeedback(getAuthMessage(error), "error");
+    hideAppLoader();
+  });
+}
