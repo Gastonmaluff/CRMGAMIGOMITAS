@@ -2142,11 +2142,13 @@
                       <input id="qrSearchInput" type="search" placeholder="Nombre, slug, enlace o categoria" />
                     </label>
                     <label>
-                      Estado
+                      Vista
                       <select id="qrStatusFilter">
-                        <option value="">Todos</option>
+                        <option value="">Todos excepto archivados</option>
                         <option value="active">Activos</option>
                         <option value="inactive">Inactivos</option>
+                        <option value="archived">Archivados</option>
+                        <option value="all">Todos</option>
                       </select>
                     </label>
                     <label>
@@ -2501,7 +2503,7 @@
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.js"></script>
   <script src="vendor/qrcode.min.js?v=20260705-01"></script>
-  <script type="module" src="app.js?v=20260705-02"></script>
+  <script type="module" src="app.js?v=20260705-03"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

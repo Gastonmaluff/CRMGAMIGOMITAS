@@ -1626,6 +1626,13 @@ const setQrNotice = (message, type = "error") => {
   qrNotice.textContent = message || "";
 };
 
+const setQrNoticeHtml = (html, type = "error") => {
+  if (!qrNotice) return;
+  qrNotice.classList.remove("info", "success");
+  if (type === "info" || type === "success") qrNotice.classList.add(type);
+  qrNotice.innerHTML = html || "";
+};
+
 const qrField = (name) => qrForm?.elements?.[name] || null;
 
 const getQrFormValues = () => {
@@ -1661,7 +1668,7 @@ const validateQrFormValues = (values, { requireDestination = true } = {}) => {
 };
 
 const getQrById = (id) => state.qrCodes.find((item) => item.id === id);
-const getQrBySlug = (slug, exceptId = "") => state.qrCodes.find((item) => !item.archived && item.slug === slug && item.id !== exceptId);
+const getQrBySlug = (slug, exceptId = "") => state.qrCodes.find((item) => item.slug === slug && item.id !== exceptId);
 
 const drawQrToCanvas = async (canvas, url, size = 220) => {
   if (!canvas || !window.QRCode?.toCanvas || !url) return;
@@ -1798,6 +1805,7 @@ const saveNewQr = async (values) => {
       slug: values.slug,
       destinationUrl: values.destinationUrl,
       status: values.status,
+      archived: false,
       updatedAt: serverTimestamp()
     });
   });
@@ -1829,6 +1837,7 @@ const updateQrDestination = async (qr, values) => {
     slug: qr.slug,
     destinationUrl: values.destinationUrl,
     status: qr.status === "inactive" ? "inactive" : "active",
+    archived: Boolean(qr.archived),
     updatedAt: serverTimestamp()
   }, { merge: true });
   await batch.commit();
@@ -1853,6 +1862,7 @@ const updateQrInfo = async (qr, values) => {
     slug: qr.slug,
     destinationUrl: qr.destinationUrl || "",
     status: values.status,
+    archived: Boolean(qr.archived),
     updatedAt: serverTimestamp()
   }, { merge: true });
   await batch.commit();
@@ -1864,6 +1874,7 @@ const archiveQr = async (qr) => {
   batch.update(doc(db, "qrCodes", qr.id), {
     archived: true,
     status: "inactive",
+    statusBeforeArchive: qr.status === "inactive" ? "inactive" : "active",
     updatedAt: serverTimestamp(),
     updatedBy: user?.uid || "",
     updatedByEmail: user?.email || ""
@@ -1873,8 +1884,50 @@ const archiveQr = async (qr) => {
     slug: qr.slug,
     destinationUrl: qr.destinationUrl || "",
     status: "inactive",
+    archived: true,
     updatedAt: serverTimestamp()
   }, { merge: true });
+  await batch.commit();
+};
+
+const restoreQr = async (qr) => {
+  const user = auth.currentUser;
+  const restoredStatus = qr.statusBeforeArchive === "inactive" ? "inactive" : "active";
+  const batch = writeBatch(db);
+  batch.update(doc(db, "qrCodes", qr.id), {
+    archived: false,
+    status: restoredStatus,
+    updatedAt: serverTimestamp(),
+    updatedBy: user?.uid || "",
+    updatedByEmail: user?.email || ""
+  });
+  batch.set(doc(db, QR_REDIRECT_COLLECTION, qr.slug), {
+    qrId: qr.id,
+    slug: qr.slug,
+    destinationUrl: qr.destinationUrl || "",
+    status: restoredStatus,
+    archived: false,
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+  await batch.commit();
+};
+
+const deleteQrSubcollection = async (qrId, subcollectionName) => {
+  const snapshot = await getDocs(collection(db, "qrCodes", qrId, subcollectionName));
+  const docs = snapshot.docs;
+  for (let i = 0; i < docs.length; i += 400) {
+    const batch = writeBatch(db);
+    docs.slice(i, i + 400).forEach((docSnap) => batch.delete(docSnap.ref));
+    await batch.commit();
+  }
+};
+
+const permanentlyDeleteQr = async (qr) => {
+  await deleteQrSubcollection(qr.id, "history");
+  await deleteQrSubcollection(qr.id, "scans");
+  const batch = writeBatch(db);
+  batch.delete(doc(db, QR_REDIRECT_COLLECTION, qr.slug));
+  batch.delete(doc(db, "qrCodes", qr.id));
   await batch.commit();
 };
 
@@ -1893,6 +1946,7 @@ const setQrStatus = async (qr, status) => {
     slug: qr.slug,
     destinationUrl: qr.destinationUrl || "",
     status: safeStatus,
+    archived: Boolean(qr.archived),
     updatedAt: serverTimestamp()
   }, { merge: true });
   await batch.commit();
@@ -1915,9 +1969,15 @@ const duplicateQr = (qr) => {
 const getFilteredQrCodes = () => {
   const search = qrNormalizeSearch(qrManagerState.search);
   return state.qrCodes
-    .filter((item) => !item.archived)
     .filter((item) => {
-      if (qrManagerState.status && item.status !== qrManagerState.status) return false;
+      if (qrManagerState.status === "archived" && !item.archived) return false;
+      if (qrManagerState.status === "all") {
+        /* sin filtro de estado */
+      } else if (!qrManagerState.status && item.archived) {
+        return false;
+      } else if (qrManagerState.status && qrManagerState.status !== "archived" && item.status !== qrManagerState.status) {
+        return false;
+      }
       if (qrManagerState.category && item.category !== qrManagerState.category) return false;
       if (!search) return true;
       const haystack = qrNormalizeSearch([item.name, item.slug, item.dynamicUrl, item.destinationUrl, item.category].join(" "));
@@ -1936,16 +1996,21 @@ const renderQrCategories = () => {
 
 const renderQrActions = (item) => `
   <div class="qr-actions">
-    <button class="icon-btn" type="button" data-qr-edit-destination="${item.id}" title="Editar destino"><i data-lucide="link"></i></button>
-    <button class="icon-btn" type="button" data-qr-edit-info="${item.id}" title="Editar informacion"><i data-lucide="pencil"></i></button>
-    <button class="icon-btn" type="button" data-qr-toggle="${item.id}" title="${item.status === "active" ? "Desactivar" : "Activar"}"><i data-lucide="${item.status === "active" ? "pause" : "play"}"></i></button>
+    ${item.archived ? `
+      <button class="icon-btn icon-btn-success" type="button" data-qr-restore="${item.id}" title="Restaurar"><i data-lucide="rotate-ccw"></i></button>
+      <button class="icon-btn icon-btn-danger" type="button" data-qr-delete-permanent="${item.id}" title="Eliminar definitivamente"><i data-lucide="trash-2"></i></button>
+    ` : `
+      <button class="icon-btn" type="button" data-qr-edit-destination="${item.id}" title="Editar destino"><i data-lucide="link"></i></button>
+      <button class="icon-btn" type="button" data-qr-edit-info="${item.id}" title="Editar informacion"><i data-lucide="pencil"></i></button>
+      <button class="icon-btn" type="button" data-qr-toggle="${item.id}" title="${item.status === "active" ? "Desactivar" : "Activar"}"><i data-lucide="${item.status === "active" ? "pause" : "play"}"></i></button>
+      <button class="icon-btn" type="button" data-qr-duplicate="${item.id}" title="Duplicar"><i data-lucide="copy-plus"></i></button>
+      <button class="icon-btn icon-btn-danger" type="button" data-qr-archive="${item.id}" title="Archivar"><i data-lucide="archive"></i></button>
+    `}
     <button class="icon-btn" type="button" data-qr-download-row="png:${item.id}" title="Descargar PNG"><i data-lucide="image-down"></i></button>
     <button class="icon-btn" type="button" data-qr-download-row="svg:${item.id}" title="Descargar SVG"><i data-lucide="file-code"></i></button>
     <button class="icon-btn" type="button" data-qr-copy-row="dynamic:${item.id}" title="Copiar enlace"><i data-lucide="copy"></i></button>
     <button class="icon-btn" type="button" data-qr-open-row="${item.id}" title="Abrir"><i data-lucide="external-link"></i></button>
     <button class="icon-btn" type="button" data-qr-history="${item.id}" title="Ver historial"><i data-lucide="history"></i></button>
-    <button class="icon-btn" type="button" data-qr-duplicate="${item.id}" title="Duplicar"><i data-lucide="copy-plus"></i></button>
-    <button class="icon-btn icon-btn-danger" type="button" data-qr-archive="${item.id}" title="Archivar"><i data-lucide="archive"></i></button>
   </div>
 `;
 
@@ -1953,20 +2018,24 @@ const renderQrManager = () => {
   if (!qrTableBody || !qrCardList) return;
   renderQrCategories();
   const items = getFilteredQrCodes();
-  if (qrListMeta) qrListMeta.textContent = `${formatInteger(items.length)} visibles / ${formatInteger(state.qrCodes.filter((item) => !item.archived).length)} activos en sistema`;
+  if (qrListMeta) {
+    const archivedCount = state.qrCodes.filter((item) => item.archived).length;
+    const visibleCount = state.qrCodes.filter((item) => !item.archived).length;
+    qrListMeta.textContent = `${formatInteger(items.length)} visibles / ${formatInteger(visibleCount)} no archivados / ${formatInteger(archivedCount)} archivados`;
+  }
   if (!items.length) {
     qrTableBody.innerHTML = '<tr class="empty-row"><td colspan="10">No hay codigos QR para mostrar.</td></tr>';
     qrCardList.innerHTML = '<div class="list-item muted">No hay codigos QR para mostrar.</div>';
     return;
   }
   qrTableBody.innerHTML = items.map((item) => `
-    <tr>
+    <tr class="${item.archived ? "qr-row-archived" : ""}" data-qr-row-id="${escapeHtml(item.id)}">
       <td><canvas class="qr-mini-canvas" width="56" height="56" data-qr-url="${escapeHtml(item.dynamicUrl || buildQrDynamicUrl(item.slug))}"></canvas></td>
       <td><strong>${escapeHtml(item.name || "Sin nombre")}</strong></td>
       <td>${escapeHtml(item.category || "General")}</td>
       <td><code>${escapeHtml(item.slug || "-")}</code><small>${escapeHtml(item.dynamicUrl || buildQrDynamicUrl(item.slug))}</small></td>
       <td><a href="${escapeHtml(item.destinationUrl || "#")}" target="_blank" rel="noopener">${escapeHtml(item.destinationUrl || "-")}</a></td>
-      <td><span class="status-tag ${item.status === "active" ? "status-ok" : "status-low"}">${QR_STATUS_LABELS[item.status] || item.status}</span></td>
+      <td><span class="status-tag ${item.archived ? "status-critical" : item.status === "active" ? "status-ok" : "status-low"}">${item.archived ? "Archivado" : QR_STATUS_LABELS[item.status] || item.status}</span></td>
       <td class="num">${formatInteger(item.scanCount || 0)}</td>
       <td>${qrDateLabel(item.lastScannedAt)}</td>
       <td>${qrDateLabel(item.createdAt)}</td>
@@ -1974,12 +2043,12 @@ const renderQrManager = () => {
     </tr>
   `).join("");
   qrCardList.innerHTML = items.map((item) => `
-    <article class="qr-mobile-card">
+    <article class="qr-mobile-card ${item.archived ? "is-archived" : ""}" data-qr-row-id="${escapeHtml(item.id)}">
       <div class="qr-mobile-head">
         <canvas class="qr-mini-canvas" width="64" height="64" data-qr-url="${escapeHtml(item.dynamicUrl || buildQrDynamicUrl(item.slug))}"></canvas>
         <div>
           <strong>${escapeHtml(item.name || "Sin nombre")}</strong>
-          <span>${escapeHtml(item.category || "General")} · ${QR_STATUS_LABELS[item.status] || item.status}</span>
+          <span>${escapeHtml(item.category || "General")} · ${item.archived ? "Archivado" : QR_STATUS_LABELS[item.status] || item.status}</span>
         </div>
       </div>
       <div class="qr-mobile-meta">
@@ -2136,7 +2205,12 @@ const setupQrManager = () => {
       return;
     }
     if (values.mode === "create" && getQrBySlug(values.slug)) {
-      setQrNotice("Este identificador ya esta en uso.", "error");
+      const existingSlugQr = getQrBySlug(values.slug);
+      if (existingSlugQr?.archived) {
+        setQrNoticeHtml(`Este identificador pertenece a un codigo QR archivado. Podes restaurarlo o eliminarlo definitivamente desde la seccion Archivados. <button class="btn ghost btn-xs" type="button" data-qr-show-archived="${escapeHtml(existingSlugQr.id)}">Ver QR archivado</button>`, "error");
+      } else {
+        setQrNotice("Este identificador ya esta en uso.", "error");
+      }
       return;
     }
     setQrBusy(true);
@@ -2157,7 +2231,12 @@ const setupQrManager = () => {
       }
     } catch (error) {
       console.error("[qr] save error", error);
-      setQrNotice(error?.code === "slug-exists" ? "Este identificador ya esta en uso." : "No se pudo guardar el codigo QR. Intenta nuevamente.", "error");
+      const existingSlugQr = getQrBySlug(values.slug);
+      if (error?.code === "slug-exists" && existingSlugQr?.archived) {
+        setQrNoticeHtml(`Este identificador pertenece a un codigo QR archivado. Podes restaurarlo o eliminarlo definitivamente desde la seccion Archivados. <button class="btn ghost btn-xs" type="button" data-qr-show-archived="${escapeHtml(existingSlugQr.id)}">Ver QR archivado</button>`, "error");
+      } else {
+        setQrNotice(error?.code === "slug-exists" ? "Este identificador ya esta en uso." : "No se pudo guardar el codigo QR. Intenta nuevamente.", "error");
+      }
     } finally {
       setQrBusy(false);
       refreshCollapseHeights();
@@ -2199,7 +2278,22 @@ const setupQrManager = () => {
       await printQr(getCurrentPreviewQr(), Boolean(qrField("includeName")?.checked));
       return;
     }
-    const target = event.target.closest("[data-qr-edit-destination],[data-qr-edit-info],[data-qr-toggle],[data-qr-download-row],[data-qr-copy-row],[data-qr-open-row],[data-qr-history],[data-qr-duplicate],[data-qr-archive],[data-qr-history-close]");
+    const showArchivedBtn = event.target.closest("[data-qr-show-archived],[data-qr-show-archived-list]");
+    if (showArchivedBtn) {
+      const archivedId = showArchivedBtn.getAttribute("data-qr-show-archived") || "";
+      if (qrStatusFilter) qrStatusFilter.value = "archived";
+      qrManagerState.status = "archived";
+      qrManagerState.search = "";
+      if (qrSearchInput) qrSearchInput.value = "";
+      renderQrManager();
+      window.setTimeout(() => {
+        if (archivedId && window.CSS?.escape) {
+          document.querySelector(`[data-qr-row-id="${CSS.escape(archivedId)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 80);
+      return;
+    }
+    const target = event.target.closest("[data-qr-edit-destination],[data-qr-edit-info],[data-qr-toggle],[data-qr-download-row],[data-qr-copy-row],[data-qr-open-row],[data-qr-history],[data-qr-duplicate],[data-qr-archive],[data-qr-restore],[data-qr-delete-permanent],[data-qr-history-close]");
     if (!target) return;
     if (target.matches("[data-qr-history-close]")) {
       qrManagerState.historyOpenId = "";
@@ -2216,6 +2310,8 @@ const setupQrManager = () => {
       || getActionId("data-qr-history")
       || getActionId("data-qr-duplicate")
       || getActionId("data-qr-archive")
+      || getActionId("data-qr-restore")
+      || getActionId("data-qr-delete-permanent")
       || (rowDownload ? rowDownload.split(":")[1] : "")
       || (rowCopy ? rowCopy.split(":")[1] : "");
     const qr = getQrById(id);
@@ -2229,7 +2325,24 @@ const setupQrManager = () => {
       else if (target.hasAttribute("data-qr-open-row")) window.open(qr.dynamicUrl || buildQrDynamicUrl(qr.slug), "_blank", "noopener,noreferrer");
       else if (target.hasAttribute("data-qr-history")) await loadQrHistory(qr);
       else if (target.hasAttribute("data-qr-duplicate")) duplicateQr(qr);
-      else if (target.hasAttribute("data-qr-archive") && window.confirm("Archivar este codigo QR? La ruta publica quedara inactiva, pero el registro no se eliminara definitivamente.")) await archiveQr(qr);
+      else if (target.hasAttribute("data-qr-restore") && window.confirm("Restaurar este codigo QR? Mantendra el mismo identificador, historial y contador.")) {
+        await restoreQr(qr);
+        setQrNotice("Codigo QR restaurado correctamente.", "success");
+      }
+      else if (target.hasAttribute("data-qr-delete-permanent")) {
+        const confirmation = window.prompt("Esta accion eliminara definitivamente el codigo QR y liberara su identificador.\n\nSi este QR ya fue impreso o compartido, dejara de funcionar permanentemente.\n\nEscribi ELIMINAR para confirmar.");
+        if (confirmation === "ELIMINAR") {
+          await permanentlyDeleteQr(qr);
+          setQrNotice("Codigo QR eliminado definitivamente.", "success");
+        }
+      }
+      else if (target.hasAttribute("data-qr-archive")) {
+        const ok = window.confirm("El codigo QR se ocultara del listado principal, pero seguira guardado y su identificador continuara reservado.\n\nPodras restaurarlo desde la seccion Archivados.");
+        if (ok) {
+          await archiveQr(qr);
+          setQrNoticeHtml('Codigo QR archivado correctamente. Podes verlo en la seccion Archivados. <button class="btn ghost btn-xs" type="button" data-qr-show-archived-list>Ver archivados</button>', "success");
+        }
+      }
     } catch (error) {
       console.error("[qr] action error", error);
       setQrNotice("No se pudo completar la accion. Intenta nuevamente.", "error");

@@ -76,7 +76,19 @@ exports.redirectQr = onRequest(
       }
 
       const redirect = redirectSnap.data() || {};
+      if (redirect.archived === true) {
+        sendHtml(res, 410, "Codigo QR no disponible.", "Este codigo QR ya no se encuentra disponible.");
+        return;
+      }
+
       if (redirect.status !== "active") {
+        if (redirect.qrId) {
+          const qrSnap = await db.collection("qrCodes").doc(String(redirect.qrId)).get();
+          if (qrSnap.exists && qrSnap.data()?.archived === true) {
+            sendHtml(res, 410, "Codigo QR no disponible.", "Este codigo QR ya no se encuentra disponible.");
+            return;
+          }
+        }
         sendHtml(res, 410, "Codigo QR inactivo.", "Este codigo QR se encuentra temporalmente inactivo.");
         return;
       }

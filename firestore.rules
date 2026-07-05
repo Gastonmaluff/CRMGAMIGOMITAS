@@ -13,16 +13,18 @@ service cloud.firestore {
       allow read: if true;
       allow create: if signedIn()
         && !exists(/databases/$(database)/documents/qrRedirects/$(slug))
-        && request.resource.data.keys().hasOnly(["qrId", "slug", "destinationUrl", "status", "updatedAt"])
+        && request.resource.data.keys().hasOnly(["qrId", "slug", "destinationUrl", "status", "archived", "updatedAt"])
         && request.resource.data.slug == slug
         && request.resource.data.destinationUrl is string
+        && request.resource.data.archived is bool
         && validStatus(request.resource.data.status);
       allow update: if signedIn()
-        && request.resource.data.keys().hasOnly(["qrId", "slug", "destinationUrl", "status", "updatedAt"])
+        && request.resource.data.keys().hasOnly(["qrId", "slug", "destinationUrl", "status", "archived", "updatedAt"])
         && request.resource.data.slug == slug
         && request.resource.data.destinationUrl is string
+        && request.resource.data.archived is bool
         && validStatus(request.resource.data.status);
-      allow delete: if false;
+      allow delete: if signedIn();
     }
 
     match /qrCodes/{qrId} {
@@ -40,11 +42,19 @@ service cloud.firestore {
           && request.resource.data.status == resource.data.status
           && request.resource.data.slug == resource.data.slug
         );
-      allow delete: if false;
+      allow delete: if signedIn();
 
       match /history/{historyId} {
         allow read, create: if signedIn();
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if signedIn();
+      }
+
+      match /scans/{scanId} {
+        allow read: if signedIn();
+        allow create: if signedIn();
+        allow update: if false;
+        allow delete: if signedIn();
       }
     }
 

@@ -5004,6 +5004,20 @@ body.modal-open {
   box-shadow: var(--shadow-soft);
 }
 
+.qr-row-archived td,
+.qr-mobile-card.is-archived {
+  background: #f9fafb;
+}
+
+.qr-row-archived td {
+  color: #6b7280;
+}
+
+.qr-mobile-card.is-archived {
+  border-style: dashed;
+  opacity: 0.92;
+}
+
 .qr-mobile-head {
   display: flex;
   gap: 10px;
