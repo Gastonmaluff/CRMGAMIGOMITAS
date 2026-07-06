@@ -12525,14 +12525,14 @@ const startJourneysListener = () => {
   if (journeysUnsub) { try { journeysUnsub(); } catch (e) { /* noop */ } journeysUnsub = null; }
   journeysCache = null;
   journeysError = null;
-  const q = query(collection(db, "visitJourneys"), where("assignedUserId", "==", user.uid));
-  journeysUnsub = onSnapshot(q,
+  const journeysRef = collection(db, "visitJourneys");
+  journeysUnsub = onSnapshot(journeysRef,
     (snap) => {
       journeysError = null;
       journeysCache = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
         .sort((a, b) => journeySortKey(b) - journeySortKey(a));
-      console.log(`[jornadas] snapshot: ${journeysCache.length} jornada(s) para ${user.uid}`);
+      console.log(`[jornadas] snapshot: ${journeysCache.length} jornada(s) compartidas`);
       if (activeAppSection === "journeys" && !activeJourneyId) renderJourneysList(journeysCache);
     },
     (err) => {
