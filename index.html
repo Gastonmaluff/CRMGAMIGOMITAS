@@ -308,6 +308,7 @@
                 <div class="map-filters" id="mapFilters">
                   <button class="map-chip active" type="button" data-map-filter="all">Todos</button>
                   <button class="map-chip" type="button" data-map-filter="prospect">Prospectos</button>
+                  <button class="map-chip" type="button" data-map-filter="revisit">Revisita pendiente</button>
                   <button class="map-chip" type="button" data-map-filter="client">Clientes activos</button>
                   <button class="map-chip" type="button" data-map-filter="overdue">Recompra vencida</button>
                 </div>
@@ -1289,6 +1290,13 @@
                         <option value="bajo">Bajo</option>
                         <option value="medio">Medio</option>
                         <option value="alto">Alto</option>
+                      </select>
+                      <select id="prospectRevisitFilter" aria-label="Revisita">
+                        <option value="">Revisita: todas</option>
+                        <option value="due_today">Revisitar hoy</option>
+                        <option value="overdue">Revisitas vencidas</option>
+                        <option value="scheduled">Proximas revisitas</option>
+                        <option value="not_scheduled">Sin seguimiento</option>
                       </select>
                       <select id="prospectLocationFilter" aria-label="Ubicacion">
                         <option value="">Ubicacion: todas</option>
@@ -2438,6 +2446,7 @@
               <div class="journey-preview-legend">
                 <span><i class="map-dot" style="background:#1e40af"></i> Inicio</span>
                 <span><i class="map-dot map-dot-orange"></i> Prospecto</span>
+                <span><i class="map-dot map-dot-purple"></i> Revisita pendiente</span>
                 <span><i class="map-dot map-dot-green"></i> Cliente activo</span>
                 <span><i class="map-dot map-dot-red"></i> Recompra vencida</span>
               </div>
@@ -2490,9 +2499,12 @@
           <label class="form-label" for="resultNotes">Notas (opcional)</label>
           <textarea class="form-input" id="resultNotes" rows="2" placeholder="Comentarios del resultado..."></textarea>
         </div>
+        <div class="journey-result-dynamic" id="resultDynamicFields"></div>
+        <div class="journey-result-error" id="resultError" role="alert"></div>
       </div>
       <footer class="journey-modal-footer">
         <button class="btn ghost" type="button" data-result-close>Cancelar</button>
+        <button class="btn primary" type="button" data-result-load-sale hidden>Cargar venta</button>
         <button class="btn primary" type="button" data-result-confirm>Confirmar resultado</button>
       </footer>
     </div>
@@ -2503,7 +2515,7 @@
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.js"></script>
   <script src="vendor/qrcode.min.js?v=20260705-01"></script>
-  <script type="module" src="app.js?v=20260705-04"></script>
+  <script type="module" src="app.js?v=20260705-05"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

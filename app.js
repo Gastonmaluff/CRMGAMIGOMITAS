@@ -228,6 +228,7 @@ const prospectZoneFilter = document.getElementById("prospectZoneFilter");
 const prospectBusinessFilter = document.getElementById("prospectBusinessFilter");
 const prospectStatusFilter = document.getElementById("prospectStatusFilter");
 const prospectPotentialFilter = document.getElementById("prospectPotentialFilter");
+const prospectRevisitFilter = document.getElementById("prospectRevisitFilter");
 const visitClientSearch = document.getElementById("visitClientSearch");
 const visitClientList = document.getElementById("visitClientList");
 const visitList = document.getElementById("visitList");
@@ -409,6 +410,7 @@ const prospectFiltersState = {
   businessType: "",
   status: "",
   potential: "",
+  revisit: "",
   location: ""
 };
 const salesHistoryState = {
@@ -455,6 +457,17 @@ const STOP_STATUS_LABELS = {
   rescheduled: "Reprogramado", skipped: "Omitido"
 };
 const STOP_TERMINAL_STATES = new Set(["sale", "visited_no_sale", "closed", "unavailable", "rescheduled", "skipped"]);
+const REVISIT_REQUIRED_RESULTS = new Set(["visited_no_sale", "closed", "unavailable", "rescheduled"]);
+const REVISIT_OPTIONAL_RESULTS = new Set(["skipped"]);
+const REVISIT_STATUS_LABELS = {
+  not_scheduled: "Sin seguimiento",
+  scheduled: "Programada",
+  due_today: "Revisitar hoy",
+  overdue: "Revisita vencida",
+  completed: "Completada",
+  cancelled: "Cancelada"
+};
+const REVISIT_PRIORITY_LABELS = { low: "Baja", medium: "Media", high: "Alta" };
 
 const mapJourneySelectState = {
   active: false,
@@ -492,6 +505,8 @@ let journeysUnsub = null;
 let journeysCache = null; // null = aun no cargado; [] = cargado vacio
 let journeysError = null;
 let lastCreatedJourneyId = null;
+const journeyResultState = { saving: false };
+let pendingJourneySaleContext = null;
 const repurchaseNotesOpenState = new Set();
 const repurchaseHistoryOpenState = new Set();
 const clientHistoryOpenState = new Set();
@@ -5893,6 +5908,7 @@ const getFilteredProspects = () => {
   const businessType = normalizeText(prospectFiltersState.businessType);
   const status = normalizeText(prospectFiltersState.status);
   const potential = normalizeText(prospectFiltersState.potential);
+  const revisit = prospectFiltersState.revisit;
   const location = prospectFiltersState.location;
   return state.prospects.filter((item) => {
     if (search) {
@@ -5904,12 +5920,17 @@ const getFilteredProspects = () => {
     if (businessType && normalizeText(item.businessType) !== businessType) return false;
     if (status && normalizeText(item.status) !== status) return false;
     if (potential && normalizeText(item.potential) !== potential) return false;
+    if (revisit && getProspectRevisitStatus(item) !== revisit) return false;
     if (location) {
       const hasLocation = Boolean(buildGoogleMapsLocationUrl(item));
       if (location === "with" && !hasLocation) return false;
       if (location === "without" && hasLocation) return false;
     }
     return true;
+  }).sort((a, b) => {
+    const rank = getRevisitSortRank(a) - getRevisitSortRank(b);
+    if (rank) return rank;
+    return compareDateValues(a.nextVisitDate, b.nextVisitDate) || String(a.name || "").localeCompare(String(b.name || ""));
   });
 };
 
@@ -5918,6 +5939,7 @@ const PROSPECT_INDICATOR_DEFS = [
   { key: "nuevo", label: "Nuevos" },
   { key: "por_contactar", label: "Por contactar" },
   { key: "visita_pendiente", label: "Visitas pendientes" },
+  { key: "revisitas", label: "Revisitas hoy/vencidas" },
   { key: "interesado", label: "Interesados" },
   { key: "sin_accion", label: "Sin proxima accion" },
   { key: "convertido", label: "Convertidos" }
@@ -5931,6 +5953,7 @@ const renderProspectIndicators = () => {
     nuevo: 0,
     por_contactar: 0,
     visita_pendiente: 0,
+    revisitas: 0,
     interesado: 0,
     sin_accion: 0,
     convertido: 0
@@ -5940,12 +5963,13 @@ const renderProspectIndicators = () => {
     if (status === "nuevo") counts.nuevo += 1;
     if (status === "nuevo" || status === "contactado") counts.por_contactar += 1;
     if (status === "visita_pendiente") counts.visita_pendiente += 1;
+    if (shouldHighlightRevisit(item)) counts.revisitas += 1;
     if (status === "interesado") counts.interesado += 1;
     if (status === "convertido_cliente") counts.convertido += 1;
     if (!normalizeDateValue(item.nextActionDate) && !item.nextAction && !inactive.has(status)) counts.sin_accion += 1;
   });
   prospectIndicators.innerHTML = PROSPECT_INDICATOR_DEFS.map((def) => `
-    <div class="prospect-indicator ${def.key === "sin_accion" && counts.sin_accion ? "is-warn" : ""}">
+    <div class="prospect-indicator ${(def.key === "sin_accion" && counts.sin_accion) || (def.key === "revisitas" && counts.revisitas) ? "is-warn" : ""}">
       <span class="prospect-indicator-value">${formatInteger(counts[def.key])}</span>
       <span class="prospect-indicator-label">${def.label}</span>
     </div>
@@ -5965,6 +5989,8 @@ const renderProspectList = () => {
     const selected = visitPlannerState.selectedKeys.has(visitKey);
     const status = normalizeOptionValue(PROSPECT_STATUS_OPTIONS, item.status, "nuevo");
     const potential = normalizeOptionValue(PROSPECT_POTENTIAL_OPTIONS, item.potential);
+    const revisit = getRevisitBadge(item);
+    const revisitHighlight = shouldHighlightRevisit(item);
     const mapsUrl = buildGoogleMapsLocationUrl(item);
     const whatsappLink = buildWhatsAppLink(item.phone, item.name);
     const nextAction = item.nextAction ? escapeHtml(item.nextAction) : '<span class="muted">-</span>';
@@ -5974,7 +6000,7 @@ const renderProspectList = () => {
       ? `<a class="table-loc-link" href="${escapeHtml(mapsUrl)}" target="_blank" rel="noopener noreferrer" title="Abrir en Google Maps"><i data-lucide="map-pin"></i></a>`
       : '<span class="muted" title="Sin ubicacion">-</span>';
     return `
-      <tr class="prospect-row ${selected ? "is-selected" : ""}" data-prospect-id="${item.id}">
+      <tr class="prospect-row ${selected ? "is-selected" : ""} ${revisitHighlight ? "prospect-row-revisit" : ""}" data-prospect-id="${item.id}">
         <td class="col-check" data-label=""><input type="checkbox" data-visit-select="prospect" data-visit-id="${item.id}" ${selected ? "checked" : ""} aria-label="Seleccionar prospecto" /></td>
         <td class="cell-strong prospect-name-cell" data-label="Negocio" title="${escapeHtml(item.name || "Sin nombre")}">${escapeHtml(item.name || "Sin nombre")}</td>
         <td class="text-truncate" data-label="Rubro">${item.businessType ? escapeHtml(getBusinessTypeLabel(item.businessType)) : '<span class="muted">-</span>'}</td>
@@ -5982,7 +6008,7 @@ const renderProspectList = () => {
           <strong>${item.city ? escapeHtml(item.city) : '<span class="muted">Sin ciudad</span>'}</strong>
           <span>${item.zone ? escapeHtml(item.zone) : '<span class="muted">Sin zona</span>'}</span>
         </td>
-        <td data-label="Estado"><span class="prospect-status status-${status}">${getOptionLabel(PROSPECT_STATUS_OPTIONS, status)}</span></td>
+        <td data-label="Estado"><span class="prospect-status status-${status}">${getOptionLabel(PROSPECT_STATUS_OPTIONS, status)}</span>${revisit.status !== "not_scheduled" ? `<span class="revisit-badge revisit-badge-${revisit.tone}"><i data-lucide="calendar-clock"></i>${escapeHtml(revisit.label)}</span>` : ""}</td>
         <td data-label="Potencial">${potential ? `<span class="prospect-potential potential-${potential}">${getOptionLabel(PROSPECT_POTENTIAL_OPTIONS, potential)}</span>` : '<span class="muted">-</span>'}</td>
         <td class="col-actions" data-label="Acciones">
           <div class="table-actions">
@@ -6006,6 +6032,10 @@ const renderProspectList = () => {
             <div><span>Maps</span><strong>${mapsUrl ? locCell : "-"}</strong></div>
             <div><span>Proxima accion</span><strong>${nextAction}</strong></div>
             <div><span>Fecha</span><strong>${nextDate}</strong></div>
+            <div><span>Proxima visita</span><strong>${item.nextVisitDate ? `${formatDate(item.nextVisitDate)}${item.nextVisitTime ? " " + escapeHtml(item.nextVisitTime) : ""}` : "-"}</strong></div>
+            <div><span>Seguimiento</span><strong>${REVISIT_STATUS_LABELS[revisit.status] || "-"}${item.revisitReason ? " · " + escapeHtml(item.revisitReason) : ""}</strong></div>
+            <div><span>Ultima visita</span><strong>${item.lastVisitDate ? formatDate(item.lastVisitDate) : "-"}</strong></div>
+            <div><span>Ultimo resultado</span><strong>${item.lastVisitResult ? escapeHtml(STOP_STATUS_LABELS[item.lastVisitResult] || item.lastVisitResult) : "-"}</strong></div>
             <div><span>Origen</span><strong>${item.source ? escapeHtml(item.source) : "-"}</strong></div>
             <div><span>Responsable</span><strong>${item.responsible ? escapeHtml(item.responsible) : "-"}</strong></div>
             <div class="prospect-detail-wide"><span>Observaciones</span><strong>${item.observations ? escapeHtml(item.observations) : "-"}</strong></div>
@@ -8034,6 +8064,7 @@ saleForm.addEventListener("submit", async (event) => {
 
   const clientId = saleForm.client.value;
   const client = state.clients.find((item) => item.id === clientId);
+  const selectedClientName = saleForm.client.selectedOptions?.[0]?.textContent || "";
   const itemsPayload = draftItems.map((item) => {
     const productRow = saleProductIndex.get(item.productKey);
     return {
@@ -8069,8 +8100,8 @@ saleForm.addEventListener("submit", async (event) => {
     date: saleForm.date.value,
     productId: summary.productId || "",
     productName: summary.productName || "",
-    clientId: client?.id || "",
-    clientName: client?.name || "",
+    clientId: client?.id || clientId || "",
+    clientName: client?.name || selectedClientName || "",
     clientPhone: client?.phone || "",
     items: itemsPayload,
     quantity: summary.quantity || 0,
@@ -8088,7 +8119,10 @@ saleForm.addEventListener("submit", async (event) => {
     userId: user.uid,
     createdAt: serverTimestamp()
   };
-  await saveDoc("sales", saleForm, payload);
+  const saleId = await saveDoc("sales", saleForm, payload);
+  if (pendingJourneySaleContext) {
+    await finalizeJourneySaleAfterSave(saleId);
+  }
   resetForm(saleForm);
   resetSaleItems();
   if (saleCreditCheckbox) saleCreditCheckbox.checked = false;
@@ -8591,7 +8625,8 @@ const confirmDelete = (label) => window.confirm(`Eliminar ${label}?`);
 
 const convertProspectToClient = async (prospect) => {
   const user = auth.currentUser;
-  if (!user || !prospect?.id) return;
+  if (!user || !prospect?.id) return "";
+  if (prospect.convertedClientId) return prospect.convertedClientId;
   const clientRef = doc(collection(db, "clients"));
   const prospectRef = doc(db, "prospects", prospect.id);
   const convertedAt = toDateInputValue(new Date());
@@ -8628,9 +8663,15 @@ const convertProspectToClient = async (prospect) => {
     convertedClientId: clientRef.id,
     convertedAt,
     conversionObservation: `Convertido a cliente el ${formatDate(convertedAt)}.`,
+    nextVisitDate: "",
+    nextVisitTime: "",
+    revisitStatus: "completed",
+    revisitReason: "",
+    revisitPriority: "",
     updatedAt: serverTimestamp()
   });
   await batch.commit();
+  return clientRef.id;
 };
 
 const getProspectStatusAfterVisit = (currentStatus, result) => {
@@ -9219,10 +9260,11 @@ const updateProspectFilterState = () => {
   prospectFiltersState.businessType = prospectBusinessFilter?.value || "";
   prospectFiltersState.status = prospectStatusFilter?.value || "";
   prospectFiltersState.potential = prospectPotentialFilter?.value || "";
+  prospectFiltersState.revisit = prospectRevisitFilter?.value || "";
   prospectFiltersState.location = prospectLocationFilter?.value || "";
 };
 
-[prospectSearch, prospectCityFilter, prospectZoneFilter, prospectBusinessFilter, prospectStatusFilter, prospectPotentialFilter, prospectLocationFilter]
+[prospectSearch, prospectCityFilter, prospectZoneFilter, prospectBusinessFilter, prospectStatusFilter, prospectPotentialFilter, prospectRevisitFilter, prospectLocationFilter]
   .forEach((input) => {
     input?.addEventListener("input", () => {
       updateProspectFilterState();
@@ -9237,7 +9279,7 @@ const updateProspectFilterState = () => {
   });
 
 clearProspectFiltersBtn?.addEventListener("click", () => {
-  [prospectSearch, prospectCityFilter, prospectZoneFilter, prospectBusinessFilter, prospectStatusFilter, prospectPotentialFilter, prospectLocationFilter]
+  [prospectSearch, prospectCityFilter, prospectZoneFilter, prospectBusinessFilter, prospectStatusFilter, prospectPotentialFilter, prospectRevisitFilter, prospectLocationFilter]
     .forEach((input) => { if (input) input.value = ""; });
   updateProspectFilterState();
   renderProspectList();
@@ -10083,9 +10125,9 @@ const MAP_STYLES = {
   satellite: `https://api.maptiler.com/maps/satellite/style.json?key=${MAPTILER_API_KEY}`,
   hybrid: `https://api.maptiler.com/maps/hybrid/style.json?key=${MAPTILER_API_KEY}`
 };
-const MAP_COLORS = { prospect: "#F59E0B", client: "#16A34A", overdue: "#DC2626" };
-const MAP_PIN_ICONS = { prospect: "marker-prospecto", client: "marker-cliente", overdue: "marker-recompra-vencida" };
-const MAP_PIN_ICON_EXPR = ["match", ["get", "commercialStatus"], "prospect", "marker-prospecto", "client", "marker-cliente", "overdue", "marker-recompra-vencida", "marker-prospecto"];
+const MAP_COLORS = { prospect: "#F59E0B", revisit: "#8B5CF6", client: "#16A34A", overdue: "#DC2626" };
+const MAP_PIN_ICONS = { prospect: "marker-prospecto", revisit: "marker-revisita-pendiente", client: "marker-cliente", overdue: "marker-recompra-vencida" };
+const MAP_PIN_ICON_EXPR = ["match", ["get", "commercialStatus"], "prospect", "marker-prospecto", "revisit", "marker-revisita-pendiente", "client", "marker-cliente", "overdue", "marker-recompra-vencida", "marker-prospecto"];
 const PY_BOUNDS = [[-62.7, -27.7], [-54.2, -19.2]];
 const CDE_CENTER = [-54.6111, -25.5097];
 const MAP_EMPTY_FC = { type: "FeatureCollection", features: [] };
@@ -11391,17 +11433,24 @@ const getCommercialMapStatus = (params) => {
   const { entityType, raw, clientId, name, followupMap } = params;
   if (entityType === "prospect") {
     const statusLabel = getOptionLabel(PROSPECT_STATUS_OPTIONS, normalizeOptionValue(PROSPECT_STATUS_OPTIONS, raw.status, "nuevo"));
+    const revisitStatus = getProspectRevisitStatus(raw);
+    const needsRevisit = revisitStatus === "overdue" || revisitStatus === "due_today";
     return {
-      status: "prospect",
-      color: MAP_COLORS.prospect,
-      label: "Prospecto",
-      reason: statusLabel,
+      status: needsRevisit ? "revisit" : "prospect",
+      color: needsRevisit ? MAP_COLORS.revisit : MAP_COLORS.prospect,
+      label: needsRevisit ? "Revisita pendiente" : "Prospecto",
+      reason: needsRevisit ? REVISIT_STATUS_LABELS[revisitStatus] : statusLabel,
       lastPurchaseDate: "",
       expectedRepurchaseDate: "",
       repurchaseFrequencyDays: null,
       lastAmount: 0,
       daysRemaining: null,
-      daysLate: null
+      daysLate: null,
+      revisitStatus,
+      nextVisitDate: normalizeDateValue(raw.nextVisitDate || ""),
+      nextVisitTime: raw.nextVisitTime || "",
+      revisitReason: raw.revisitReason || "",
+      revisitPriority: raw.revisitPriority || ""
     };
   }
   const followup = followupMap.get(`id:${clientId}`) || followupMap.get(`name:${normalizeText(name || "")}`);
@@ -11468,7 +11517,9 @@ const buildCommercialMapEntities = () => {
     };
   };
   const entities = [];
-  state.prospects.forEach((p) => entities.push(makeEntity(p, "prospect")));
+  state.prospects
+    .filter((p) => normalizeOptionValue(PROSPECT_STATUS_OPTIONS, p.status, "nuevo") !== "convertido_cliente")
+    .forEach((p) => entities.push(makeEntity(p, "prospect")));
   state.clients.forEach((c) => entities.push(makeEntity(c, "client")));
   return entities;
 };
@@ -11476,6 +11527,7 @@ const buildCommercialMapEntities = () => {
 const applyMapFilters = (entities) => entities.filter((e) => {
   const f = mapFilterState;
   if (f.type === "prospect" && e.entityType !== "prospect") return false;
+  if (f.type === "revisit" && e.status !== "revisit") return false;
   if (f.type === "client" && !(e.entityType === "client" && e.status === "client")) return false;
   if (f.type === "overdue" && e.status !== "overdue") return false;
   if (f.city && !normalizeText(e.city).includes(normalizeText(f.city))) return false;
@@ -11503,6 +11555,8 @@ const commercialEntitiesToGeoJSON = (entities) => ({
       phone: e.phone,
       lastPurchaseDate: e.lastPurchaseDate || "",
       expectedRepurchaseDate: e.expectedRepurchaseDate || "",
+      nextVisitDate: e.nextVisitDate || "",
+      revisitStatus: e.revisitStatus || "",
       daysLate: e.daysLate ?? 0,
       importSessionId: e.importSessionId || "",
       sourceCollection: e.sourceCollection,
@@ -11528,11 +11582,13 @@ const updateMapIndicators = (filtered) => {
   const el = document.getElementById("mapIndicators");
   if (!el) return;
   const prospects = filtered.filter((e) => e.entityType === "prospect").length;
+  const revisits = filtered.filter((e) => e.status === "revisit").length;
   const clients = filtered.filter((e) => e.entityType === "client" && e.status === "client").length;
   const overdue = filtered.filter((e) => e.status === "overdue").length;
   const noLoc = filtered.filter((e) => !e.hasLocation).length;
   el.innerHTML = `
     <span class="map-cap"><i class="map-dot map-dot-orange"></i><strong>${formatInteger(prospects)}</strong><span class="map-cap-label">prospectos</span></span>
+    <span class="map-cap"><i class="map-dot map-dot-purple"></i><strong>${formatInteger(revisits)}</strong><span class="map-cap-label">revisita pendiente</span></span>
     <span class="map-cap"><i class="map-dot map-dot-green"></i><strong>${formatInteger(clients)}</strong><span class="map-cap-label">clientes activos</span></span>
     <span class="map-cap"><i class="map-dot map-dot-red"></i><strong>${formatInteger(overdue)}</strong><span class="map-cap-label">recompras vencidas</span></span>
     <span class="map-cap map-cap-muted"><strong>${formatInteger(noLoc)}</strong><span class="map-cap-label">sin ubicacion</span></span>
@@ -11548,12 +11604,20 @@ const renderMapVisibleList = (filtered) => {
     list.innerHTML = '<div class="empty-hint">Sin negocios para los filtros actuales.</div>';
     return;
   }
-  list.innerHTML = filtered.slice(0, 200).map((e) => `
-    <div class="map-visible-row" data-map-entity="${e.id}">
+  const sorted = [...filtered].sort((a, b) => {
+    const ar = a.status === "revisit" ? (a.revisitStatus === "overdue" ? 0 : 1) : 2;
+    const br = b.status === "revisit" ? (b.revisitStatus === "overdue" ? 0 : 1) : 2;
+    if (ar !== br) return ar - br;
+    return String(a.name || "").localeCompare(String(b.name || ""));
+  });
+  const dotClassFor = (e) => e.status === "overdue" ? "red" : e.status === "revisit" ? "purple" : e.status === "prospect" ? "orange" : "green";
+  list.innerHTML = sorted.slice(0, 200).map((e) => `
+    <div class="map-visible-row ${e.status === "revisit" ? "map-visible-row-revisit" : ""}" data-map-entity="${e.id}">
       <div class="map-visible-main">
-        <span class="map-dot map-dot-${e.status === "overdue" ? "red" : e.status === "prospect" ? "orange" : "green"}"></span>
+        <span class="map-dot map-dot-${dotClassFor(e)}"></span>
         <div>
           <div class="map-visible-name">${escapeHtml(e.name)}</div>
+          ${e.status === "revisit" ? `<button class="revisit-badge revisit-badge-${e.revisitStatus === "overdue" ? "overdue" : "today"}" type="button" data-map-detail="${e.id}" title="${escapeHtml([formatDate(e.nextVisitDate), e.nextVisitTime, e.revisitReason].filter(Boolean).join(" · "))}"><i data-lucide="calendar-clock"></i>${e.revisitStatus === "overdue" ? "Revisita vencida" : "Revisitar hoy"}</button>` : ""}
           <div class="map-visible-meta">${escapeHtml(e.label)}${e.city ? " · " + escapeHtml(e.city) : ""}${e.neighborhood ? " · " + escapeHtml(e.neighborhood) : ""}</div>
         </div>
       </div>
@@ -11570,7 +11634,7 @@ const updateMapFilterBadge = () => {
   const badge = document.getElementById("mapFilterBadge");
   const chipsEl = document.getElementById("mapActiveChips");
   const f = mapFilterState;
-  const typeLabels = { prospect: "Prospectos", client: "Clientes activos", overdue: "Recompra vencida" };
+  const typeLabels = { prospect: "Prospectos", revisit: "Revisita pendiente", client: "Clientes activos", overdue: "Recompra vencida" };
   const locLabels = { with: "Con ubicacion", without: "Sin ubicacion" };
   const items = [];
   if (f.type && f.type !== "all") items.push({ key: "type", label: typeLabels[f.type] || f.type });
@@ -11678,6 +11742,7 @@ const loadCommercialPinImage = (id, color) => new Promise((resolve) => {
 
 const ensureCommercialMapImages = () => Promise.all([
   loadCommercialPinImage(MAP_PIN_ICONS.prospect, MAP_COLORS.prospect),
+  loadCommercialPinImage(MAP_PIN_ICONS.revisit, MAP_COLORS.revisit),
   loadCommercialPinImage(MAP_PIN_ICONS.client, MAP_COLORS.client),
   loadCommercialPinImage(MAP_PIN_ICONS.overdue, MAP_COLORS.overdue)
 ]);
@@ -11703,6 +11768,9 @@ const openMapDetail = (id) => {
     rows.push(`<div class="map-detail-row"><b>Proxima recompra</b><span>${fmt(e.expectedRepurchaseDate)}</span></div>`);
     if (e.daysLate) rows.push(`<div class="map-detail-row"><b>Atraso</b><span>${e.daysLate} dia(s)</span></div>`);
     else if (e.daysRemaining !== null && e.daysRemaining !== undefined) rows.push(`<div class="map-detail-row"><b>Faltan</b><span>${e.daysRemaining} dia(s)</span></div>`);
+  } else if (e.status === "revisit") {
+    rows.push(`<div class="map-detail-row"><b>Proxima visita</b><span>${fmt(e.nextVisitDate)}${e.nextVisitTime ? " " + escapeHtml(e.nextVisitTime) : ""}</span></div>`);
+    rows.push(`<div class="map-detail-row"><b>Seguimiento</b><span>${escapeHtml(e.revisitReason || e.reason || "Revisita pendiente")}</span></div>`);
   } else {
     rows.push(`<div class="map-detail-row"><b>Estado</b><span>${escapeHtml(e.reason)}</span></div>`);
   }
@@ -11711,7 +11779,7 @@ const openMapDetail = (id) => {
   panel.innerHTML = `
     <div class="map-detail-head">
       <div>
-        <span class="map-badge map-badge-${e.status === "overdue" ? "red" : e.status === "prospect" ? "orange" : "green"}">${escapeHtml(e.label)}</span>
+        <span class="map-badge map-badge-${e.status === "overdue" ? "red" : e.status === "revisit" ? "purple" : e.status === "prospect" ? "orange" : "green"}">${escapeHtml(e.label)}</span>
         <h3>${escapeHtml(e.name)}</h3>
       </div>
       <button class="icon-btn" type="button" id="mapDetailClose" title="Cerrar"><i data-lucide="x"></i></button>
@@ -12101,7 +12169,7 @@ const setupCommercialMap = () => {
     if (q.length < 2) { bizResults.hidden = true; bizResults.innerHTML = ""; return; }
     const matches = commercialMapEntities.filter((e) => normalizeText([e.name, e.contactName, e.phone, e.city, e.neighborhood].filter(Boolean).join(" ")).includes(q)).slice(0, 8);
     bizResults.innerHTML = matches.length
-      ? matches.map((e) => `<button type="button" class="map-search-item" data-biz-id="${e.id}"><span class="map-dot map-dot-${e.status === "overdue" ? "red" : e.status === "prospect" ? "orange" : "green"}"></span>${escapeHtml(e.name)}${e.city ? " · " + escapeHtml(e.city) : ""}</button>`).join("")
+      ? matches.map((e) => `<button type="button" class="map-search-item" data-biz-id="${e.id}"><span class="map-dot map-dot-${e.status === "overdue" ? "red" : e.status === "revisit" ? "purple" : e.status === "prospect" ? "orange" : "green"}"></span>${escapeHtml(e.name)}${e.city ? " · " + escapeHtml(e.city) : ""}</button>`).join("")
       : '<div class="map-search-empty">Sin resultados</div>';
     bizResults.hidden = false;
   });
@@ -12438,14 +12506,118 @@ const saveNewJourney = async (journeyData, stops) => {
   return journeyRef.id;
 };
 
-const updateStopResult = async (journeyId, stopId, result, notes = "") => {
+const updateStopResult = async (journeyId, stopId, result, notes = "", extra = {}) => {
   if (!journeyId || !stopId) return;
   const stopRef = doc(db, "visitJourneys", journeyId, "stops", stopId);
   const isComplete = STOP_TERMINAL_STATES.has(result);
-  const update = { status: result, resultNotes: notes, updatedAt: serverTimestamp() };
+  const update = { status: result, resultNotes: notes, ...extra, updatedAt: serverTimestamp() };
   if (isComplete) update.completedAt = serverTimestamp();
   await updateDoc(stopRef, update);
   await recalcJourneyProgress(journeyId);
+};
+
+const getStopById = (stopId) => journeyStopsCache.find((stop) => stop.id === stopId) || null;
+
+const getProspectByStop = (stop) => {
+  if (!stop || stop.entityType !== "prospect") return null;
+  return state.prospects.find((item) => item.id === stop.entityId) || null;
+};
+
+const saveJourneyVisitResult = async (journeyId, stopId, payload) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error("No autenticado");
+  const stop = getStopById(stopId);
+  if (!stop) throw new Error("Parada no encontrada");
+  const result = String(payload.result || "").trim();
+  if (!STOP_TERMINAL_STATES.has(result)) throw new Error("Resultado invalido");
+  const notes = String(payload.notes || "").trim();
+  const nextVisitDate = normalizeDateValue(payload.nextVisitDate || "");
+  const nextVisitTime = String(payload.nextVisitTime || "").trim();
+  const revisitPriority = String(payload.revisitPriority || "").trim() || "medium";
+  const revisitReason = String(payload.revisitReason || "").trim();
+  const reasonDetail = String(payload.reasonDetail || "").trim();
+  const visitedAt = getLocalDateValue();
+  const batch = writeBatch(db);
+  const stopRef = doc(db, "visitJourneys", journeyId, "stops", stopId);
+  const stopUpdate = {
+    status: result,
+    result,
+    resultNotes: notes,
+    reasonDetail,
+    completedAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  };
+  if (nextVisitDate) {
+    stopUpdate.nextVisitDate = nextVisitDate;
+    stopUpdate.nextVisitTime = nextVisitTime;
+    stopUpdate.revisitPriority = revisitPriority;
+    stopUpdate.revisitReason = revisitReason || notes;
+  }
+  batch.update(stopRef, stopUpdate);
+
+  if (stop.entityType === "prospect" && stop.entityId) {
+    const prospectRef = doc(db, "prospects", stop.entityId);
+    const historyRef = doc(collection(db, "prospects", stop.entityId, "visitHistory"));
+    const prospectUpdate = {
+      lastVisitDate: visitedAt,
+      lastVisitResult: result,
+      lastJourneyId: journeyId,
+      lastVisitNotes: notes,
+      updatedAt: serverTimestamp()
+    };
+    if (nextVisitDate) {
+      prospectUpdate.nextVisitDate = nextVisitDate;
+      prospectUpdate.nextVisitTime = nextVisitTime;
+      prospectUpdate.revisitStatus = getRevisitStatusFromDate(nextVisitDate);
+      prospectUpdate.revisitReason = revisitReason || notes;
+      prospectUpdate.revisitPriority = revisitPriority;
+      prospectUpdate.status = result === "rescheduled" ? "visita_pendiente" : getProspectStatusAfterVisit(getProspectByStop(stop)?.status, result);
+    } else if (result === "skipped") {
+      prospectUpdate.nextVisitDate = "";
+      prospectUpdate.nextVisitTime = "";
+      prospectUpdate.revisitStatus = "not_scheduled";
+    } else if (result === "visited_no_sale" && reasonDetail === "No interesado") {
+      prospectUpdate.nextVisitDate = "";
+      prospectUpdate.nextVisitTime = "";
+      prospectUpdate.status = "no_interesado";
+      prospectUpdate.revisitStatus = "not_scheduled";
+    } else {
+      prospectUpdate.nextVisitDate = "";
+      prospectUpdate.nextVisitTime = "";
+      prospectUpdate.revisitStatus = "not_scheduled";
+      prospectUpdate.status = getProspectStatusAfterVisit(getProspectByStop(stop)?.status, result);
+    }
+    batch.update(prospectRef, prospectUpdate);
+    batch.set(historyRef, {
+      journeyId,
+      stopId,
+      result,
+      notes,
+      reasonDetail,
+      visitedAt,
+      nextVisitDate,
+      nextVisitTime,
+      revisitPriority: nextVisitDate ? revisitPriority : "",
+      userId: user.uid,
+      userName: user.displayName || user.email || user.uid,
+      createdAt: serverTimestamp()
+    });
+  }
+
+  await batch.commit();
+  await recalcJourneyProgress(journeyId);
+};
+
+const clearProspectRevisit = async (prospectId) => {
+  if (!prospectId) return;
+  await updateDoc(doc(db, "prospects", prospectId), {
+    nextVisitDate: "",
+    nextVisitTime: "",
+    revisitStatus: "completed",
+    revisitReason: "",
+    revisitPriority: "",
+    updatedAt: serverTimestamp()
+  });
 };
 
 const recalcJourneyProgress = async (journeyId) => {
@@ -12455,7 +12627,6 @@ const recalcJourneyProgress = async (journeyId) => {
   await updateDoc(doc(db, "visitJourneys", journeyId), {
     completedStops: completed,
     totalStops: stops.length,
-    status: completed === stops.length && stops.length > 0 ? "completed" : "active",
     updatedAt: serverTimestamp()
   });
 };
@@ -12470,6 +12641,24 @@ const finalizeJourney = async (journeyId) => {
 
 const deleteJourney = async (journeyId) => {
   await updateDoc(doc(db, "visitJourneys", journeyId), { status: "cancelled", updatedAt: serverTimestamp() });
+};
+
+const permanentlyDeleteJourney = async (journeyId) => {
+  if (!journeyId) return;
+  const journey = journeysCache?.find((item) => item.id === journeyId);
+  if (normalizeJourneyStatus(journey?.status) !== "cancelled") {
+    window.alert("Solo se pueden eliminar definitivamente jornadas canceladas.");
+    return;
+  }
+  const confirmation = window.prompt("Eliminar definitivamente esta jornada cancelada y sus paradas?\n\nEscribi ELIMINAR para confirmar.");
+  if (confirmation !== "ELIMINAR") return;
+  const stopsSnap = await getDocs(collection(db, "visitJourneys", journeyId, "stops"));
+  const batch = writeBatch(db);
+  stopsSnap.docs.forEach((stopDoc) => {
+    batch.delete(stopDoc.ref);
+  });
+  batch.delete(doc(db, "visitJourneys", journeyId));
+  await batch.commit();
 };
 
 // ----- Helpers -----
@@ -12516,6 +12705,60 @@ const formatJourneyDate = (j) => {
   if (j.scheduledDate) { const out = formatDate(j.scheduledDate); if (out && out !== "-") return out; }
   const ms = toMillisSafe(j.createdAt);
   return ms ? formatDate(toDateInputValue(new Date(ms))) : "Sin fecha";
+};
+
+const getLocalDateValue = (date = new Date()) => toDateInputValue(date);
+
+const compareDateValues = (a, b) => {
+  const av = normalizeDateValue(a);
+  const bv = normalizeDateValue(b);
+  if (!av && !bv) return 0;
+  if (!av) return 1;
+  if (!bv) return -1;
+  return av.localeCompare(bv);
+};
+
+const addDaysToLocalDateValue = (dateValue, days) => {
+  const base = normalizeDateValue(dateValue) || getLocalDateValue();
+  const [year, month, day] = base.split("-").map(Number);
+  const d = new Date(year, month - 1, day);
+  d.setDate(d.getDate() + Number(days || 0));
+  return getLocalDateValue(d);
+};
+
+const getProspectRevisitStatus = (prospect, currentDate = new Date()) => {
+  const nextDate = normalizeDateValue(prospect?.nextVisitDate || "");
+  if (!nextDate) return "not_scheduled";
+  const today = getLocalDateValue(currentDate);
+  if (nextDate < today) return "overdue";
+  if (nextDate === today) return "due_today";
+  return "scheduled";
+};
+
+const getRevisitBadge = (prospect) => {
+  const status = getProspectRevisitStatus(prospect);
+  if (status === "overdue") return { status, label: "Revisita vencida", tone: "overdue" };
+  if (status === "due_today") return { status, label: "Revisitar hoy", tone: "today" };
+  if (status === "scheduled") return { status, label: `Proxima visita ${formatDate(prospect.nextVisitDate)}`, tone: "scheduled" };
+  return { status, label: "Sin seguimiento", tone: "none" };
+};
+
+const getRevisitSortRank = (prospect) => {
+  const status = getProspectRevisitStatus(prospect);
+  if (status === "overdue") return 0;
+  if (status === "due_today") return 1;
+  if (status === "scheduled") return 2;
+  return 3;
+};
+
+const shouldHighlightRevisit = (prospect) => {
+  const status = getProspectRevisitStatus(prospect);
+  return status === "overdue" || status === "due_today";
+};
+
+const getRevisitStatusFromDate = (dateValue) => {
+  if (!normalizeDateValue(dateValue)) return "not_scheduled";
+  return getProspectRevisitStatus({ nextVisitDate: dateValue });
 };
 
 // ----- Listener en tiempo real (sin orderBy -> sin indice compuesto) -----
@@ -12596,7 +12839,7 @@ const renderJourneysList = (journeys) => {
   const el = document.getElementById("journeysList");
   if (!el) return;
   if (!journeys || !journeys.length) { renderJourneysEmpty(); return; }
-  el.innerHTML = journeys.map((j) => {
+  const renderJourneyCard = (j, { featured = false, muted = false } = {}) => {
     const status = normalizeJourneyStatus(j.status);
     const total = Number(j.totalStops) || 0;
     const done = Number(j.completedStops) || 0;
@@ -12605,7 +12848,7 @@ const renderJourneysList = (journeys) => {
     const statusClass = { draft: "muted", planned: "blue", active: "green", completed: "green-dark", cancelled: "red" }[status] || "muted";
     const incomplete = total === 0;
     return `
-    <div class="journey-card${j.id === lastCreatedJourneyId ? " journey-card-new" : ""}" data-journey-id="${j.id}">
+    <div class="journey-card${featured ? " journey-card-active" : ""}${muted ? " journey-card-muted" : ""}${j.id === lastCreatedJourneyId ? " journey-card-new" : ""}" data-journey-id="${j.id}">
       <div class="journey-card-head">
         <div class="journey-card-title">${escapeHtml(j.name || "Jornada sin nombre")}</div>
         <span class="journey-status-badge journey-status-${statusClass}">${statusLabel}</span>
@@ -12622,14 +12865,46 @@ const renderJourneysList = (journeys) => {
         <div class="journey-progress-wrap"><div class="journey-progress-bar" style="width:${pct}%"></div></div>
         <div class="journey-progress-label">${done} de ${total} visitas completadas</div>`}
       <div class="journey-card-actions">
-        ${status === "planned" ? `<button class="btn primary btn-xs" type="button" data-journey-start="${j.id}">Iniciar jornada</button>` : ""}
-        ${status === "active" ? `<button class="btn primary btn-xs" type="button" data-journey-open="${j.id}">Continuar</button>` : ""}
+        ${status === "planned" ? `<button class="btn primary btn-xs" type="button" data-journey-start="${j.id}">Iniciar</button>` : ""}
+        ${status === "active" ? `<button class="btn primary btn-xs" type="button" data-journey-open="${j.id}">Continuar jornada</button>` : ""}
         ${status === "completed" ? `<button class="btn ghost btn-xs" type="button" data-journey-open="${j.id}">Ver resumen</button>` : ""}
         ${status === "draft" || status === "planned" ? `<button class="btn ghost btn-xs" type="button" data-journey-open="${j.id}">Abrir</button>` : ""}
         ${status !== "completed" && status !== "cancelled" ? `<button class="btn ghost btn-xs" type="button" data-journey-cancel="${j.id}">Cancelar</button>` : ""}
+        ${status === "cancelled" ? `<button class="btn ghost btn-xs" type="button" data-journey-open="${j.id}">Ver detalles</button><button class="btn ghost btn-xs danger" type="button" data-journey-delete="${j.id}">Eliminar definitivamente</button>` : ""}
       </div>
     </div>`;
-  }).join("");
+  };
+  const groups = journeys.reduce((acc, item) => {
+    const status = normalizeJourneyStatus(item.status);
+    if (status === "active") acc.active.push(item);
+    else if (status === "completed") acc.completed.push(item);
+    else if (status === "cancelled") acc.cancelled.push(item);
+    else acc.planned.push(item);
+    return acc;
+  }, { active: [], planned: [], completed: [], cancelled: [] });
+  const active = groups.active[0] || null;
+  const secondaryActive = groups.active.slice(1);
+  const planned = [...secondaryActive, ...groups.planned];
+  const section = (title, items, body, extra = "") => `
+    <section class="journey-list-section ${extra}">
+      <div class="journey-list-section-head">
+        <h2>${title}</h2>
+        <span>${formatInteger(items.length)}</span>
+      </div>
+      ${body}
+    </section>`;
+  el.innerHTML = [
+    active ? section("Jornada activa", [active], renderJourneyCard(active, { featured: true }), "journey-section-active") : "",
+    section("Jornadas planificadas", planned, planned.length ? planned.map((j) => renderJourneyCard(j)).join("") : '<div class="empty-hint">Sin jornadas planificadas.</div>'),
+    `<details class="journey-list-section journey-collapsible" open>
+      <summary><span>Jornadas completadas</span><strong>${formatInteger(groups.completed.length)}</strong></summary>
+      <div class="journey-collapsible-body">${groups.completed.length ? groups.completed.map((j) => renderJourneyCard(j, { muted: true })).join("") : '<div class="empty-hint">Sin jornadas completadas.</div>'}</div>
+    </details>`,
+    `<details class="journey-list-section journey-collapsible journey-cancelled-group">
+      <summary><span>Jornadas canceladas</span><strong>${formatInteger(groups.cancelled.length)}</strong></summary>
+      <div class="journey-collapsible-body">${groups.cancelled.length ? groups.cancelled.map((j) => renderJourneyCard(j, { muted: true })).join("") : '<div class="empty-hint">Sin jornadas canceladas.</div>'}</div>
+    </details>`
+  ].join("");
   refreshIcons();
   lastCreatedJourneyId = null;
 };
@@ -12705,7 +12980,7 @@ const renderStopCard = (stop, idx, journeyStatus) => {
   const isPending = stop.status === "pending" || stop.status === "en_route";
   const statusLabel = STOP_STATUS_LABELS[stop.status] || stop.status || "Pendiente";
   const typeLabel = stop.commercialStatus === "overdue" ? "Recompra vencida" : stop.entityType === "client" ? "Cliente activo" : "Prospecto";
-  const dotClass = stop.commercialStatus === "overdue" ? "red" : stop.entityType === "client" ? "green" : "orange";
+  const dotClass = stop.commercialStatus === "overdue" ? "red" : stop.commercialStatus === "revisit" ? "purple" : stop.entityType === "client" ? "green" : "orange";
   return `
   <div class="stop-card ${isComplete ? "stop-complete" : isPending ? "stop-pending" : ""}" data-stop-id="${stop.id}">
     <div class="stop-number">${idx + 1}</div>
@@ -12740,8 +13015,11 @@ const openResultModal = (journeyId, stopId) => {
   if (name) name.textContent = stop?.businessName || "Sin nombre";
   const notesEl = document.getElementById("resultNotes");
   if (notesEl) notesEl.value = "";
+  const errorEl = document.getElementById("resultError");
+  if (errorEl) errorEl.textContent = "";
   const btns = modal.querySelectorAll("[data-result-value]");
   btns.forEach((b) => b.classList.remove("active"));
+  renderResultDynamicFields("");
   modal.hidden = false;
   document.body.classList.add("modal-open");
   refreshIcons();
@@ -12751,6 +13029,173 @@ const closeResultModal = () => {
   const modal = document.getElementById("journeyResultModal");
   if (modal) modal.hidden = true;
   document.body.classList.remove("modal-open");
+};
+
+const getSelectedJourneyResult = () => document.querySelector("#journeyResultModal [data-result-value].active")?.dataset.resultValue || "";
+
+const getReasonOptionsForResult = (result) => {
+  if (result === "unavailable") return ["Encargado ausente", "No pudo atender", "Horario inconveniente", "Otro"];
+  if (result === "visited_no_sale") return ["No interesado", "Necesita pensarlo", "Ya trabaja con otra marca", "Precio", "Volver otro dia", "Otro"];
+  if (result === "closed") return ["Local cerrado", "Volver en otro horario", "Otro"];
+  if (result === "rescheduled") return ["Solicito otra fecha", "No estaba listo", "Otro"];
+  return ["Motivo operativo", "Otro"];
+};
+
+const renderResultDynamicFields = (result) => {
+  const container = document.getElementById("resultDynamicFields");
+  const loadSaleBtn = document.querySelector("[data-result-load-sale]");
+  const confirmBtn = document.querySelector("[data-result-confirm]");
+  if (!container) return;
+  if (loadSaleBtn) loadSaleBtn.hidden = result !== "sale";
+  if (confirmBtn) confirmBtn.hidden = result === "sale";
+  if (!result) {
+    container.innerHTML = '<div class="journey-result-hint">Elegí un resultado para ver las acciones disponibles.</div>';
+    return;
+  }
+  if (result === "sale") {
+    container.innerHTML = `
+      <div class="journey-result-sale-box">
+        <strong>Venta realizada</strong>
+        <p>Usá el formulario central de Ventas. Al guardarla se vincula esta parada, se convierte el prospecto en cliente si corresponde y se limpia la revisita pendiente.</p>
+      </div>`;
+    return;
+  }
+  const showRevisit = REVISIT_REQUIRED_RESULTS.has(result) || REVISIT_OPTIONAL_RESULTS.has(result);
+  const required = result === "rescheduled";
+  const reasonOptions = getReasonOptionsForResult(result).map((label) => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`).join("");
+  container.innerHTML = `
+    <div class="journey-result-reason">
+      <label class="form-label" for="resultReason">Motivo</label>
+      <select class="form-input" id="resultReason">
+        <option value="">Seleccionar</option>
+        ${reasonOptions}
+      </select>
+    </div>
+    ${showRevisit ? `
+      <section class="journey-result-revisit">
+        <div class="journey-result-revisit-head">
+          <strong>Proxima visita</strong>
+          ${required ? '<span>Obligatoria</span>' : '<span>Opcional</span>'}
+        </div>
+        <div class="revisit-shortcuts">
+          <button type="button" data-revisit-days="1">Mañana</button>
+          <button type="button" data-revisit-days="3">En 3 dias</button>
+          <button type="button" data-revisit-days="7">En 7 dias</button>
+          <button type="button" data-revisit-days="15">En 15 dias</button>
+          <button type="button" data-revisit-days="30">En 30 dias</button>
+        </div>
+        <div class="journey-field-2col">
+          <label class="form-row">
+            <span class="form-label">Fecha</span>
+            <input class="form-input" id="resultNextVisitDate" type="date" ${required ? "required" : ""} />
+          </label>
+          <label class="form-row">
+            <span class="form-label">Hora opcional</span>
+            <input class="form-input" id="resultNextVisitTime" type="time" />
+          </label>
+        </div>
+        <label class="form-row">
+          <span class="form-label">Prioridad</span>
+          <select class="form-input" id="resultRevisitPriority">
+            <option value="low">Baja</option>
+            <option value="medium" selected>Media</option>
+            <option value="high">Alta</option>
+          </select>
+        </label>
+        <div class="journey-result-next-preview" id="resultNextVisitPreview">Sin proxima visita programada.</div>
+      </section>` : ""}
+  `;
+  refreshIcons();
+};
+
+const updateResultNextVisitPreview = () => {
+  const preview = document.getElementById("resultNextVisitPreview");
+  if (!preview) return;
+  const date = normalizeDateValue(document.getElementById("resultNextVisitDate")?.value || "");
+  const time = document.getElementById("resultNextVisitTime")?.value || "";
+  const priority = document.getElementById("resultRevisitPriority")?.value || "medium";
+  preview.textContent = date
+    ? `Proxima visita: ${formatDate(date)}${time ? " a las " + time : ""} · Prioridad ${REVISIT_PRIORITY_LABELS[priority] || "Media"}`
+    : "Sin proxima visita programada.";
+};
+
+const collectResultPayload = () => {
+  const result = getSelectedJourneyResult();
+  const notes = String(document.getElementById("resultNotes")?.value || "").trim();
+  const nextVisitDate = normalizeDateValue(document.getElementById("resultNextVisitDate")?.value || "");
+  return {
+    result,
+    notes,
+    nextVisitDate,
+    nextVisitTime: document.getElementById("resultNextVisitTime")?.value || "",
+    revisitPriority: document.getElementById("resultRevisitPriority")?.value || "medium",
+    revisitReason: document.getElementById("resultReason")?.value || "",
+    reasonDetail: document.getElementById("resultReason")?.value || ""
+  };
+};
+
+const ensureSaleClientOption = (clientId, label) => {
+  if (!saleForm?.client || !clientId) return;
+  let option = Array.from(saleForm.client.options).find((item) => item.value === clientId);
+  if (!option) {
+    option = document.createElement("option");
+    option.value = clientId;
+    option.textContent = label || "Cliente";
+    saleForm.client.appendChild(option);
+  }
+  saleForm.client.value = clientId;
+};
+
+const openSaleFromJourneyStop = async (journeyId, stopId) => {
+  const stop = getStopById(stopId);
+  if (!stop) throw new Error("Parada no encontrada");
+  let clientId = "";
+  let prospectId = "";
+  let clientLabel = stop.businessName || "Cliente";
+  if (stop.entityType === "client") {
+    clientId = stop.entityId || "";
+    const client = state.clients.find((item) => item.id === clientId);
+    clientLabel = client?.name || clientLabel;
+  } else if (stop.entityType === "prospect") {
+    const prospect = getProspectByStop(stop);
+    if (!prospect) throw new Error("Prospecto no encontrado");
+    prospectId = prospect.id;
+    clientId = await convertProspectToClient(prospect);
+    clientLabel = prospect.name || clientLabel;
+  }
+  pendingJourneySaleContext = {
+    journeyId,
+    stopId,
+    prospectId,
+    clientId,
+    businessName: clientLabel
+  };
+  saleForm.dataset.journeyId = journeyId;
+  saleForm.dataset.journeyStopId = stopId;
+  saleForm.dataset.journeyProspectId = prospectId;
+  ensureSaleClientOption(clientId, clientLabel);
+  if (saleForm.date) saleForm.date.value = getLocalDateValue();
+  if (saleForm.observation) {
+    saleForm.observation.value = `Venta cargada desde jornada: ${stop.businessName || ""}`.trim();
+    updateSaleObservationVisibility(true);
+  }
+  setActiveAppSection("sales");
+  openSalesForm();
+};
+
+const finalizeJourneySaleAfterSave = async (saleId) => {
+  const context = pendingJourneySaleContext;
+  if (!context?.journeyId || !context?.stopId || !saleId) return;
+  await updateStopResult(context.journeyId, context.stopId, "sale", "Venta registrada desde la jornada.", {
+    saleId,
+    clientId: context.clientId || "",
+    prospectId: context.prospectId || ""
+  });
+  if (context.prospectId) await clearProspectRevisit(context.prospectId);
+  pendingJourneySaleContext = null;
+  delete saleForm.dataset.journeyId;
+  delete saleForm.dataset.journeyStopId;
+  delete saleForm.dataset.journeyProspectId;
 };
 
 // ----- Nuevo modal de jornada -----
@@ -12852,7 +13297,7 @@ const renderJourneyStopList = () => {
   el.innerHTML = order.map((idx, pos) => {
     const e = entities[idx];
     if (!e) return "";
-    const dotClass = e.status === "overdue" ? "red" : e.entityType === "client" ? "green" : "orange";
+    const dotClass = e.status === "overdue" ? "red" : e.status === "revisit" ? "purple" : e.entityType === "client" ? "green" : "orange";
     return `
     <div class="journey-stop-row" data-stop-pos="${pos}" data-stop-idx="${idx}">
       <span class="stop-drag-handle" title="Arrastrar">⠿</span>
@@ -13232,7 +13677,7 @@ const drawJourneyPreview = () => {
   }
 
   orderedStops.forEach((e, idx) => {
-    const colorClass = e.status === "overdue" ? "red" : e.entityType === "client" ? "green" : "orange";
+    const colorClass = e.status === "overdue" ? "red" : e.status === "revisit" ? "purple" : e.entityType === "client" ? "green" : "orange";
     const el = document.createElement("div");
     el.className = `preview-marker preview-marker-${colorClass}`;
     el.textContent = String(idx + 1);
@@ -13432,7 +13877,7 @@ const renderJourneySelectionDrawer = () => {
   const entities = journeyCreatorState.selectedEntities;
   if (!entities.length) { el.innerHTML = '<div class="empty-hint">Sin negocios seleccionados.</div>'; return; }
   el.innerHTML = entities.map((e, i) => {
-    const dotClass = e.status === "overdue" ? "red" : e.entityType === "client" ? "green" : "orange";
+    const dotClass = e.status === "overdue" ? "red" : e.status === "revisit" ? "purple" : e.entityType === "client" ? "green" : "orange";
     return `
     <div class="journey-select-item">
       <i class="map-dot map-dot-${dotClass}"></i>
@@ -13463,6 +13908,7 @@ const setupJourneysModule = () => {
     const openBtn = event.target.closest("[data-journey-open]");
     const startBtn = event.target.closest("[data-journey-start]");
     const cancelBtn = event.target.closest("[data-journey-cancel]");
+    const deleteBtn = event.target.closest("[data-journey-delete]");
     if (openBtn) {
       activeJourneyId = openBtn.dataset.journeyOpen;
       document.getElementById("journeyActiveSection")?.removeAttribute("hidden");
@@ -13480,6 +13926,9 @@ const setupJourneysModule = () => {
       if (!window.confirm("Cancelar esta jornada?")) return;
       await deleteJourney(cancelBtn.dataset.journeyCancel);
     }
+    if (deleteBtn) {
+      await permanentlyDeleteJourney(deleteBtn.dataset.journeyDelete);
+    }
   });
 
   // Result modal actions
@@ -13490,24 +13939,68 @@ const setupJourneysModule = () => {
     const resultBtn = event.target.closest("[data-result-value]");
     const closeBtn = event.target.closest("[data-result-close]");
     const confirmBtn = event.target.closest("[data-result-confirm]");
+    const loadSaleBtn = event.target.closest("[data-result-load-sale]");
+    const shortcutBtn = event.target.closest("[data-revisit-days]");
     if (closeBtn) closeResultModal();
     if (resultBtn) {
       modal.querySelectorAll("[data-result-value]").forEach((b) => b.classList.toggle("active", b === resultBtn));
+      renderResultDynamicFields(resultBtn.dataset.resultValue || "");
+      updateResultNextVisitPreview();
+    }
+    if (shortcutBtn) {
+      const dateEl = document.getElementById("resultNextVisitDate");
+      if (dateEl) dateEl.value = addDaysToLocalDateValue(getLocalDateValue(), Number(shortcutBtn.dataset.revisitDays || 0));
+      updateResultNextVisitPreview();
+    }
+    if (loadSaleBtn) {
+      try {
+        await openSaleFromJourneyStop(journeyId, stopId);
+        closeResultModal();
+      } catch (error) {
+        console.error("No se pudo preparar la venta desde jornada:", error);
+        const errorEl = document.getElementById("resultError");
+        if (errorEl) errorEl.textContent = "No se pudo abrir la venta para esta parada. Reintenta.";
+      }
     }
     if (confirmBtn) {
-      const selected = modal.querySelector("[data-result-value].active");
-      if (!selected) { window.alert("Elige un resultado."); return; }
-      const result = selected.dataset.resultValue;
-      const notes = document.getElementById("resultNotes")?.value.trim() || "";
+      if (journeyResultState.saving) return;
+      const payload = collectResultPayload();
+      if (!payload.result) { window.alert("Elige un resultado."); return; }
+      if (payload.result === "sale") { window.alert("Para una venta realizada, usa Cargar venta y guarda la venta real."); return; }
+      if (payload.result === "rescheduled" && !payload.nextVisitDate) {
+        const errorEl = document.getElementById("resultError");
+        if (errorEl) errorEl.textContent = "Para reprogramar, elegi una fecha de proxima visita.";
+        return;
+      }
+      journeyResultState.saving = true;
+      const previousText = confirmBtn.textContent;
       confirmBtn.disabled = true;
+      confirmBtn.textContent = "Guardando...";
+      const errorEl = document.getElementById("resultError");
+      if (errorEl) errorEl.textContent = "";
       try {
-        await updateStopResult(journeyId, stopId, result, notes);
+        await saveJourneyVisitResult(journeyId, stopId, payload);
         closeResultModal();
         await renderActiveJourney(journeyId);
       } catch (e) {
         console.error("Error registrando resultado:", e);
-        window.alert("Error al registrar. Intenta de nuevo.");
-      } finally { confirmBtn.disabled = false; }
+        if (errorEl) errorEl.textContent = "Error al guardar. Revisa los datos y reintenta.";
+      } finally {
+        journeyResultState.saving = false;
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = previousText;
+      }
+    }
+  });
+
+  document.getElementById("journeyResultModal")?.addEventListener("input", (event) => {
+    if (event.target.closest("#resultNextVisitDate,#resultNextVisitTime,#resultRevisitPriority")) {
+      updateResultNextVisitPreview();
+    }
+  });
+  document.getElementById("journeyResultModal")?.addEventListener("change", (event) => {
+    if (event.target.closest("#resultNextVisitDate,#resultNextVisitTime,#resultRevisitPriority")) {
+      updateResultNextVisitPreview();
     }
   });
 
