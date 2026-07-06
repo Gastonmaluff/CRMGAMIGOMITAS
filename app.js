@@ -507,6 +507,7 @@ let journeysError = null;
 let lastCreatedJourneyId = null;
 const journeyResultState = { saving: false };
 let pendingJourneySaleContext = null;
+const saleJourneyPortalState = { parent: null, nextSibling: null };
 const repurchaseNotesOpenState = new Set();
 const repurchaseHistoryOpenState = new Set();
 const clientHistoryOpenState = new Set();
@@ -13202,13 +13203,19 @@ const getProspectSaleOptionValue = (prospectId) => `__prospect__:${prospectId}`;
 
 const setJourneySaleModalOpen = (open) => {
   const card = saleForm?.closest(".desktop-sales-card");
+  if (!card) return;
   document.body.classList.toggle("sale-journey-modal-open", Boolean(open));
   document.body.classList.toggle("modal-open", Boolean(open));
   if (dashboardSection) dashboardSection.dataset.saleJourneyModal = open ? "true" : "false";
-  card?.classList.toggle("sale-journey-modal-card", Boolean(open));
+  if (open && card.parentElement !== document.body) {
+    saleJourneyPortalState.parent = card.parentElement;
+    saleJourneyPortalState.nextSibling = card.nextSibling;
+    document.body.appendChild(card);
+  }
+  card.classList.toggle("sale-journey-modal-card", Boolean(open));
   if (open) {
-    card?.setAttribute("role", "dialog");
-    card?.setAttribute("aria-modal", "true");
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-modal", "true");
     if (card && !card.querySelector("[data-close-journey-sale-modal]")) {
       const closeBtn = document.createElement("button");
       closeBtn.type = "button";
@@ -13220,9 +13227,14 @@ const setJourneySaleModalOpen = (open) => {
       refreshIcons();
     }
   } else {
-    card?.removeAttribute("role");
-    card?.removeAttribute("aria-modal");
-    card?.querySelector("[data-close-journey-sale-modal]")?.remove();
+    card.removeAttribute("role");
+    card.removeAttribute("aria-modal");
+    card.querySelector("[data-close-journey-sale-modal]")?.remove();
+    if (saleJourneyPortalState.parent) {
+      saleJourneyPortalState.parent.insertBefore(card, saleJourneyPortalState.nextSibling);
+      saleJourneyPortalState.parent = null;
+      saleJourneyPortalState.nextSibling = null;
+    }
   }
 };
 

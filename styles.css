@@ -438,6 +438,22 @@ body {
   display: none;
 }
 
+body.sale-journey-modal-open .dashboard[data-sale-journey-modal="true"] .dashboard-panels-viewport {
+  display: block !important;
+  position: static;
+  overflow: visible;
+  height: auto !important;
+}
+
+body.sale-journey-modal-open .dashboard[data-sale-journey-modal="true"] .dashboard-panels-track {
+  display: block;
+  transform: none !important;
+}
+
+body.sale-journey-modal-open .dashboard[data-sale-journey-modal="true"] #sales.tab-panel {
+  display: block !important;
+}
+
 .map-topbar {
   display: flex;
   align-items: center;
