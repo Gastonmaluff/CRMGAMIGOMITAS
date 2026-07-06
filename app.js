@@ -2,7 +2,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebas
 import {
   getAuth,
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   onAuthStateChanged,
   signOut
@@ -27,6 +26,10 @@ import {
   where,
   orderBy
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+import {
+  getFunctions,
+  httpsCallable
+} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-functions.js";
 import {
   buildDuplicateMatches,
   formatDuplicateDistance,
@@ -58,6 +61,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const functions = getFunctions(app, "us-central1");
 
 const authSection = document.getElementById("authSection");
 const dashboardSection = document.getElementById("dashboardSection");
@@ -95,10 +99,53 @@ const APP_SECTION_CONFIG = {
   "raw-materials": { tab: "production", collapses: ["rawMaterialSection", "recipeSection"], label: "Materias primas" },
   stock: { tab: "production", collapses: ["finishedStockSection", "stockSummarySection", "stockSection"], label: "Stock" },
   reports: { tab: "commercial-history", collapses: [], label: "Reportes" },
-  settings: { tab: "finance", collapses: ["salesGoalSection", "coverageSection", "financeMovementSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection"], label: "Configuracion" }
+  settings: { tab: "finance", collapses: ["userManagementSection", "salesGoalSection", "coverageSection", "financeMovementSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection", "qrManagerSection"], label: "Configuracion" }
+};
+const ROLE_LABELS = {
+  admin: "Administrador",
+  sales: "Ventas"
+};
+const ROLE_SECTIONS = {
+  admin: new Set(Object.keys(APP_SECTION_CONFIG)),
+  sales: new Set(["sales"])
+};
+const ROLE_COLLAPSES = {
+  admin: null,
+  sales: new Set(["salesFormSection", "salesHistorySection"])
+};
+const ROLE_COLLECTIONS = {
+  admin: [
+    ["raw_materials", "rawMaterials"],
+    ["raw_purchases", "purchases"],
+    ["recipes", "recipes"],
+    ["batches", "batches"],
+    ["products", "products"],
+    ["clients", "clients"],
+    ["prospects", "prospects"],
+    ["sales", "sales"],
+    ["sales_goals", "salesGoals"],
+    ["financial_expenses", "financialExpenses"],
+    ["financial_initial_settings", "financialInitialSettings"],
+    ["financial_manual_adjustments", "financialManualAdjustments"],
+    ["finished_stock_adjustments", "finishedStockAdjustments"],
+    ["raw_material_adjustments", "rawMaterialAdjustments"],
+    ["businessTypes", "businessTypes"],
+    ["prospect_import_sessions", "prospectImportSessions"],
+    ["qrCodes", "qrCodes"],
+    ["users", "users"]
+  ],
+  sales: [
+    ["recipes", "recipes"],
+    ["batches", "batches"],
+    ["products", "products"],
+    ["clients", "clients"],
+    ["sales", "sales"],
+    ["finished_stock_adjustments", "finishedStockAdjustments"]
+  ]
 };
 let activeAppSection = "dashboard";
 let appLoaderHidden = false;
+let currentUserProfile = null;
 
 const hideAppLoader = () => {
   if (!appLoader || appLoaderHidden) return;
@@ -317,6 +364,10 @@ const qrCategoryFilter = document.getElementById("qrCategoryFilter");
 const qrTableBody = document.getElementById("qrTableBody");
 const qrCardList = document.getElementById("qrCardList");
 const qrHistoryPanel = document.getElementById("qrHistoryPanel");
+const userManagementSection = document.getElementById("userManagementSection");
+const userCreateForm = document.getElementById("userCreateForm");
+const userManagementNotice = document.getElementById("userManagementNotice");
+const userList = document.getElementById("userList");
 const historyFilters = document.getElementById("historyFilters");
 const historyCustomerSearch = document.getElementById("historyCustomerSearch");
 const historyCustomerResults = document.getElementById("historyCustomerResults");
@@ -392,7 +443,15 @@ const state = {
   rawMaterialAdjustments: [],
   businessTypes: [],
   prospectImportSessions: [],
-  qrCodes: []
+  qrCodes: [],
+  users: []
+};
+
+const clearStateCollections = (allowedKeys = []) => {
+  const allowed = new Set(allowedKeys);
+  Object.keys(state).forEach((key) => {
+    if (!allowed.has(key)) state[key] = [];
+  });
 };
 
 let unsubscribers = [];
@@ -714,12 +773,54 @@ const showDashboard = (user) => {
   authSection.style.display = "none";
   dashboardSection.style.display = "block";
   userArea.style.display = "flex";
-  userEmail.textContent = user.email || "";
+  userEmail.textContent = currentUserProfile
+    ? `${currentUserProfile.displayName || currentUserProfile.username || user.email || "Usuario"} - ${ROLE_LABELS[currentUserProfile.role] || currentUserProfile.role}`
+    : (user.email || "");
   appShell?.classList.remove("auth-mode");
   if (sidebarToggle) sidebarToggle.style.display = "";
   requestAnimationFrame(() => {
     refreshCollapseHeights();
   });
+};
+
+const normalizeLoginIdentifier = (value) => {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw.includes("@")) return raw;
+  return `${raw.replace(/[^a-z0-9._-]/g, "")}@auth.gamigomitas.local`;
+};
+
+const getCurrentRole = () => currentUserProfile?.role || "";
+const isAdminRole = () => getCurrentRole() === "admin";
+const isSalesRole = () => getCurrentRole() === "sales";
+const canAccessSection = (section) => {
+  const allowed = ROLE_SECTIONS[getCurrentRole()];
+  return Boolean(allowed?.has(section));
+};
+const getDefaultSectionForRole = () => (isSalesRole() ? "sales" : "dashboard");
+const canUseCollapse = (collapseId) => {
+  const allowed = ROLE_COLLAPSES[getCurrentRole()];
+  return !allowed || allowed.has(collapseId);
+};
+
+const getCallableErrorMessage = (error, fallback = "No se pudo completar la operacion.") => {
+  if (error?.message) return error.message;
+  return fallback;
+};
+
+const loadCurrentUserProfile = async (user) => {
+  const profileRef = doc(db, "users", user.uid);
+  const profileSnap = await getDoc(profileRef);
+  if (profileSnap.exists()) {
+    const profile = { uid: user.uid, ...profileSnap.data() };
+    if (profile.active !== true) throw new Error("Tu usuario esta inactivo.");
+    return profile;
+  }
+  const bootstrapCurrentUser = httpsCallable(functions, "bootstrapCurrentUser");
+  const result = await bootstrapCurrentUser();
+  const profile = result.data || {};
+  if (profile.active !== true) throw new Error("Tu usuario esta inactivo.");
+  return profile;
 };
 
 const formatNumber = (value) => {
@@ -1250,7 +1351,7 @@ const setAuthBusy = (busy) => {
     loginSubmitBtn.disabled = busy;
     loginSubmitBtn.textContent = busy ? "Ingresando..." : loginSubmitBtn.dataset.defaultText;
   }
-  if (registerBtn) registerBtn.disabled = busy;
+  if (registerBtn) registerBtn.disabled = true;
 };
 
 const getLoginCredentials = () => {
@@ -2078,6 +2179,38 @@ const renderQrManager = () => {
   requestAnimationFrame(renderQrMiniCanvases);
 };
 
+const renderUserManagement = () => {
+  if (!userManagementSection || !userList) return;
+  if (!isAdminRole()) {
+    userList.innerHTML = "";
+    return;
+  }
+  const users = [...state.users].sort((a, b) => String(a.displayName || a.username || "").localeCompare(String(b.displayName || b.username || "")));
+  if (!users.length) {
+    userList.innerHTML = '<div class="list-item muted">Todavia no hay usuarios cargados.</div>';
+    return;
+  }
+  userList.innerHTML = users.map((item) => `
+    <div class="list-item">
+      <strong>${escapeHtml(item.displayName || item.username || "Usuario")}</strong>
+      <div>Usuario: ${escapeHtml(item.username || "-")} | Rol: ${escapeHtml(ROLE_LABELS[item.role] || item.role || "-")}</div>
+      <div class="muted">${escapeHtml(item.authEmail || "")}</div>
+      <div><span class="status-tag ${item.active ? "status-ok" : "status-critical"}">${item.active ? "Activo" : "Inactivo"}</span></div>
+      <div class="list-actions">
+        <button class="btn ghost" type="button" data-user-toggle-active="${escapeHtml(item.id)}">${item.active ? "Desactivar" : "Activar"}</button>
+        <button class="btn ghost" type="button" data-user-set-role="${escapeHtml(item.id)}" data-role="${item.role === "admin" ? "sales" : "admin"}">Pasar a ${item.role === "admin" ? "Ventas" : "Admin"}</button>
+      </div>
+    </div>
+  `).join("");
+};
+
+const setUserManagementNotice = (message, type = "error") => {
+  if (!userManagementNotice) return;
+  userManagementNotice.classList.remove("info", "success");
+  if (type === "info" || type === "success") userManagementNotice.classList.add(type);
+  userManagementNotice.textContent = message || "";
+};
+
 const renderQrMiniCanvases = () => {
   document.querySelectorAll(".qr-mini-canvas[data-qr-url]").forEach((canvas) => {
     if (canvas.dataset.renderedFor === canvas.dataset.qrUrl) return;
@@ -2365,6 +2498,60 @@ const setupQrManager = () => {
     }
   });
   void renderQrPreview();
+};
+
+const setupUserManagement = () => {
+  if (!userCreateForm) return;
+  userCreateForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!isAdminRole()) return;
+    const submitBtn = userCreateForm.querySelector('button[type="submit"]');
+    const formData = new FormData(userCreateForm);
+    const payload = {
+      displayName: String(formData.get("displayName") || "").trim(),
+      username: String(formData.get("username") || "").trim(),
+      password: String(formData.get("password") || ""),
+      role: String(formData.get("role") || "sales"),
+      active: formData.get("active") === "on"
+    };
+    try {
+      if (submitBtn) submitBtn.disabled = true;
+      setUserManagementNotice("Creando usuario...", "info");
+      const createAppUser = httpsCallable(functions, "createAppUser");
+      await createAppUser(payload);
+      userCreateForm.reset();
+      const activeInput = userCreateForm.elements.namedItem("active");
+      if (activeInput) activeInput.checked = true;
+      setUserManagementNotice("Usuario creado correctamente.", "success");
+    } catch (error) {
+      console.error("[users] create error", error);
+      setUserManagementNotice(getCallableErrorMessage(error, "No se pudo crear el usuario."), "error");
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
+    }
+  });
+
+  userList?.addEventListener("click", async (event) => {
+    if (!isAdminRole()) return;
+    const activeBtn = event.target.closest("[data-user-toggle-active]");
+    const roleBtn = event.target.closest("[data-user-set-role]");
+    if (!activeBtn && !roleBtn) return;
+    const uid = activeBtn?.dataset.userToggleActive || roleBtn?.dataset.userSetRole || "";
+    const user = state.users.find((item) => item.id === uid);
+    if (!user) return;
+    const patch = { uid };
+    if (activeBtn) patch.active = !user.active;
+    if (roleBtn) patch.role = roleBtn.dataset.role;
+    try {
+      setUserManagementNotice("Actualizando usuario...", "info");
+      const updateAppUser = httpsCallable(functions, "updateAppUser");
+      await updateAppUser(patch);
+      setUserManagementNotice("Usuario actualizado correctamente.", "success");
+    } catch (error) {
+      console.error("[users] update error", error);
+      setUserManagementNotice(getCallableErrorMessage(error, "No se pudo actualizar el usuario."), "error");
+    }
+  });
 };
 
 const getPublicQrSlug = () => {
@@ -5898,6 +6085,8 @@ const listenCollection = (collectionName, key) => {
       });
     syncState(key, items);
     renderAll();
+  }, (error) => {
+    console.error(`[firestore] listen ${collectionName} error`, error);
   });
   unsubscribers.push(unsubscribe);
 };
@@ -6846,6 +7035,12 @@ const renderSalesHistory = () => {
       ? `Cada ${formatInteger(item.repurchaseFrequencyDays || 0)} dias`
       : "Sin recompra";
     const nextRepurchase = item.repurchaseNextContactDate ? formatDate(item.repurchaseNextContactDate) : "-";
+    const adminActions = isAdminRole()
+      ? `
+            <button class="icon-btn" type="button" data-edit-sale="${item.id}" title="Editar"><i data-lucide="pencil"></i></button>
+            <button class="icon-btn icon-btn-danger" type="button" data-delete-sale="${item.id}" title="Eliminar"><i data-lucide="trash-2"></i></button>
+        `
+      : "";
     return `
       <div class="sale-history-item">
         <div class="sale-history-main">
@@ -6868,9 +7063,8 @@ const renderSalesHistory = () => {
           </div>
           <div class="sale-history-actions">
             <button class="icon-btn" type="button" data-share-sale="${item.id}" title="Compartir"><i data-lucide="share-2"></i></button>
-            <button class="icon-btn" type="button" data-edit-sale="${item.id}" title="Editar"><i data-lucide="pencil"></i></button>
             <button class="icon-btn" type="button" data-toggle-sale-detail="${item.id}" title="Ver detalle"><i data-lucide="${detailOpen ? "chevron-up" : "chevron-down"}"></i></button>
-            <button class="icon-btn icon-btn-danger" type="button" data-delete-sale="${item.id}" title="Eliminar"><i data-lucide="trash-2"></i></button>
+            ${adminActions}
           </div>
         </div>
         <div class="sale-history-detail ${detailOpen ? "open" : ""}">
@@ -7079,6 +7273,7 @@ const renderAll = () => {
   renderFinanceActiveSummary();
   renderFinanceInitialHistory();
   renderQrManager();
+  renderUserManagement();
 
   requestAnimationFrame(refreshCollapseHeights);
   refreshIcons();
@@ -7164,11 +7359,31 @@ const classifyAppSectionCards = () => {
     financeExpenseSection: "settings",
     financeReceivablesSection: "settings",
     financeCategorySection: "settings",
+    userManagementSection: "settings",
     qrManagerSection: "settings"
   };
   Object.entries(sectionByCollapse).forEach(([collapseId, section]) => {
     const card = document.getElementById(collapseId)?.closest(".card");
     if (card) card.dataset.appSection = section;
+  });
+};
+
+const applyRoleUi = () => {
+  sidebarLinks.forEach((link) => {
+    const section = link.dataset.appSection || "";
+    link.hidden = !canAccessSection(section);
+  });
+  tabs.forEach((tab) => {
+    const canReachTab = Object.entries(APP_SECTION_CONFIG).some(([section, config]) => (
+      config.tab === tab.dataset.tab && canAccessSection(section)
+    ));
+    tab.hidden = !canReachTab;
+  });
+  document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
+    const body = document.getElementById(toggle.dataset.collapse);
+    const card = body?.closest(".card");
+    const allowed = canUseCollapse(toggle.dataset.collapse);
+    if (card) card.hidden = !allowed;
   });
 };
 
@@ -7186,7 +7401,7 @@ const applyAppSectionCardVisibility = (section) => {
 
 const syncAppSectionCollapses = (section) => {
   const config = APP_SECTION_CONFIG[section] || APP_SECTION_CONFIG.dashboard;
-  const allowed = new Set(config.collapses || []);
+  const allowed = new Set((config.collapses || []).filter(canUseCollapse));
   document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
     const body = document.getElementById(toggle.dataset.collapse);
     if (!body) return;
@@ -7201,7 +7416,8 @@ const syncAppSectionCollapses = (section) => {
 };
 
 const setActiveAppSection = (section) => {
-  const safeSection = APP_SECTION_CONFIG[section] ? section : "dashboard";
+  const requestedSection = APP_SECTION_CONFIG[section] ? section : getDefaultSectionForRole();
+  const safeSection = canAccessSection(requestedSection) ? requestedSection : getDefaultSectionForRole();
   activeAppSection = safeSection;
   const config = APP_SECTION_CONFIG[safeSection];
   if (dashboardSection) dashboardSection.dataset.appSection = safeSection;
@@ -7426,14 +7642,15 @@ const setDefaultDates = () => {
 const handleLoginSubmit = async (event) => {
   event?.preventDefault();
   if (!loginForm) return;
-  const { email, password } = getLoginCredentials();
-  if (!email || !password) {
-    setAuthFeedback("Completa correo y contrasena.");
+  const { email: loginIdentifier, password } = getLoginCredentials();
+  const email = normalizeLoginIdentifier(loginIdentifier);
+  if (!loginIdentifier || !password) {
+    setAuthFeedback("Completa usuario y contrasena.");
     return;
   }
   const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   if (!looksLikeEmail) {
-    setAuthFeedback("Ingresa un correo valido.");
+    setAuthFeedback("Ingresa un usuario o correo valido.");
     return;
   }
   try {
@@ -7459,24 +7676,7 @@ loginSubmitBtn?.addEventListener("click", () => {
 });
 
 registerBtn?.addEventListener("click", async () => {
-  if (!loginForm) return;
-  const { email, password } = getLoginCredentials();
-  if (!email || !password) {
-    setAuthFeedback("Completa correo y contrasena para crear la cuenta.");
-    return;
-  }
-  try {
-    console.log("[auth] create account", email);
-    setAuthBusy(true);
-    setAuthFeedback("Creando cuenta...", "info");
-    await createUserWithEmailAndPassword(auth, email, password);
-    setAuthFeedback("Cuenta creada. Cargando...", "success");
-  } catch (error) {
-    console.error("[auth] register error", error);
-    setAuthFeedback(getAuthMessage(error), "error");
-  } finally {
-    setAuthBusy(false);
-  }
+  setAuthFeedback("Las cuentas nuevas se crean desde Configuracion > Usuarios.", "info");
 });
 
 forgotPasswordBtn?.addEventListener("click", async () => {
@@ -9068,10 +9268,12 @@ saleList.addEventListener("click", async (event) => {
     if (item) await shareSaleAsPdf(item);
   }
   if (editId) {
+    if (!isAdminRole()) return;
     const item = state.sales.find((m) => m.id === editId);
     if (item) startEditSale(item);
   }
   if (deleteId && confirmDelete("venta")) {
+    if (!isAdminRole()) return;
     await deleteDoc(doc(db, "sales", deleteId));
   }
 });
@@ -10087,7 +10289,7 @@ const INDEPENDENT_COLLAPSE_IDS = new Set([
 document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
   const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
-  if (["salesGoalSection", "productsSection", "clientFormSection", "clientListSection", "prospectsSection", "salesFormSection", "salesHistorySection", "repurchaseSection", "coverageSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection", "qrManagerSection"].includes(toggle.dataset.collapse)) {
+  if (["salesGoalSection", "productsSection", "clientFormSection", "clientListSection", "prospectsSection", "salesFormSection", "salesHistorySection", "repurchaseSection", "coverageSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection", "userManagementSection", "qrManagerSection"].includes(toggle.dataset.collapse)) {
     closeSection(toggle, body);
   } else {
     openSection(toggle, body);
@@ -10105,6 +10307,7 @@ document.addEventListener("click", (event) => {
   if (!toggle) return;
   const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
+  if (!canUseCollapse(toggle.dataset.collapse)) return;
   if (!INDEPENDENT_COLLAPSE_IDS.has(toggle.dataset.collapse)) {
     document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((otherToggle) => {
       const otherBody = document.getElementById(otherToggle.dataset.collapse);
@@ -14394,38 +14597,42 @@ if (await handlePublicQrRoute()) {
   setupRubroModal();
   setupJourneysModule();
   setupQrManager();
+  setupUserManagement();
 
-  onAuthStateChanged(auth, (user) => {
+  onAuthStateChanged(auth, async (user) => {
     console.log("[auth] state changed", user ? user.uid : "signed-out");
     unsubscribers.forEach((unsubscribe) => unsubscribe());
     unsubscribers = [];
     stopJourneysListener();
+    currentUserProfile = null;
     if (!user) {
+      clearStateCollections([]);
       showAuth();
       hideAppLoader();
       return;
     }
-    setAuthFeedback("");
-    showDashboard(user);
-    hideAppLoader();
-    startJourneysListener();
-    listenCollection("raw_materials", "rawMaterials");
-    listenCollection("raw_purchases", "purchases");
-    listenCollection("recipes", "recipes");
-    listenCollection("batches", "batches");
-    listenCollection("products", "products");
-    listenCollection("clients", "clients");
-    listenCollection("prospects", "prospects");
-    listenCollection("sales", "sales");
-    listenCollection("sales_goals", "salesGoals");
-    listenCollection("financial_expenses", "financialExpenses");
-    listenCollection("financial_initial_settings", "financialInitialSettings");
-    listenCollection("financial_manual_adjustments", "financialManualAdjustments");
-    listenCollection("finished_stock_adjustments", "finishedStockAdjustments");
-    listenCollection("raw_material_adjustments", "rawMaterialAdjustments");
-    listenCollection("businessTypes", "businessTypes");
-    listenCollection("prospect_import_sessions", "prospectImportSessions");
-    listenCollection("qrCodes", "qrCodes");
+    try {
+      setAuthFeedback("Cargando permisos...", "info");
+      currentUserProfile = await loadCurrentUserProfile(user);
+      setAuthFeedback("");
+      clearStateCollections((ROLE_COLLECTIONS[getCurrentRole()] || []).map(([, key]) => key));
+      applyRoleUi();
+      renderAll();
+      showDashboard(user);
+      hideAppLoader();
+      const defaultSection = canAccessSection(activeAppSection) ? activeAppSection : getDefaultSectionForRole();
+      setActiveAppSection(defaultSection);
+      if (isAdminRole()) startJourneysListener();
+      (ROLE_COLLECTIONS[getCurrentRole()] || []).forEach(([collectionName, key]) => {
+        listenCollection(collectionName, key);
+      });
+    } catch (error) {
+      console.error("[auth] profile error", error);
+      await signOut(auth).catch(() => {});
+      showAuth();
+      setAuthFeedback(getCallableErrorMessage(error, "No se pudo cargar tu perfil de usuario."), "error");
+      hideAppLoader();
+    }
   }, (error) => {
     console.error("[auth] observer error", error);
     setAuthFeedback(getAuthMessage(error), "error");

@@ -85,15 +85,15 @@
           <p class="muted">Accede con tu usuario y contrasena.</p>
           <form id="loginForm" class="form-grid" novalidate>
             <label>
-              Correo
-              <input type="email" name="email" required autocomplete="email" />
+              Usuario o correo
+              <input type="text" name="email" required autocomplete="username" />
             </label>
             <label>
               contrasena
               <input type="password" name="password" required autocomplete="current-password" />
             </label>
             <button class="btn primary" id="loginSubmitBtn" type="submit">Ingresar</button>
-            <button class="btn" type="button" id="registerBtn">Crear cuenta</button>
+            <button class="btn hidden" type="button" id="registerBtn">Crear cuenta</button>
             <button class="btn ghost auth-forgot" id="forgotPasswordBtn" type="button">Olvide mi contrasena</button>
           </form>
           <div class="error" id="authError" role="alert" aria-live="polite"></div>
@@ -2053,6 +2053,47 @@
               </h2>
               <div class="collapse-body" id="financeCategorySection">
                 <div class="list" id="financeCategorySummaryList"></div>
+              </div>
+            </div>
+
+            <div class="card finance-wide-card">
+              <h2 class="section-title">
+                <span class="section-title-text"><i data-lucide="users"></i><span class="section-title-label">Usuarios</span></span>
+                <button class="collapse-toggle" type="button" data-collapse="userManagementSection" aria-expanded="false"><span class="chevron">&gt;</span></button>
+              </h2>
+              <div class="collapse-body" id="userManagementSection">
+                <form id="userCreateForm" class="form-grid" novalidate>
+                  <div class="finance-form-heading">
+                    <strong>Crear usuario</strong>
+                    <span class="muted">El usuario podra ingresar con su nombre de usuario y contrasena.</span>
+                  </div>
+                  <label>
+                    Nombre
+                    <input name="displayName" type="text" maxlength="80" placeholder="Ej: Henry" required />
+                  </label>
+                  <label>
+                    Usuario
+                    <input name="username" type="text" maxlength="40" placeholder="henry" autocomplete="off" required />
+                  </label>
+                  <label>
+                    Contrasena inicial
+                    <input name="password" type="password" minlength="8" autocomplete="new-password" required />
+                  </label>
+                  <label>
+                    Rol
+                    <select name="role" required>
+                      <option value="sales">Ventas</option>
+                      <option value="admin">Administrador</option>
+                    </select>
+                  </label>
+                  <label class="qr-check">
+                    <input name="active" type="checkbox" checked />
+                    <span>Usuario activo</span>
+                  </label>
+                  <button class="btn primary" type="submit">Crear usuario</button>
+                  <div class="error" id="userManagementNotice" role="alert" aria-live="polite"></div>
+                </form>
+                <div class="list scroll" id="userList"></div>
               </div>
             </div>
 

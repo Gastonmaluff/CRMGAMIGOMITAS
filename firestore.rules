@@ -5,61 +5,170 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function profilePath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function hasProfile() {
+      return signedIn() && exists(profilePath());
+    }
+
+    function profile() {
+      return get(profilePath()).data;
+    }
+
+    function isActive() {
+      return hasProfile() && profile().active == true;
+    }
+
+    function isAdmin() {
+      return isActive() && profile().role == "admin";
+    }
+
+    function isSales() {
+      return isActive() && profile().role == "sales";
+    }
+
+    function isAdminOrSales() {
+      return isAdmin() || isSales();
+    }
+
     function validStatus(value) {
       return value in ["active", "inactive"];
     }
 
+    match /users/{uid} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /sales/{saleId} {
+      allow read: if isAdminOrSales();
+      allow create: if isAdminOrSales()
+        && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /clients/{clientId} {
+      allow read: if isAdminOrSales();
+      allow create: if isAdminOrSales()
+        && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /products/{productId} {
+      allow read: if isAdminOrSales();
+      allow write: if isAdmin();
+    }
+
+    match /recipes/{recipeId} {
+      allow read: if isAdminOrSales();
+      allow write: if isAdmin();
+    }
+
+    match /batches/{batchId} {
+      allow read: if isAdminOrSales();
+      allow write: if isAdmin();
+    }
+
+    match /finished_stock_adjustments/{adjustmentId} {
+      allow read: if isAdminOrSales();
+      allow write: if isAdmin();
+    }
+
     match /qrRedirects/{slug} {
       allow read: if true;
-      allow create: if signedIn()
+      allow create: if isAdmin()
         && !exists(/databases/$(database)/documents/qrRedirects/$(slug))
         && request.resource.data.keys().hasOnly(["qrId", "slug", "destinationUrl", "status", "archived", "updatedAt"])
         && request.resource.data.slug == slug
         && request.resource.data.destinationUrl is string
         && request.resource.data.archived is bool
         && validStatus(request.resource.data.status);
-      allow update: if signedIn()
+      allow update: if isAdmin()
         && request.resource.data.keys().hasOnly(["qrId", "slug", "destinationUrl", "status", "archived", "updatedAt"])
         && request.resource.data.slug == slug
         && request.resource.data.destinationUrl is string
         && request.resource.data.archived is bool
         && validStatus(request.resource.data.status);
-      allow delete: if signedIn();
+      allow delete: if isAdmin();
     }
 
     match /qrCodes/{qrId} {
-      allow read: if signedIn();
-      allow create: if signedIn()
+      allow read: if isAdmin();
+      allow create: if isAdmin()
         && request.resource.data.slug is string
         && request.resource.data.destinationUrl is string
         && validStatus(request.resource.data.status)
         && request.resource.data.scanCount == 0
         && request.resource.data.archived == false;
-      allow update: if signedIn()
-        || (
-          request.resource.data.diff(resource.data).changedKeys().hasOnly(["scanCount", "lastScannedAt"])
-          && request.resource.data.scanCount == resource.data.scanCount + 1
-          && request.resource.data.status == resource.data.status
-          && request.resource.data.slug == resource.data.slug
-        );
-      allow delete: if signedIn();
+      allow update, delete: if isAdmin();
 
       match /history/{historyId} {
-        allow read, create: if signedIn();
+        allow read, create, delete: if isAdmin();
         allow update: if false;
-        allow delete: if signedIn();
       }
 
       match /scans/{scanId} {
-        allow read: if signedIn();
-        allow create: if signedIn();
+        allow read, create, delete: if isAdmin();
         allow update: if false;
-        allow delete: if signedIn();
+      }
+    }
+
+    match /raw_materials/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /raw_purchases/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /raw_material_adjustments/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /sales_goals/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /financial_expenses/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /financial_initial_settings/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /financial_manual_adjustments/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /prospects/{prospectId} {
+      allow read, write: if isAdmin();
+
+      match /visitHistory/{historyId} {
+        allow read, write: if isAdmin();
+      }
+    }
+
+    match /businessTypes/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /prospect_import_sessions/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /visitJourneys/{journeyId} {
+      allow read, write: if isAdmin();
+
+      match /stops/{stopId} {
+        allow read, write: if isAdmin();
       }
     }
 
     match /{document=**} {
-      allow read, write: if signedIn();
+      allow read, write: if false;
     }
   }
 }
