@@ -7246,6 +7246,7 @@ const setupSidebarNavigation = () => {
   });
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeSidebar();
+    if (event.key === "Escape" && pendingJourneySaleContext) closeJourneySaleModal();
   });
   setActiveAppSection(activeAppSection);
 };
@@ -8119,7 +8120,32 @@ saleForm.addEventListener("submit", async (event) => {
     userId: user.uid,
     createdAt: serverTimestamp()
   };
-  const saleId = await saveDoc("sales", saleForm, payload);
+  let saleId = "";
+  if (pendingJourneySaleContext?.requiresProspectConversion && pendingJourneySaleContext.prospectId) {
+    const prospect = state.prospects.find((item) => item.id === pendingJourneySaleContext.prospectId);
+    if (!prospect) {
+      window.alert("No se pudo convertir el prospecto de esta parada. Reintenta.");
+      return;
+    }
+    const clientRef = doc(collection(db, "clients"));
+    const saleRef = doc(collection(db, "sales"));
+    const prospectRef = doc(db, "prospects", prospect.id);
+    const { clientPayload, prospectUpdate, normalizedPhone } = buildProspectConversionPayload(prospect, user, clientRef.id);
+    pendingJourneySaleContext.clientId = clientRef.id;
+    pendingJourneySaleContext.requiresProspectConversion = false;
+    ensureSaleClientOption(clientRef.id, prospect.name || pendingJourneySaleContext.businessName || "Cliente");
+    payload.clientId = clientRef.id;
+    payload.clientName = prospect.name || pendingJourneySaleContext.businessName || payload.clientName;
+    payload.clientPhone = normalizedPhone || payload.clientPhone;
+    const batch = writeBatch(db);
+    batch.set(clientRef, clientPayload);
+    batch.update(prospectRef, prospectUpdate);
+    batch.set(saleRef, payload);
+    await batch.commit();
+    saleId = saleRef.id;
+  } else {
+    saleId = await saveDoc("sales", saleForm, payload);
+  }
   if (pendingJourneySaleContext) {
     await finalizeJourneySaleAfterSave(saleId);
   }
@@ -8623,12 +8649,7 @@ const startEditSale = (item) => {
 
 const confirmDelete = (label) => window.confirm(`Eliminar ${label}?`);
 
-const convertProspectToClient = async (prospect) => {
-  const user = auth.currentUser;
-  if (!user || !prospect?.id) return "";
-  if (prospect.convertedClientId) return prospect.convertedClientId;
-  const clientRef = doc(collection(db, "clients"));
-  const prospectRef = doc(db, "prospects", prospect.id);
+const buildProspectConversionPayload = (prospect, user, clientId) => {
   const convertedAt = toDateInputValue(new Date());
   const originNote = [
     `Origen: prospecto "${prospect.name || "sin nombre"}"`,
@@ -8638,8 +8659,8 @@ const convertProspectToClient = async (prospect) => {
     prospect.observations ? `Observaciones: ${prospect.observations}` : ""
   ].filter(Boolean).join("\n");
   const normalizedPhone = normalizePhoneForStorage(prospect.phone) || normalizeProspectPhone(prospect.phone);
-  const batch = writeBatch(db);
-  batch.set(clientRef, {
+  return {
+    clientPayload: {
     name: formatClientName(prospect.name || "") || prospect.name || "Cliente sin nombre",
     ruc: "",
     phone: normalizedPhone || "",
@@ -8657,10 +8678,10 @@ const convertProspectToClient = async (prospect) => {
     },
     userId: user.uid,
     createdAt: serverTimestamp()
-  });
-  batch.update(prospectRef, {
+    },
+    prospectUpdate: {
     status: "convertido_cliente",
-    convertedClientId: clientRef.id,
+    convertedClientId: clientId,
     convertedAt,
     conversionObservation: `Convertido a cliente el ${formatDate(convertedAt)}.`,
     nextVisitDate: "",
@@ -8669,7 +8690,21 @@ const convertProspectToClient = async (prospect) => {
     revisitReason: "",
     revisitPriority: "",
     updatedAt: serverTimestamp()
-  });
+    },
+    normalizedPhone
+  };
+};
+
+const convertProspectToClient = async (prospect) => {
+  const user = auth.currentUser;
+  if (!user || !prospect?.id) return "";
+  if (prospect.convertedClientId) return prospect.convertedClientId;
+  const clientRef = doc(collection(db, "clients"));
+  const prospectRef = doc(db, "prospects", prospect.id);
+  const { clientPayload, prospectUpdate } = buildProspectConversionPayload(prospect, user, clientRef.id);
+  const batch = writeBatch(db);
+  batch.set(clientRef, clientPayload);
+  batch.update(prospectRef, prospectUpdate);
   await batch.commit();
   return clientRef.id;
 };
@@ -10061,6 +10096,10 @@ document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) =>
 setupSidebarNavigation();
 
 document.addEventListener("click", (event) => {
+  if (event.target.closest("[data-close-journey-sale-modal]")) {
+    closeJourneySaleModal();
+    return;
+  }
   const toggle = event.target.closest(".collapse-toggle[data-collapse]");
   if (!toggle) return;
   const body = document.getElementById(toggle.dataset.collapse);
@@ -12518,9 +12557,19 @@ const updateStopResult = async (journeyId, stopId, result, notes = "", extra = {
 
 const getStopById = (stopId) => journeyStopsCache.find((stop) => stop.id === stopId) || null;
 
+const getStopSourceDocumentId = (stop) => {
+  if (!stop) return "";
+  if (stop.sourceDocumentId) return String(stop.sourceDocumentId);
+  const raw = String(stop.entityId || "");
+  if (raw.startsWith("prospect_")) return raw.slice("prospect_".length);
+  if (raw.startsWith("client_")) return raw.slice("client_".length);
+  return raw;
+};
+
 const getProspectByStop = (stop) => {
   if (!stop || stop.entityType !== "prospect") return null;
-  return state.prospects.find((item) => item.id === stop.entityId) || null;
+  const documentId = getStopSourceDocumentId(stop);
+  return state.prospects.find((item) => item.id === documentId) || null;
 };
 
 const saveJourneyVisitResult = async (journeyId, stopId, payload) => {
@@ -12555,9 +12604,10 @@ const saveJourneyVisitResult = async (journeyId, stopId, payload) => {
   }
   batch.update(stopRef, stopUpdate);
 
-  if (stop.entityType === "prospect" && stop.entityId) {
-    const prospectRef = doc(db, "prospects", stop.entityId);
-    const historyRef = doc(collection(db, "prospects", stop.entityId, "visitHistory"));
+  const stopDocumentId = getStopSourceDocumentId(stop);
+  if (stop.entityType === "prospect" && stopDocumentId) {
+    const prospectRef = doc(db, "prospects", stopDocumentId);
+    const historyRef = doc(collection(db, "prospects", stopDocumentId, "visitHistory"));
     const prospectUpdate = {
       lastVisitDate: visitedAt,
       lastVisitResult: result,
@@ -13028,7 +13078,9 @@ const openResultModal = (journeyId, stopId) => {
 const closeResultModal = () => {
   const modal = document.getElementById("journeyResultModal");
   if (modal) modal.hidden = true;
-  document.body.classList.remove("modal-open");
+  if (!document.body.classList.contains("sale-journey-modal-open")) {
+    document.body.classList.remove("modal-open");
+  }
 };
 
 const getSelectedJourneyResult = () => document.querySelector("#journeyResultModal [data-result-value].active")?.dataset.resultValue || "";
@@ -13146,21 +13198,92 @@ const ensureSaleClientOption = (clientId, label) => {
   saleForm.client.value = clientId;
 };
 
+const getProspectSaleOptionValue = (prospectId) => `__prospect__:${prospectId}`;
+
+const setJourneySaleModalOpen = (open) => {
+  const card = saleForm?.closest(".desktop-sales-card");
+  document.body.classList.toggle("sale-journey-modal-open", Boolean(open));
+  document.body.classList.toggle("modal-open", Boolean(open));
+  if (dashboardSection) dashboardSection.dataset.saleJourneyModal = open ? "true" : "false";
+  card?.classList.toggle("sale-journey-modal-card", Boolean(open));
+  if (open) {
+    card?.setAttribute("role", "dialog");
+    card?.setAttribute("aria-modal", "true");
+    if (card && !card.querySelector("[data-close-journey-sale-modal]")) {
+      const closeBtn = document.createElement("button");
+      closeBtn.type = "button";
+      closeBtn.className = "sale-journey-modal-close icon-btn";
+      closeBtn.setAttribute("data-close-journey-sale-modal", "");
+      closeBtn.setAttribute("aria-label", "Cerrar venta");
+      closeBtn.innerHTML = '<i data-lucide="x"></i>';
+      card.appendChild(closeBtn);
+      refreshIcons();
+    }
+  } else {
+    card?.removeAttribute("role");
+    card?.removeAttribute("aria-modal");
+    card?.querySelector("[data-close-journey-sale-modal]")?.remove();
+  }
+};
+
+const resetJourneySaleContext = () => {
+  if (pendingJourneySaleContext?.temporaryClientOption) {
+    Array.from(saleForm?.client?.options || [])
+      .find((option) => option.value === pendingJourneySaleContext.temporaryClientOption)
+      ?.remove();
+  }
+  pendingJourneySaleContext = null;
+  delete saleForm.dataset.journeyId;
+  delete saleForm.dataset.journeyStopId;
+  delete saleForm.dataset.journeyProspectId;
+  setJourneySaleModalOpen(false);
+};
+
+const isJourneySaleDraftDirty = () => {
+  if (!pendingJourneySaleContext) return false;
+  const hasItems = Array.from(saleItems?.querySelectorAll(".sale-item") || []).some((row) => {
+    const product = row.querySelector(".sale-item-product")?.value || "";
+    const qty = row.querySelector(".sale-item-qty")?.value || "";
+    const price = row.querySelector(".sale-item-price")?.value || "";
+    return product || qty || price;
+  });
+  const hasObservation = String(saleForm?.observation?.value || "").trim()
+    && String(saleForm.observation.value || "").trim() !== `Venta cargada desde jornada: ${pendingJourneySaleContext.businessName || ""}`.trim();
+  return hasItems || Boolean(hasObservation) || Boolean(saleCreditCheckbox?.checked) || Boolean(saleRepurchaseField?.classList.contains("open"));
+};
+
+const closeJourneySaleModal = ({ force = false } = {}) => {
+  if (!pendingJourneySaleContext) {
+    setJourneySaleModalOpen(false);
+    return true;
+  }
+  if (!force && isJourneySaleDraftDirty() && !window.confirm("Cerrar la venta sin guardar?")) return false;
+  resetForm(saleForm);
+  resetSaleItems();
+  if (saleCreditCheckbox) saleCreditCheckbox.checked = false;
+  updateDueDateVisibility();
+  updateSaleObservationVisibility(false);
+  updateSaleRepurchaseVisibility(false);
+  resetJourneySaleContext();
+  return true;
+};
+
 const openSaleFromJourneyStop = async (journeyId, stopId) => {
   const stop = getStopById(stopId);
   if (!stop) throw new Error("Parada no encontrada");
   let clientId = "";
   let prospectId = "";
   let clientLabel = stop.businessName || "Cliente";
+  const documentId = getStopSourceDocumentId(stop);
   if (stop.entityType === "client") {
-    clientId = stop.entityId || "";
+    clientId = documentId;
     const client = state.clients.find((item) => item.id === clientId);
     clientLabel = client?.name || clientLabel;
   } else if (stop.entityType === "prospect") {
     const prospect = getProspectByStop(stop);
     if (!prospect) throw new Error("Prospecto no encontrado");
     prospectId = prospect.id;
-    clientId = await convertProspectToClient(prospect);
+    clientId = prospect.convertedClientId || getProspectSaleOptionValue(prospect.id);
     clientLabel = prospect.name || clientLabel;
   }
   pendingJourneySaleContext = {
@@ -13168,7 +13291,9 @@ const openSaleFromJourneyStop = async (journeyId, stopId) => {
     stopId,
     prospectId,
     clientId,
-    businessName: clientLabel
+    businessName: clientLabel,
+    requiresProspectConversion: Boolean(prospectId && String(clientId).startsWith("__prospect__:")),
+    temporaryClientOption: String(clientId).startsWith("__prospect__:") ? clientId : ""
   };
   saleForm.dataset.journeyId = journeyId;
   saleForm.dataset.journeyStopId = stopId;
@@ -13179,8 +13304,14 @@ const openSaleFromJourneyStop = async (journeyId, stopId) => {
     saleForm.observation.value = `Venta cargada desde jornada: ${stop.businessName || ""}`.trim();
     updateSaleObservationVisibility(true);
   }
-  setActiveAppSection("sales");
-  openSalesForm();
+  const body = document.getElementById("salesFormSection");
+  const toggle = document.querySelector('.collapse-toggle[data-collapse="salesFormSection"]');
+  if (body && toggle) openSection(toggle, body);
+  setJourneySaleModalOpen(true);
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+    saleForm.client?.focus();
+  });
 };
 
 const finalizeJourneySaleAfterSave = async (saleId) => {
@@ -13192,10 +13323,7 @@ const finalizeJourneySaleAfterSave = async (saleId) => {
     prospectId: context.prospectId || ""
   });
   if (context.prospectId) await clearProspectRevisit(context.prospectId);
-  pendingJourneySaleContext = null;
-  delete saleForm.dataset.journeyId;
-  delete saleForm.dataset.journeyStopId;
-  delete saleForm.dataset.journeyProspectId;
+  resetJourneySaleContext();
 };
 
 // ----- Nuevo modal de jornada -----
@@ -13742,6 +13870,8 @@ const doSaveJourney = async () => {
     originalOrder: order[pos],
     entityId: e.id,
     entityType: e.entityType,
+    sourceDocumentId: e.sourceDocumentId || String(e.id || "").replace(/^(prospect|client)_/, ""),
+    sourceCollection: e.sourceCollection || (e.entityType === "client" ? "clients" : "prospects"),
     commercialStatus: e.status,
     businessName: e.name || "",
     phone: e.phone || "",

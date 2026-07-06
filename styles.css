@@ -2553,6 +2553,70 @@ body.modal-open {
   display: none !important;
 }
 
+body.sale-journey-modal-open .desktop-sales-card.sale-journey-modal-card {
+  display: flex !important;
+}
+
+body.sale-journey-modal-open .desktop-sales-card.sale-journey-modal-card {
+  position: fixed;
+  inset: 18px;
+  z-index: 1200;
+  max-width: min(980px, calc(100vw - 36px));
+  max-height: calc(100vh - 36px);
+  margin: auto;
+  overflow: hidden;
+  flex-direction: column;
+  border-radius: 14px;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.28);
+}
+
+body.sale-journey-modal-open::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 1190;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.sale-journey-modal-card .section-title {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fff;
+  padding-right: 44px;
+}
+
+.sale-journey-modal-card #salesFormSection {
+  max-height: none !important;
+  overflow-y: auto;
+  padding-bottom: max(18px, env(safe-area-inset-bottom));
+}
+
+.sale-journey-modal-card #salesFormSection.open,
+.sale-journey-modal-card #salesFormSection.is-open-static {
+  display: block;
+}
+
+.sale-journey-modal-close {
+  position: absolute;
+  top: 13px;
+  right: 14px;
+  z-index: 4;
+}
+
+@media (max-width: 720px) {
+  body.sale-journey-modal-open .desktop-sales-card.sale-journey-modal-card {
+    inset: 0;
+    max-width: none;
+    max-height: none;
+    border-radius: 0;
+  }
+
+  .sale-journey-modal-card #salesFormSection {
+    height: calc(100vh - 58px);
+  }
+}
+
 .dashboard[data-app-section="dashboard"] .dashboard-panels-viewport {
   display: none;
 }
