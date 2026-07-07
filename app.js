@@ -594,6 +594,9 @@ let journeysCache = null; // null = aun no cargado; [] = cargado vacio
 let journeysError = null;
 let lastCreatedJourneyId = null;
 const journeyResultState = { saving: false };
+// Visita en curso (cronometro). Solo puede haber una activa por usuario (2.1).
+let activeVisit = null; // { journeyId, stopId, startedMs }
+let visitTimerInterval = null;
 let pendingJourneySaleContext = null;
 const saleJourneyPortalState = { parent: null, nextSibling: null };
 const repurchaseNotesOpenState = new Set();
@@ -13005,6 +13008,102 @@ const startJourney = async (journeyId) => {
   await updateDoc(doc(db, "visitJourneys", journeyId), { status: "active", startedAt: serverTimestamp(), updatedAt: serverTimestamp() });
 };
 
+// ----- Cronometro de visita (2.1) -----
+const formatStopwatch = (totalSeconds) => {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+};
+
+const getInProgressStop = () => journeyStopsCache.find((s) => s.status === "visiting");
+
+const stopVisitTimer = () => {
+  if (visitTimerInterval) { window.clearInterval(visitTimerInterval); visitTimerInterval = null; }
+};
+
+const tickVisitTimer = () => {
+  if (!activeVisit) { stopVisitTimer(); return; }
+  const el = document.querySelector(`[data-visit-timer="${activeVisit.stopId}"]`);
+  if (!el) return;
+  el.textContent = formatStopwatch((Date.now() - activeVisit.startedMs) / 1000);
+};
+
+const startVisitTimer = (journeyId, stopId, startedMs) => {
+  stopVisitTimer();
+  activeVisit = { journeyId, stopId, startedMs };
+  tickVisitTimer();
+  visitTimerInterval = window.setInterval(tickVisitTimer, 1000);
+};
+
+// Reanuda el cronometro tras un re-render o recarga si hay una visita en curso.
+const syncVisitTimerFromStops = (journeyId) => {
+  const inProgress = getInProgressStop();
+  if (inProgress) {
+    const startedMs = qrTimestampMs(inProgress.visitStartedAt) || Date.now();
+    startVisitTimer(journeyId, inProgress.id, startedMs);
+  } else {
+    stopVisitTimer();
+    activeVisit = null;
+  }
+};
+
+const startVisit = async (journeyId, stopId) => {
+  const other = getInProgressStop();
+  if (other && other.id !== stopId) {
+    window.alert(`Ya hay una visita en curso en "${other.businessName || "otra parada"}". Finalizala antes de iniciar otra.`);
+    return false;
+  }
+  const stopRef = doc(db, "visitJourneys", journeyId, "stops", stopId);
+  const update = { status: "visiting", visitStartedAt: serverTimestamp(), visitEndedAt: null, visitDurationSeconds: null, updatedAt: serverTimestamp() };
+  const applyGeo = (pos) => {
+    if (!pos) return;
+    update.visitStartLat = pos.coords.latitude;
+    update.visitStartLng = pos.coords.longitude;
+    update.visitStartAccuracy = pos.coords.accuracy;
+  };
+  try {
+    if (navigator.geolocation) {
+      await new Promise((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => { applyGeo(pos); resolve(); },
+          () => resolve(),
+          { enableHighAccuracy: true, timeout: 4000, maximumAge: 30000 }
+        );
+      });
+    }
+    await updateDoc(stopRef, update);
+    return true;
+  } catch (error) {
+    console.error("No se pudo iniciar la visita", { journeyId, stopId, uid: auth.currentUser?.uid, error });
+    window.alert("No se pudo iniciar la visita. Reintenta.");
+    return false;
+  }
+};
+
+const endVisit = async (journeyId, stopId) => {
+  const stop = getStopById(stopId);
+  const startedMs = (activeVisit?.stopId === stopId ? activeVisit.startedMs : 0) || qrTimestampMs(stop?.visitStartedAt) || Date.now();
+  const durationSeconds = Math.max(0, Math.round((Date.now() - startedMs) / 1000));
+  try {
+    await updateDoc(doc(db, "visitJourneys", journeyId, "stops", stopId), {
+      status: STOP_TERMINAL_STATES.has(stop?.status) ? stop.status : "pending",
+      visitEndedAt: serverTimestamp(),
+      visitDurationSeconds: durationSeconds,
+      updatedAt: serverTimestamp()
+    });
+    stopVisitTimer();
+    activeVisit = null;
+    return durationSeconds;
+  } catch (error) {
+    console.error("No se pudo finalizar la visita", { journeyId, stopId, uid: auth.currentUser?.uid, error });
+    window.alert("No se pudo finalizar la visita. Reintenta.");
+    return null;
+  }
+};
+
 const finalizeJourney = async (journeyId) => {
   await updateDoc(doc(db, "visitJourneys", journeyId), { status: "completed", completedAt: serverTimestamp(), updatedAt: serverTimestamp() });
 };
@@ -13340,19 +13439,65 @@ const renderActiveJourney = async (journeyId) => {
       else window.alert("Este negocio no tiene coordenadas para navegar.");
     });
   });
-  jEl.querySelectorAll("[data-stop-result]").forEach((btn) => {
-    btn.addEventListener("click", () => openResultModal(journeyId, btn.dataset.stopResult));
+  jEl.querySelectorAll("[data-stop-start]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      const ok = await startVisit(journeyId, btn.dataset.stopStart);
+      if (ok) await renderActiveJourney(journeyId);
+      else btn.disabled = false;
+    });
   });
+  jEl.querySelectorAll("[data-stop-end]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      const duration = await endVisit(journeyId, btn.dataset.stopEnd);
+      await renderActiveJourney(journeyId);
+      if (duration != null) openResultModal(journeyId, btn.dataset.stopEnd);
+    });
+  });
+  jEl.querySelectorAll("[data-stop-result]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const stopId = btn.dataset.stopResult;
+      const stop = getStopById(stopId);
+      // Si registra resultado sin finalizar, ofrecer finalizar automaticamente (2.1).
+      if (stop?.status === "visiting") {
+        if (window.confirm("Esta visita sigue en curso. Finalizarla ahora y registrar el resultado?")) {
+          await endVisit(journeyId, stopId);
+          await renderActiveJourney(journeyId);
+        }
+      }
+      openResultModal(journeyId, stopId);
+    });
+  });
+  syncVisitTimerFromStops(journeyId);
+};
+
+const stopTimeLabel = (ts) => {
+  const ms = qrTimestampMs(ts);
+  return ms ? formatTime(new Date(ms)) : "";
 };
 
 const renderStopCard = (stop, idx, journeyStatus) => {
   const isComplete = STOP_TERMINAL_STATES.has(stop.status);
-  const isPending = stop.status === "pending" || stop.status === "en_route";
-  const statusLabel = STOP_STATUS_LABELS[stop.status] || stop.status || "Pendiente";
+  const isVisiting = stop.status === "visiting";
+  const hasEnded = Boolean(stop.visitEndedAt) && !isComplete && !isVisiting;
+  const isPending = !isComplete && !isVisiting;
+  const statusLabel = isVisiting ? "En visita" : STOP_STATUS_LABELS[stop.status] || stop.status || "Pendiente";
   const typeLabel = stop.commercialStatus === "overdue" ? "Recompra vencida" : stop.entityType === "client" ? "Cliente activo" : "Prospecto";
   const dotClass = stop.commercialStatus === "overdue" ? "red" : stop.commercialStatus === "revisit" ? "purple" : stop.entityType === "client" ? "green" : "orange";
+  const startLabel = stopTimeLabel(stop.visitStartedAt);
+  const endLabel = stopTimeLabel(stop.visitEndedAt);
+  const durationLabel = Number.isFinite(stop.visitDurationSeconds) && stop.visitDurationSeconds != null
+    ? formatStopwatch(stop.visitDurationSeconds) : "";
+  const timingRow = (isVisiting || startLabel || durationLabel) ? `
+      <div class="stop-visit-timing">
+        ${isVisiting
+          ? `<span class="stop-visit-live"><i data-lucide="timer"></i> <span data-visit-timer="${stop.id}">0:00</span></span>`
+          : durationLabel ? `<span class="stop-visit-dur"><i data-lucide="timer"></i> ${durationLabel}</span>` : ""}
+        ${startLabel ? `<span class="stop-visit-when">Inicio ${startLabel}${endLabel ? ` · Fin ${endLabel}` : ""}</span>` : ""}
+      </div>` : "";
   return `
-  <div class="stop-card ${isComplete ? "stop-complete" : isPending ? "stop-pending" : ""}" data-stop-id="${stop.id}">
+  <div class="stop-card ${isComplete ? "stop-complete" : isVisiting ? "stop-visiting" : "stop-pending"}" data-stop-id="${stop.id}">
     <div class="stop-number">${idx + 1}</div>
     <div class="stop-info">
       <div class="stop-name"><i class="map-dot map-dot-${dotClass}"></i> ${escapeHtml(stop.businessName || "-")}</div>
@@ -13360,14 +13505,21 @@ const renderStopCard = (stop, idx, journeyStatus) => {
       ${stop.distanceFromPreviousMeters || stop.durationFromPreviousSeconds ? `
       <div class="stop-leg">${stop.distanceFromPreviousMeters ? formatDistance(stop.distanceFromPreviousMeters) : ""} ${stop.durationFromPreviousSeconds ? "· " + formatDuration(stop.durationFromPreviousSeconds) : ""}</div>` : ""}
       <div class="stop-status-label">${statusLabel}</div>
+      ${timingRow}
       ${stop.resultNotes ? `<div class="stop-notes">${escapeHtml(stop.resultNotes)}</div>` : ""}
     </div>
     <div class="stop-actions">
-      ${journeyStatus === "active" && isPending ? `
-        <button class="btn primary btn-xs" type="button" data-stop-maps="${stop.id}">
-          <i data-lucide="navigation"></i> Ir ahora
-        </button>
+      ${journeyStatus === "active" && isVisiting ? `
+        <button class="btn primary btn-xs" type="button" data-stop-end="${stop.id}"><i data-lucide="square"></i> Finalizar visita</button>
+        <button class="btn ghost btn-xs" type="button" data-stop-maps="${stop.id}"><i data-lucide="navigation"></i> Ir ahora</button>
         <button class="btn ghost btn-xs" type="button" data-stop-result="${stop.id}">Registrar resultado</button>
+      ` : ""}
+      ${journeyStatus === "active" && isPending ? `
+        <button class="btn primary btn-xs" type="button" data-stop-maps="${stop.id}"><i data-lucide="navigation"></i> Ir ahora</button>
+        ${hasEnded
+          ? `<button class="btn secondary btn-xs" type="button" data-stop-result="${stop.id}">Registrar resultado</button>`
+          : `<button class="btn secondary btn-xs" type="button" data-stop-start="${stop.id}"><i data-lucide="play"></i> Iniciar visita</button>
+             <button class="btn ghost btn-xs" type="button" data-stop-result="${stop.id}">Registrar resultado</button>`}
       ` : ""}
       ${isComplete ? `<span class="stop-check"><i data-lucide="check-circle"></i></span>` : ""}
     </div>
@@ -14752,6 +14904,8 @@ if (await handlePublicQrRoute()) {
     authLoading = true;
     if (!user) {
       authLoading = false;
+      stopVisitTimer();
+      activeVisit = null;
       closeAllOverlays();
       clearStateCollections([]);
       showAuth();

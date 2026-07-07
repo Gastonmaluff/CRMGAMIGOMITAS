@@ -7840,6 +7840,41 @@ body.sale-journey-modal-open::before {
 .stop-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
 .stop-check { color: var(--primary); display: flex; align-items: center; }
 
+/* ---- Visita en curso (cronometro 2.1) ---- */
+.stop-card.stop-visiting {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary) inset;
+  background: var(--primary-light, #e8f5e9);
+}
+.stop-visit-timing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-top: 5px;
+  font-size: 0.78rem;
+}
+.stop-visit-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 800;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+.stop-visit-live i, .stop-visit-dur i { width: 14px; height: 14px; }
+.stop-visit-live::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger, #dc2626);
+  animation: visitPulse 1.2s ease-in-out infinite;
+}
+.stop-visit-dur { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.stop-visit-when { color: var(--muted); }
+@keyframes visitPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
 /* ---- Dot de mapa en listas ---- */
 .map-dot {
   display: inline-block;
