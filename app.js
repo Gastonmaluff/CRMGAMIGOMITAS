@@ -8438,6 +8438,11 @@ saleForm.addEventListener("submit", async (event) => {
     createdByRole: getCurrentRole(),
     createdAt: serverTimestamp()
   };
+  if (pendingJourneySaleContext?.journeyId) {
+    payload.source = "visitJourney";
+    payload.journeyId = pendingJourneySaleContext.journeyId;
+    payload.stopId = pendingJourneySaleContext.stopId || "";
+  }
   let saleId = "";
   if (pendingJourneySaleContext?.requiresProspectConversion && pendingJourneySaleContext.prospectId) {
     const prospect = state.prospects.find((item) => item.id === pendingJourneySaleContext.prospectId);
@@ -8448,7 +8453,10 @@ saleForm.addEventListener("submit", async (event) => {
     const clientRef = doc(collection(db, "clients"));
     const saleRef = doc(collection(db, "sales"));
     const prospectRef = doc(db, "prospects", prospect.id);
-    const { clientPayload, prospectUpdate, normalizedPhone } = buildProspectConversionPayload(prospect, user, clientRef.id);
+    const { clientPayload, prospectUpdate, normalizedPhone } = buildProspectConversionPayload(prospect, user, clientRef.id, {
+      journeyId: pendingJourneySaleContext.journeyId,
+      stopId: pendingJourneySaleContext.stopId
+    });
     pendingJourneySaleContext.clientId = clientRef.id;
     pendingJourneySaleContext.requiresProspectConversion = false;
     ensureSaleClientOption(clientRef.id, prospect.name || pendingJourneySaleContext.businessName || "Cliente");
@@ -8967,7 +8975,7 @@ const startEditSale = (item) => {
 
 const confirmDelete = (label) => window.confirm(`Eliminar ${label}?`);
 
-const buildProspectConversionPayload = (prospect, user, clientId) => {
+const buildProspectConversionPayload = (prospect, user, clientId, extra = {}) => {
   const convertedAt = toDateInputValue(new Date());
   const originNote = [
     `Origen: prospecto "${prospect.name || "sin nombre"}"`,
@@ -8980,11 +8988,18 @@ const buildProspectConversionPayload = (prospect, user, clientId) => {
   return {
     clientPayload: {
     name: formatClientName(prospect.name || "") || prospect.name || "Cliente sin nombre",
-    ruc: "",
+    // 4.4: conservar todos los datos del prospecto (fiscales, contacto, rubro).
+    ruc: prospect.ruc || "",
+    razonSocial: prospect.razonSocial || "",
     phone: normalizedPhone || "",
     address: prospect.address || "",
     city: prospect.city || "",
     zone: prospect.zone || "",
+    businessType: prospect.businessType || "",
+    potential: prospect.potential || "",
+    contactName: prospect.contactName || "",
+    contactObtained: prospect.contactObtained === true,
+    ...(prospect.purchaseContact ? { purchaseContact: prospect.purchaseContact } : {}),
     latitude: Number.isFinite(Number(prospect.latitude)) ? Number(prospect.latitude) : null,
     longitude: Number.isFinite(Number(prospect.longitude)) ? Number(prospect.longitude) : null,
     mapsLink: prospect.mapsLink || "",
@@ -8992,7 +9007,9 @@ const buildProspectConversionPayload = (prospect, user, clientId) => {
     source: {
       type: "prospect",
       prospectId: prospect.id,
-      convertedAt
+      convertedAt,
+      ...(extra.journeyId ? { journeyId: extra.journeyId } : {}),
+      ...(extra.stopId ? { stopId: extra.stopId } : {})
     },
     userId: user.uid,
     createdAt: serverTimestamp()
@@ -14058,6 +14075,106 @@ const closeJourneySaleModal = ({ force = false } = {}) => {
   return true;
 };
 
+// ----- Datos fiscales antes de la primera venta (4.3) -----
+const isFiscalDataComplete = (entity) => Boolean(
+  String(entity?.razonSocial || "").trim() && String(entity?.ruc || "").trim()
+);
+
+const startSaleFromStop = async (journeyId, stopId) => {
+  const stop = getStopById(stopId);
+  if (!stop) throw new Error("Parada no encontrada");
+  const entity = getEntityRecordByStop(stop);
+  // Si faltan datos fiscales, completarlos antes de abrir la venta (sin crear
+  // un cliente vacio: se guardan en el prospecto/cliente existente).
+  if (entity && !isFiscalDataComplete(entity)) {
+    openSaleFiscalModal(journeyId, stopId);
+    return;
+  }
+  await openSaleFromJourneyStop(journeyId, stopId);
+};
+
+const closeSaleFiscalModal = () => {
+  const modal = document.getElementById("saleFiscalModal");
+  if (modal) modal.hidden = true;
+  if (!document.querySelector('.journey-modal:not([hidden])')) document.body.classList.remove("modal-open");
+};
+
+const openSaleFiscalModal = (journeyId, stopId) => {
+  const modal = document.getElementById("saleFiscalModal");
+  const form = document.getElementById("saleFiscalForm");
+  if (!modal || !form) return;
+  const stop = getStopById(stopId);
+  const entity = getEntityRecordByStop(stop);
+  modal.dataset.journeyId = journeyId;
+  modal.dataset.stopId = stopId;
+  const nameHeader = document.getElementById("saleFiscalBusiness");
+  if (nameHeader) nameHeader.textContent = stop?.businessName || entity?.name || "";
+  form.name.value = entity?.name || stop?.businessName || "";
+  form.razonSocial.value = entity?.razonSocial || "";
+  const ruc = splitRuc(entity?.ruc || "");
+  form.rucMain.value = ruc.main;
+  form.rucDv.value = ruc.dv;
+  form.address.value = entity?.address || stop?.address || "";
+  form.phone.value = entity?.phone || "";
+  form.purchaseContactName.value = entity?.purchaseContact?.name || "";
+  form.purchaseContactPhone.value = entity?.purchaseContact?.phone || entity?.purchaseContact?.whatsapp || "";
+  const errorEl = document.getElementById("saleFiscalError");
+  if (errorEl) errorEl.textContent = "";
+  modal.hidden = false;
+  document.body.classList.add("modal-open");
+  refreshIcons();
+};
+
+const saveSaleFiscalAndContinue = async () => {
+  const modal = document.getElementById("saleFiscalModal");
+  const form = document.getElementById("saleFiscalForm");
+  if (!modal || !form) return;
+  const { journeyId, stopId } = modal.dataset;
+  const errorEl = document.getElementById("saleFiscalError");
+  const setError = (m) => { if (errorEl) errorEl.textContent = m; };
+  const stop = getStopById(stopId);
+  const entity = getEntityRecordByStop(stop);
+  if (!entity) { setError("No se encontro el negocio de esta parada."); return; }
+  const razonSocial = String(form.razonSocial.value || "").trim();
+  const ruc = buildRuc(form.rucMain.value, form.rucDv.value);
+  if (!razonSocial) { setError("Ingresa la razon social."); return; }
+  if (!ruc) { setError("Ingresa el RUC completo: numero y digito verificador."); return; }
+  const name = formatClientName(form.name.value || "") || entity.name || "";
+  const purchaseName = String(form.purchaseContactName.value || "").trim();
+  const purchasePhone = String(form.purchaseContactPhone.value || "").trim();
+  const update = {
+    name,
+    razonSocial,
+    ruc,
+    address: String(form.address.value || "").trim(),
+    phone: normalizeProspectPhone(form.phone.value || ""),
+    updatedAt: serverTimestamp()
+  };
+  if (purchaseName || purchasePhone) {
+    update.purchaseContact = {
+      ...(entity.purchaseContact || {}),
+      name: purchaseName || entity.purchaseContact?.name || "",
+      phone: purchasePhone,
+      whatsapp: purchasePhone
+    };
+    update.contactObtained = true;
+  }
+  const collectionName = stop.entityType === "client" ? "clients" : "prospects";
+  const saveBtn = document.getElementById("saleFiscalSave");
+  try {
+    if (saveBtn) saveBtn.disabled = true;
+    setError("");
+    await updateDoc(doc(db, collectionName, getStopSourceDocumentId(stop)), update);
+    closeSaleFiscalModal();
+    await openSaleFromJourneyStop(journeyId, stopId);
+  } catch (error) {
+    console.error("No se pudieron guardar los datos fiscales", { journeyId, stopId, uid: auth.currentUser?.uid, error });
+    setError("No se pudo guardar. Reintenta.");
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
+};
+
 const openSaleFromJourneyStop = async (journeyId, stopId) => {
   const stop = getStopById(stopId);
   if (!stop) throw new Error("Parada no encontrada");
@@ -14875,6 +14992,18 @@ const setupJourneysModule = () => {
   document.getElementById("purchaseContactModal")?.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closePurchaseContactModal();
   });
+  // Datos fiscales antes de la venta (4.3)
+  document.getElementById("saleFiscalSave")?.addEventListener("click", saveSaleFiscalAndContinue);
+  document.getElementById("saleFiscalForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveSaleFiscalAndContinue();
+  });
+  document.getElementById("saleFiscalModal")?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-sale-fiscal-close]")) closeSaleFiscalModal();
+  });
+  document.getElementById("saleFiscalModal")?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeSaleFiscalModal();
+  });
   // Cerrar el menu ⋯ de una parada al hacer click fuera
   document.addEventListener("click", (event) => {
     if (!event.target.closest(".stop-menu-wrap")) {
@@ -14934,12 +15063,11 @@ const setupJourneysModule = () => {
     }
     if (loadSaleBtn) {
       try {
-        await openSaleFromJourneyStop(journeyId, stopId);
         closeResultModal();
+        await startSaleFromStop(journeyId, stopId);
       } catch (error) {
         console.error("No se pudo preparar la venta desde jornada:", error);
-        const errorEl = document.getElementById("resultError");
-        if (errorEl) errorEl.textContent = "No se pudo abrir la venta para esta parada. Reintenta.";
+        window.alert("No se pudo abrir la venta para esta parada. Reintenta.");
       }
     }
     if (confirmBtn) {
