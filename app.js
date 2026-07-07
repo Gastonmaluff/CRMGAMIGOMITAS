@@ -808,12 +808,23 @@ const getCallableErrorMessage = (error, fallback = "No se pudo completar la oper
   return fallback;
 };
 
+const registerUserLogin = () => {
+  try {
+    httpsCallable(functions, "registerUserLogin")().catch((error) => {
+      console.warn("[auth] no se pudo registrar el ultimo acceso", error?.message || error);
+    });
+  } catch (error) {
+    console.warn("[auth] registerUserLogin no disponible", error?.message || error);
+  }
+};
+
 const loadCurrentUserProfile = async (user) => {
   const profileRef = doc(db, "users", user.uid);
   const profileSnap = await getDoc(profileRef);
   if (profileSnap.exists()) {
     const profile = { uid: user.uid, ...profileSnap.data() };
     if (profile.active !== true) throw new Error("Tu usuario esta inactivo.");
+    registerUserLogin();
     return profile;
   }
   const bootstrapCurrentUser = httpsCallable(functions, "bootstrapCurrentUser");
@@ -2195,6 +2206,7 @@ const renderUserManagement = () => {
       <strong>${escapeHtml(item.displayName || item.username || "Usuario")}</strong>
       <div>Usuario: ${escapeHtml(item.username || "-")} | Rol: ${escapeHtml(ROLE_LABELS[item.role] || item.role || "-")}</div>
       <div class="muted">${escapeHtml(item.authEmail || "")}</div>
+      <div class="muted">Creado: ${qrDateLabel(item.createdAt)} · Ultimo acceso: ${qrDateLabel(item.lastLoginAt)}</div>
       <div><span class="status-tag ${item.active ? "status-ok" : "status-critical"}">${item.active ? "Activo" : "Inactivo"}</span></div>
       <div class="list-actions">
         <button class="btn ghost" type="button" data-user-toggle-active="${escapeHtml(item.id)}">${item.active ? "Desactivar" : "Activar"}</button>
@@ -2514,6 +2526,23 @@ const setupUserManagement = () => {
       role: String(formData.get("role") || "sales"),
       active: formData.get("active") === "on"
     };
+    const confirmPassword = String(formData.get("confirmPassword") || "");
+    if (!payload.displayName) {
+      setUserManagementNotice("Ingresa el nombre completo.", "error");
+      return;
+    }
+    if (!payload.username) {
+      setUserManagementNotice("Ingresa el nombre de usuario.", "error");
+      return;
+    }
+    if (payload.password.length < 8) {
+      setUserManagementNotice("La contrasena debe tener al menos 8 caracteres.", "error");
+      return;
+    }
+    if (payload.password !== confirmPassword) {
+      setUserManagementNotice("Las contrasenas no coinciden.", "error");
+      return;
+    }
     try {
       if (submitBtn) submitBtn.disabled = true;
       setUserManagementNotice("Creando usuario...", "info");
@@ -7705,7 +7734,15 @@ forgotPasswordBtn?.addEventListener("click", async () => {
 });
 
 logoutBtn?.addEventListener("click", async () => {
-  await signOut(auth);
+  logoutBtn.disabled = true;
+  try {
+    closeAllOverlays();
+    await signOut(auth);
+  } catch (error) {
+    console.error("[auth] signOut error", error);
+  } finally {
+    logoutBtn.disabled = false;
+  }
 });
 
 unitGroups.forEach((group) => {
@@ -13627,6 +13664,27 @@ const closeNewJourneyModal = () => {
   if (trigger) try { trigger.focus(); } catch (e) { /* noop */ }
 };
 
+// Cierra cualquier modal/overlay abierto. Se usa al cerrar sesion para no
+// dejar informacion del usuario anterior visible.
+const closeAllOverlays = () => {
+  const closers = [
+    () => closeNewJourneyModal(),
+    () => closeResultModal(),
+    () => closeJourneySaleModal({ force: true }),
+    () => closeLocationPicker(),
+    () => closeRubroModal(),
+    () => closeProspectImportModal({ force: true })
+  ];
+  closers.forEach((fn) => { try { fn(); } catch (e) { /* noop */ } });
+  document.querySelectorAll('[role="dialog"]').forEach((modal) => {
+    try {
+      modal.hidden = true;
+      modal.classList.add("hidden");
+    } catch (e) { /* noop */ }
+  });
+  document.body.classList.remove("modal-open");
+};
+
 const renderJourneyStopList = () => {
   const el = document.getElementById("journeyStopListPreview");
   if (!el) return;
@@ -14606,6 +14664,7 @@ if (await handlePublicQrRoute()) {
     stopJourneysListener();
     currentUserProfile = null;
     if (!user) {
+      closeAllOverlays();
       clearStateCollections([]);
       showAuth();
       hideAppLoader();

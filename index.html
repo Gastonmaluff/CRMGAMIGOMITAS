@@ -48,6 +48,7 @@
         <span class="user-email" id="userEmail"></span>
         <button class="icon-btn logout-icon-btn" id="logoutBtn" type="button" aria-label="Cerrar sesion" title="Cerrar sesion">
           <i data-lucide="log-out"></i>
+          <span class="logout-label">Cerrar sesion</span>
         </button>
       </div>
     </header>
@@ -2078,6 +2079,10 @@
                   <label>
                     Contrasena inicial
                     <input name="password" type="password" minlength="8" autocomplete="new-password" required />
+                  </label>
+                  <label>
+                    Confirmar contrasena
+                    <input name="confirmPassword" type="password" minlength="8" autocomplete="new-password" required />
                   </label>
                   <label>
                     Rol

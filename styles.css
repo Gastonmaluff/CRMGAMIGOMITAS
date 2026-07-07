@@ -376,16 +376,26 @@ body {
 }
 
 .logout-icon-btn {
-  width: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
   height: 40px;
+  padding: 0 14px;
   border-radius: 12px;
   background: transparent;
   color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .logout-icon-btn svg {
   width: 18px;
   height: 18px;
+}
+
+.logout-label {
+  font-size: 0.9rem;
 }
 
 .logout-icon-btn:hover {
@@ -6317,6 +6327,16 @@ body.sale-journey-modal-open::before {
 
   .user-email {
     display: none;
+  }
+
+  .logout-label {
+    display: none;
+  }
+
+  .logout-icon-btn {
+    width: 40px;
+    padding: 0;
+    justify-content: center;
   }
 
   .dashboard-overview-viewport {

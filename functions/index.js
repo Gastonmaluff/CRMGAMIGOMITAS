@@ -34,7 +34,8 @@ const publicUserProfile = (uid, data) => ({
   active: data.active === true,
   createdAt: serializeTimestamp(data.createdAt),
   createdBy: data.createdBy || "",
-  updatedAt: serializeTimestamp(data.updatedAt)
+  updatedAt: serializeTimestamp(data.updatedAt),
+  lastLoginAt: serializeTimestamp(data.lastLoginAt)
 });
 
 const getCallerUid = (request) => {
@@ -85,11 +86,26 @@ exports.bootstrapCurrentUser = onCall({ region: "us-central1" }, async (request)
     active: true,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     createdBy: uid,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    lastLoginAt: admin.firestore.FieldValue.serverTimestamp()
   };
   await userRef.set(payload);
   const created = await userRef.get();
   return publicUserProfile(uid, created.data() || {});
+});
+
+exports.registerUserLogin = onCall({ region: "us-central1" }, async (request) => {
+  const uid = getCallerUid(request);
+  const snap = await getUserProfileSnap(uid);
+  const data = snap.data() || {};
+  if (!snap.exists || data.active !== true) {
+    throw new HttpsError("permission-denied", "Tu usuario no esta habilitado.");
+  }
+  await db.collection("users").doc(uid).update({
+    lastLoginAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+  const updated = await getUserProfileSnap(uid);
+  return publicUserProfile(uid, updated.data() || {});
 });
 
 exports.createAppUser = onCall({ region: "us-central1" }, async (request) => {
