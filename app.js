@@ -594,6 +594,7 @@ let journeysCache = null; // null = aun no cargado; [] = cargado vacio
 let journeysError = null;
 let lastCreatedJourneyId = null;
 const journeyResultState = { saving: false };
+let lastJourneySummary = null; // { journey, stops, summary } para exportar imagen (6.4)
 // Visita en curso (cronometro). Solo puede haber una activa por usuario (2.1).
 let activeVisit = null; // { journeyId, stopId, startedMs }
 let visitTimerInterval = null;
@@ -13191,6 +13192,44 @@ const buildJourneySummary = (journey, stops) => {
 
 const jsumTimeLabel = (ms) => ms ? formatTime(new Date(ms)) : "—";
 
+// ----- Recorrido visual (6.2 / 6.4) -----
+const ROUTE_COLORS = { green: "#16a34a", blue: "#2563eb", purple: "#8b5cf6", orange: "#f97316", yellow: "#eab308", red: "#dc2626", gray: "#94a3b8" };
+
+const getRouteBounds = (stops) => {
+  const pts = [...stops]
+    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
+    .map((s) => ({ lat: Number(s.latitude), lng: Number(s.longitude), stop: s }))
+    .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && p.lat !== 0 && p.lng !== 0);
+  if (!pts.length) return null;
+  const lats = pts.map((p) => p.lat);
+  const lngs = pts.map((p) => p.lng);
+  return { pts, minLat: Math.min(...lats), maxLat: Math.max(...lats), minLng: Math.min(...lngs), maxLng: Math.max(...lngs) };
+};
+
+const projectRoutePoints = (bounds, w, h, pad) => {
+  const spanLat = (bounds.maxLat - bounds.minLat) || 1e-6;
+  const spanLng = (bounds.maxLng - bounds.minLng) || 1e-6;
+  return bounds.pts.map((p) => ({
+    x: pad + ((p.lng - bounds.minLng) / spanLng) * (w - 2 * pad),
+    y: pad + ((bounds.maxLat - p.lat) / spanLat) * (h - 2 * pad),
+    stop: p.stop
+  }));
+};
+
+const buildRouteSvg = (stops, w = 640, h = 220) => {
+  const bounds = getRouteBounds(stops);
+  if (!bounds) return '<div class="jsum-route-empty"><i data-lucide="map-off"></i> Sin coordenadas para dibujar el recorrido.</div>';
+  const pad = 22;
+  const proj = projectRoutePoints(bounds, w, h, pad);
+  const line = proj.map((pt, i) => `${i === 0 ? "M" : "L"}${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`).join(" ");
+  const dots = proj.map((pt, i) => {
+    const color = ROUTE_COLORS[RESULT_LIST_COLORS[pt.stop.status] || "gray"];
+    return `<circle cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="10" fill="${color}" stroke="#fff" stroke-width="2"/><text x="${pt.x.toFixed(1)}" y="${(pt.y + 3.5).toFixed(1)}" text-anchor="middle" font-size="11" fill="#fff" font-weight="700">${i + 1}</text>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${w} ${h}" class="jsum-route-svg" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+    <path d="${line}" fill="none" stroke="#cbd5e1" stroke-width="3" stroke-dasharray="5 5" stroke-linecap="round"/>${dots}</svg>`;
+};
+
 const renderJourneySummaryScreen = (journey, stops, summary) => {
   const orderedStops = [...stops].sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
   const metric = (label, value, opts = {}) => `
@@ -13244,6 +13283,7 @@ const renderJourneySummaryScreen = (journey, stops, summary) => {
         </div>
         <div class="jsum-progress"><div class="jsum-progress-bar" data-bar="${summary.totalStops ? Math.round(summary.completedStops / summary.totalStops * 100) : 0}"></div></div>
         <div class="jsum-progress-label">${summary.completedStops} de ${summary.totalStops} visitas completadas</div>
+        <div class="jsum-route">${buildRouteSvg(stops)}</div>
         <div class="jsum-metrics">
           ${metric("Ventas", summary.salesCount, { count: summary.salesCount, accent: "green" })}
           ${metric("Total vendido (Gs)", "", { count: summary.totalSalesAmount, money: true, accent: "green" })}
@@ -13278,7 +13318,10 @@ const renderJourneySummaryScreen = (journey, stops, summary) => {
         <div class="jsum-list">${bizRows || '<div class="jsum-empty">Sin paradas.</div>'}</div>
       </div>
       <footer class="jsum-footer">
+        <span class="jsum-export-status" id="jsumExportStatus" aria-live="polite"></span>
         <button class="btn ghost" type="button" data-jsum-close>Volver a jornadas</button>
+        <button class="btn ghost" type="button" data-jsum-save><i data-lucide="image-down"></i> Guardar imagen</button>
+        <button class="btn primary" type="button" data-jsum-share><i data-lucide="share-2"></i> Compartir resultados</button>
       </footer>
     </div>`;
 };
@@ -13326,12 +13369,183 @@ const openJourneySummary = async (journeyId) => {
     const stopsSnap = await getDocs(query(collection(db, "visitJourneys", journeyId, "stops"), orderBy("order", "asc")));
     const stops = stopsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
     const summary = buildJourneySummary(journey, stops);
+    lastJourneySummary = { journey, stops, summary };
     modal.innerHTML = renderJourneySummaryScreen(journey, stops, summary);
     refreshIcons();
     animateJourneySummary(modal);
   } catch (error) {
     console.error("No se pudo abrir el resumen de la jornada", { journeyId, uid: auth.currentUser?.uid, error });
     modal.innerHTML = '<div class="jsum-box"><div class="jsum-loading">No se pudo generar el resumen. <button class="btn ghost btn-xs" type="button" data-jsum-close>Cerrar</button></div></div>';
+  }
+};
+
+// ----- Exportar / compartir imagen del resumen (6.4) -----
+const loadImageSafe = (src) => new Promise((resolve) => {
+  const img = new Image();
+  img.onload = () => resolve(img);
+  img.onerror = () => resolve(null);
+  img.src = src;
+});
+
+const drawRoundRect = (ctx, x, y, w, h, r) => {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+};
+
+const fitCanvasText = (ctx, text, maxWidth) => {
+  let t = String(text ?? "");
+  while (t.length > 3 && ctx.measureText(t).width > maxWidth) t = t.slice(0, -1);
+  return t === String(text ?? "") ? t : `${t}…`;
+};
+
+const drawRouteOnCanvas = (ctx, stops, x, y, w, h) => {
+  const bounds = getRouteBounds(stops);
+  if (!bounds) {
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "600 28px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("Sin coordenadas para el recorrido", x + w / 2, y + h / 2);
+    ctx.textAlign = "left";
+    return;
+  }
+  const pad = 34;
+  const spanLat = (bounds.maxLat - bounds.minLat) || 1e-6;
+  const spanLng = (bounds.maxLng - bounds.minLng) || 1e-6;
+  const pts = bounds.pts.map((p) => ({
+    px: x + pad + ((p.lng - bounds.minLng) / spanLng) * (w - 2 * pad),
+    py: y + pad + ((bounds.maxLat - p.lat) / spanLat) * (h - 2 * pad),
+    stop: p.stop
+  }));
+  ctx.strokeStyle = "#cbd5e1";
+  ctx.lineWidth = 4;
+  ctx.setLineDash([9, 9]);
+  ctx.beginPath();
+  pts.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt.px, pt.py) : ctx.lineTo(pt.px, pt.py)));
+  ctx.stroke();
+  ctx.setLineDash([]);
+  pts.forEach((pt, i) => {
+    ctx.fillStyle = ROUTE_COLORS[RESULT_LIST_COLORS[pt.stop.status] || "gray"];
+    ctx.beginPath();
+    ctx.arc(pt.px, pt.py, 17, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.font = "700 19px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(String(i + 1), pt.px, pt.py + 7);
+    ctx.textAlign = "left";
+  });
+};
+
+const buildJourneySummaryCanvas = async (journey, stops, summary) => {
+  const W = 1080, H = 1440, pad = 60;
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, W, H);
+  const grad = ctx.createLinearGradient(0, 0, W, 250);
+  grad.addColorStop(0, "#15803d");
+  grad.addColorStop(1, "#16a34a");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, 250);
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  ctx.font = "700 26px Arial";
+  ctx.fillText("RESUMEN DE JORNADA", pad, 80);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "800 54px Arial";
+  ctx.fillText(fitCanvasText(ctx, summary.name, W - 2 * pad - 160), pad, 145);
+  ctx.font = "400 28px Arial";
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.fillText(`${summary.dateLabel} · ${summary.user}`, pad, 195);
+  const logo = await loadImageSafe("IMG_8867.PNG");
+  if (logo && logo.width) {
+    const lw = 130;
+    const lh = logo.height * (lw / logo.width);
+    ctx.drawImage(logo, W - pad - lw, 60, lw, lh);
+  }
+  let y = 300;
+  ctx.fillStyle = "#f1f5f9";
+  drawRoundRect(ctx, pad, y, W - 2 * pad, 400, 22);
+  ctx.fill();
+  drawRouteOnCanvas(ctx, stops, pad, y, W - 2 * pad, 400);
+  y += 440;
+  const tiles = [
+    ["Ventas", String(summary.salesCount)],
+    ["Total vendido (Gs)", formatGs(summary.totalSalesAmount)],
+    ["Cajas", String(summary.totalBoxes)],
+    ["Contactos", String(summary.contactsObtained)],
+    ["Seguimientos", String(summary.followUpsScheduled)],
+    ["Duración", summary.journeySeconds ? formatDuration(summary.journeySeconds) : "—"],
+    ["Distancia", summary.totalDistanceMeters ? formatDistance(summary.totalDistanceMeters) : "—"],
+    ["Conversión", `${summary.conversion}%`]
+  ];
+  const cols = 4, gap = 22, tileW = (W - 2 * pad - gap * (cols - 1)) / cols, tileH = 160;
+  tiles.forEach((t, i) => {
+    const cx = pad + (i % cols) * (tileW + gap);
+    const cy = y + Math.floor(i / cols) * (tileH + gap);
+    ctx.fillStyle = "#f8fafc";
+    drawRoundRect(ctx, cx, cy, tileW, tileH, 16);
+    ctx.fill();
+    ctx.strokeStyle = "#e2e8f0";
+    ctx.lineWidth = 1;
+    drawRoundRect(ctx, cx, cy, tileW, tileH, 16);
+    ctx.stroke();
+    ctx.fillStyle = "#0f172a";
+    ctx.font = "800 40px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(fitCanvasText(ctx, t[1], tileW - 18), cx + tileW / 2, cy + 82);
+    ctx.fillStyle = "#64748b";
+    ctx.font = "600 22px Arial";
+    ctx.fillText(fitCanvasText(ctx, t[0], tileW - 12), cx + tileW / 2, cy + 124);
+    ctx.textAlign = "left";
+  });
+  y += 2 * tileH + gap + 46;
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "600 24px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("Gami Gomitas · CRM comercial", W / 2, H - 54);
+  ctx.textAlign = "left";
+  return canvas;
+};
+
+const exportJourneySummaryImage = async ({ share }) => {
+  if (!lastJourneySummary) return;
+  const statusEl = document.getElementById("jsumExportStatus");
+  const setStatus = (t) => { if (statusEl) statusEl.textContent = t; };
+  const modal = document.getElementById("journeySummaryModal");
+  const btns = Array.from(modal?.querySelectorAll("[data-jsum-save],[data-jsum-share]") || []);
+  btns.forEach((b) => { b.disabled = true; });
+  setStatus("Generando imagen…");
+  try {
+    const { journey, stops, summary } = lastJourneySummary;
+    const canvas = await buildJourneySummaryCanvas(journey, stops, summary);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png", 0.95));
+    if (!blob) throw new Error("No se pudo generar el PNG");
+    const slug = String(summary.name || "resumen").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "resumen";
+    const filename = `jornada-${slug}.png`;
+    const file = new File([blob], filename, { type: "image/png" });
+    if (share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: "Resumen de jornada", text: `Resumen de "${summary.name}"` });
+      setStatus("Imagen compartida.");
+    } else {
+      downloadBlob(blob, filename);
+      setStatus(share ? "Compartir no disponible: se descargó la imagen." : "Imagen lista.");
+    }
+  } catch (error) {
+    if (error?.name === "AbortError") { setStatus(""); return; }
+    console.error("No se pudo generar la imagen de la jornada", { uid: auth.currentUser?.uid, error });
+    setStatus("Error al generar la imagen. Reintentá.");
+  } finally {
+    btns.forEach((b) => { b.disabled = false; });
   }
 };
 
@@ -15252,7 +15466,10 @@ const setupJourneysModule = () => {
       document.getElementById("journeyActiveSection")?.setAttribute("hidden", "");
       document.getElementById("journeyListSection")?.removeAttribute("hidden");
       loadAndRenderJourneys();
+      return;
     }
+    if (event.target.closest("[data-jsum-save]")) { exportJourneySummaryImage({ share: false }); return; }
+    if (event.target.closest("[data-jsum-share]")) { exportJourneySummaryImage({ share: true }); return; }
   });
   document.getElementById("journeySummaryModal")?.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeJourneySummary();
