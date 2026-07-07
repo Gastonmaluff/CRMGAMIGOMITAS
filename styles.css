@@ -7943,6 +7943,22 @@ body.sale-journey-modal-open::before {
 .stop-history-next i { width: 14px; height: 14px; }
 .stop-history-user { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
 
+/* ---- Badge "Contacto conseguido" (2.3) ---- */
+.stop-contact-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.stop-contact-badge i { width: 13px; height: 13px; }
+.purchase-contact-hint { font-size: 0.82rem; color: var(--muted); margin: 0 0 12px; }
+
 /* ---- Dot de mapa en listas ---- */
 .map-dot {
   display: inline-block;

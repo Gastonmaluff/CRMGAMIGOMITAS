@@ -13505,6 +13505,12 @@ const renderActiveJourney = async (journeyId) => {
       openStopHistoryModal(btn.dataset.stopHistory);
     });
   });
+  jEl.querySelectorAll("[data-stop-purchase-contact]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      jEl.querySelectorAll("[data-stop-menu-panel]").forEach((p) => { p.hidden = true; });
+      openPurchaseContactModal(journeyId, btn.dataset.stopPurchaseContact);
+    });
+  });
   syncVisitTimerFromStops(journeyId);
 };
 
@@ -13540,6 +13546,7 @@ const renderStopCard = (stop, idx, journeyStatus) => {
         <button class="icon-btn btn-xs stop-menu-btn" type="button" data-stop-menu="${stop.id}" aria-label="Mas acciones" aria-haspopup="true" aria-expanded="false"><i data-lucide="more-vertical"></i></button>
         <div class="stop-menu-panel" data-stop-menu-panel="${stop.id}" hidden>
           ${isProspect ? `<button type="button" data-stop-edit-prospect="${stop.id}"><i data-lucide="pencil"></i> Editar prospecto</button>` : ""}
+          <button type="button" data-stop-purchase-contact="${stop.id}"><i data-lucide="contact"></i> Contacto de compras</button>
           <button type="button" data-stop-history="${stop.id}"><i data-lucide="history"></i> Ver historial</button>
           <button type="button" data-stop-maps="${stop.id}"><i data-lucide="map-pin"></i> Ver ubicación</button>
           ${phone ? `<a href="tel:${escapeHtml(phone)}"><i data-lucide="phone"></i> Llamar</a>` : ""}
@@ -13556,6 +13563,7 @@ const renderStopCard = (stop, idx, journeyStatus) => {
       <div class="stop-leg">${stop.distanceFromPreviousMeters ? formatDistance(stop.distanceFromPreviousMeters) : ""} ${stop.durationFromPreviousSeconds ? "· " + formatDuration(stop.durationFromPreviousSeconds) : ""}</div>` : ""}
       <div class="stop-status-label">${statusLabel}</div>
       ${timingRow}
+      ${stop.contactObtained ? '<div class="stop-contact-badge"><i data-lucide="contact"></i> Contacto conseguido</div>' : ""}
       ${stop.resultNotes ? `<div class="stop-notes">${escapeHtml(stop.resultNotes)}</div>` : ""}
     </div>
     <div class="stop-actions">
@@ -13761,6 +13769,91 @@ const openStopHistoryModal = async (stopId) => {
   } catch (error) {
     console.error("No se pudo cargar el historial de la parada", { stopId, uid: auth.currentUser?.uid, error });
     listEl.innerHTML = '<div class="stop-history-empty">No se pudo cargar el historial.</div>';
+  }
+};
+
+// ----- Contacto del encargado de compras (2.3) -----
+const closePurchaseContactModal = () => {
+  const modal = document.getElementById("purchaseContactModal");
+  if (modal) modal.hidden = true;
+  if (!document.querySelector('.journey-modal:not([hidden])')) document.body.classList.remove("modal-open");
+};
+
+const openPurchaseContactModal = (journeyId, stopId) => {
+  const modal = document.getElementById("purchaseContactModal");
+  const form = document.getElementById("purchaseContactForm");
+  if (!modal || !form) return;
+  const stop = getStopById(stopId);
+  const entity = getEntityRecordByStop(stop);
+  modal.dataset.journeyId = journeyId;
+  modal.dataset.stopId = stopId;
+  const nameHeader = document.getElementById("purchaseContactName");
+  if (nameHeader) nameHeader.textContent = stop?.businessName || entity?.name || "";
+  const pc = entity?.purchaseContact || {};
+  form.name.value = pc.name || "";
+  form.role.value = pc.role || "";
+  form.phone.value = pc.phone || "";
+  form.whatsapp.value = pc.whatsapp || "";
+  form.email.value = pc.email || "";
+  form.bestContactDay.value = pc.bestContactDay || "";
+  form.bestContactTime.value = pc.bestContactTime || "";
+  form.notes.value = pc.notes || "";
+  form.nextVisitDate.value = "";
+  const errorEl = document.getElementById("purchaseContactError");
+  if (errorEl) errorEl.textContent = "";
+  modal.hidden = false;
+  document.body.classList.add("modal-open");
+  refreshIcons();
+};
+
+const savePurchaseContact = async () => {
+  const modal = document.getElementById("purchaseContactModal");
+  const form = document.getElementById("purchaseContactForm");
+  if (!modal || !form) return;
+  const { journeyId, stopId } = modal.dataset;
+  const errorEl = document.getElementById("purchaseContactError");
+  const setError = (m) => { if (errorEl) errorEl.textContent = m; };
+  const stop = getStopById(stopId);
+  const entity = getEntityRecordByStop(stop);
+  if (!entity) { setError("No se encontro el negocio de esta parada."); return; }
+  const name = String(form.name.value || "").trim();
+  if (!name) { setError("Ingresa el nombre del encargado."); return; }
+  const purchaseContact = {
+    name,
+    role: String(form.role.value || "").trim(),
+    phone: String(form.phone.value || "").trim(),
+    whatsapp: String(form.whatsapp.value || "").trim(),
+    email: String(form.email.value || "").trim(),
+    bestContactDay: form.bestContactDay.value || "",
+    bestContactTime: form.bestContactTime.value || "",
+    notes: String(form.notes.value || "").trim()
+  };
+  const nextVisitDate = normalizeDateValue(form.nextVisitDate.value || "");
+  const collectionName = stop.entityType === "client" ? "clients" : "prospects";
+  const entityUpdate = { purchaseContact, contactObtained: true, updatedAt: serverTimestamp() };
+  if (nextVisitDate) {
+    entityUpdate.nextVisitDate = nextVisitDate;
+    entityUpdate.revisitStatus = getRevisitStatusFromDate(nextVisitDate);
+    entityUpdate.revisitReason = "Contacto de compras";
+  }
+  const stopUpdate = { contactObtained: true, purchaseContactName: name, updatedAt: serverTimestamp() };
+  if (nextVisitDate) stopUpdate.nextVisitDate = nextVisitDate;
+  const saveBtn = document.getElementById("purchaseContactSave");
+  try {
+    if (saveBtn) saveBtn.disabled = true;
+    setError("");
+    const batch = writeBatch(db);
+    batch.update(doc(db, collectionName, getStopSourceDocumentId(stop)), entityUpdate);
+    batch.update(doc(db, "visitJourneys", journeyId, "stops", stopId), stopUpdate);
+    await batch.commit();
+    closePurchaseContactModal();
+    await renderActiveJourney(journeyId);
+    showToast("Contacto de compras guardado. La visita cuenta como avance comercial.");
+  } catch (error) {
+    console.error("No se pudo guardar el contacto de compras", { journeyId, stopId, uid: auth.currentUser?.uid, error });
+    setError("No se pudo guardar. Reintenta.");
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
   }
 };
 
@@ -14769,6 +14862,18 @@ const setupJourneysModule = () => {
   });
   document.getElementById("stopHistoryModal")?.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeStopHistoryModal();
+  });
+  // Contacto de compras (2.3)
+  document.getElementById("purchaseContactSave")?.addEventListener("click", savePurchaseContact);
+  document.getElementById("purchaseContactForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    savePurchaseContact();
+  });
+  document.getElementById("purchaseContactModal")?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-purchase-contact-close]")) closePurchaseContactModal();
+  });
+  document.getElementById("purchaseContactModal")?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closePurchaseContactModal();
   });
   // Cerrar el menu ⋯ de una parada al hacer click fuera
   document.addEventListener("click", (event) => {

@@ -23,7 +23,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
   <link rel="icon" type="image/png" href="apple-touch-icon.png" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="styles.css?v=20260707-04" />
+  <link rel="stylesheet" href="styles.css?v=20260707-05" />
 </head>
 <body>
   <div class="app-loader" id="appLoader" role="status" aria-live="polite" aria-label="Cargando sistema">
@@ -2627,12 +2627,64 @@
     </div>
   </div>
 
+  <!-- Contacto del encargado de compras (2.3) -->
+  <div class="journey-modal journey-modal-sm" id="purchaseContactModal" hidden role="dialog" aria-modal="true" aria-labelledby="purchaseContactTitle">
+    <div class="journey-modal-overlay" data-purchase-contact-close></div>
+    <div class="journey-modal-box" role="document">
+      <header class="journey-modal-head">
+        <div class="journey-modal-head-text">
+          <h2 class="journey-modal-title" id="purchaseContactTitle">Contacto de compras</h2>
+          <p class="journey-modal-subtitle" id="purchaseContactName"></p>
+        </div>
+        <button class="journey-modal-close" type="button" data-purchase-contact-close aria-label="Cerrar"><i data-lucide="x"></i></button>
+      </header>
+      <form class="journey-modal-body" id="purchaseContactForm" novalidate>
+        <p class="purchase-contact-hint">Datos del encargado de compras, independientes del telefono publico del local.</p>
+        <div class="stop-edit-grid">
+          <label class="form-row stop-edit-wide"><span class="form-label">Nombre del encargado</span><input class="form-input" name="name" type="text" required /></label>
+          <label class="form-row"><span class="form-label">Cargo o funcion</span><input class="form-input" name="role" type="text" placeholder="Encargado de compras" /></label>
+          <label class="form-row"><span class="form-label">Telefono</span><input class="form-input" name="phone" type="tel" inputmode="tel" /></label>
+          <label class="form-row"><span class="form-label">WhatsApp</span><input class="form-input" name="whatsapp" type="tel" inputmode="tel" /></label>
+          <label class="form-row"><span class="form-label">Correo (opcional)</span><input class="form-input" name="email" type="email" /></label>
+          <label class="form-row"><span class="form-label">Mejor dia para contactar</span>
+            <select class="form-input" name="bestContactDay">
+              <option value="">Cualquiera</option>
+              <option value="lunes">Lunes</option>
+              <option value="martes">Martes</option>
+              <option value="miercoles">Miercoles</option>
+              <option value="jueves">Jueves</option>
+              <option value="viernes">Viernes</option>
+              <option value="sabado">Sabado</option>
+              <option value="domingo">Domingo</option>
+            </select>
+          </label>
+          <label class="form-row"><span class="form-label">Mejor horario</span>
+            <select class="form-input" name="bestContactTime">
+              <option value="">Cualquiera</option>
+              <option value="manana">Manana</option>
+              <option value="mediodia">Mediodia</option>
+              <option value="tarde">Tarde</option>
+              <option value="noche">Noche</option>
+            </select>
+          </label>
+          <label class="form-row stop-edit-wide"><span class="form-label">Observaciones</span><textarea class="form-input" name="notes" rows="2"></textarea></label>
+          <label class="form-row"><span class="form-label">Proxima visita (opcional)</span><input class="form-input" name="nextVisitDate" type="date" /></label>
+        </div>
+        <div class="journey-result-error" id="purchaseContactError" role="alert"></div>
+      </form>
+      <footer class="journey-modal-footer">
+        <button class="btn ghost" type="button" data-purchase-contact-close>Cancelar</button>
+        <button class="btn primary" type="button" id="purchaseContactSave"><i data-lucide="save"></i> Guardar contacto</button>
+      </footer>
+    </div>
+  </div>
+
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.js"></script>
   <script src="vendor/qrcode.min.js?v=20260705-01"></script>
-  <script type="module" src="app.js?v=20260707-04"></script>
+  <script type="module" src="app.js?v=20260707-05"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();
