@@ -13355,6 +13355,15 @@ const closeJourneySummary = () => {
   document.body.classList.remove("modal-open");
 };
 
+const loadJourneySummaryData = async (journeyId) => {
+  const journeySnap = await getDoc(doc(db, "visitJourneys", journeyId));
+  if (!journeySnap.exists()) return null;
+  const journey = { id: journeySnap.id, ...journeySnap.data() };
+  const stopsSnap = await getDocs(query(collection(db, "visitJourneys", journeyId, "stops"), orderBy("order", "asc")));
+  const stops = stopsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return { journey, stops, summary: buildJourneySummary(journey, stops) };
+};
+
 const openJourneySummary = async (journeyId) => {
   const modal = document.getElementById("journeySummaryModal");
   if (!modal) return;
@@ -13363,14 +13372,10 @@ const openJourneySummary = async (journeyId) => {
   modal.hidden = false;
   document.body.classList.add("modal-open");
   try {
-    const journeySnap = await getDoc(doc(db, "visitJourneys", journeyId));
-    if (!journeySnap.exists()) { closeJourneySummary(); return; }
-    const journey = { id: journeySnap.id, ...journeySnap.data() };
-    const stopsSnap = await getDocs(query(collection(db, "visitJourneys", journeyId, "stops"), orderBy("order", "asc")));
-    const stops = stopsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    const summary = buildJourneySummary(journey, stops);
-    lastJourneySummary = { journey, stops, summary };
-    modal.innerHTML = renderJourneySummaryScreen(journey, stops, summary);
+    const data = await loadJourneySummaryData(journeyId);
+    if (!data) { closeJourneySummary(); return; }
+    lastJourneySummary = data;
+    modal.innerHTML = renderJourneySummaryScreen(data.journey, data.stops, data.summary);
     refreshIcons();
     animateJourneySummary(modal);
   } catch (error) {
@@ -13546,6 +13551,20 @@ const exportJourneySummaryImage = async ({ share }) => {
     setStatus("Error al generar la imagen. Reintentá.");
   } finally {
     btns.forEach((b) => { b.disabled = false; });
+  }
+};
+
+// Compartir la imagen de una jornada directamente desde su tarjeta (7).
+const shareJourneyFromCard = async (journeyId) => {
+  showToast("Generando imagen…");
+  try {
+    const data = await loadJourneySummaryData(journeyId);
+    if (!data) { showToast("No se encontró la jornada."); return; }
+    lastJourneySummary = data;
+    await exportJourneySummaryImage({ share: true });
+  } catch (error) {
+    console.error("No se pudo compartir la jornada", { journeyId, uid: auth.currentUser?.uid, error });
+    showToast("No se pudo compartir la jornada.");
   }
 };
 
@@ -13757,6 +13776,21 @@ const renderJourneysList = (journeys) => {
     const statusLabel = JOURNEY_STATUS_LABELS[status] || "Borrador";
     const statusClass = { draft: "muted", planned: "blue", active: "green", completed: "green-dark", cancelled: "red" }[status] || "muted";
     const incomplete = total === 0;
+    let completedBrief = "";
+    if (status === "completed") {
+      const jsales = state.sales.filter((s) => s.journeyId === j.id);
+      const salesCount = jsales.length;
+      const totalAmount = jsales.reduce((a, s) => a + (Number(s.total) || 0), 0);
+      const startMs = qrTimestampMs(j.startedAt);
+      const endMs = qrTimestampMs(j.completedAt);
+      const durLabel = (startMs && endMs && endMs > startMs) ? formatDuration(Math.round((endMs - startMs) / 1000)) : "";
+      completedBrief = `
+        <div class="journey-card-brief">
+          <span><i data-lucide="shopping-bag"></i> <strong>${salesCount}</strong> venta${salesCount === 1 ? "" : "s"}</span>
+          ${totalAmount ? `<span><i data-lucide="banknote"></i> <strong>${formatGs(totalAmount)}</strong> Gs</span>` : ""}
+          ${durLabel ? `<span><i data-lucide="clock"></i> ${durLabel}</span>` : ""}
+        </div>`;
+    }
     return `
     <div class="journey-card${featured ? " journey-card-active" : ""}${muted ? " journey-card-muted" : ""}${j.id === lastCreatedJourneyId ? " journey-card-new" : ""}" data-journey-id="${j.id}">
       <div class="journey-card-head">
@@ -13774,10 +13808,11 @@ const renderJourneysList = (journeys) => {
       ${incomplete ? '<div class="journey-incomplete-note">Jornada incompleta (sin paradas)</div>' : `
         <div class="journey-progress-wrap"><div class="journey-progress-bar" style="width:${pct}%"></div></div>
         <div class="journey-progress-label">${done} de ${total} visitas completadas</div>`}
+      ${completedBrief}
       <div class="journey-card-actions">
         ${status === "planned" ? `<button class="btn primary btn-xs" type="button" data-journey-start="${j.id}">Iniciar</button>` : ""}
         ${status === "active" ? `<button class="btn primary btn-xs" type="button" data-journey-open="${j.id}">Continuar jornada</button>` : ""}
-        ${status === "completed" ? `<button class="btn ghost btn-xs" type="button" data-journey-open="${j.id}">Ver resumen</button>` : ""}
+        ${status === "completed" ? `<button class="btn ghost btn-xs" type="button" data-journey-open="${j.id}">Ver resumen</button><button class="btn ghost btn-xs" type="button" data-journey-share="${j.id}"><i data-lucide="share-2"></i> Compartir</button>` : ""}
         ${status === "draft" || status === "planned" ? `<button class="btn ghost btn-xs" type="button" data-journey-open="${j.id}">Abrir</button>` : ""}
         ${status !== "completed" && status !== "cancelled" ? `<button class="btn ghost btn-xs" type="button" data-journey-cancel="${j.id}">Cancelar</button>` : ""}
         ${status === "cancelled" ? `<button class="btn ghost btn-xs" type="button" data-journey-open="${j.id}">Ver detalles</button><button class="btn ghost btn-xs danger" type="button" data-journey-delete="${j.id}">Eliminar definitivamente</button>` : ""}
@@ -15500,6 +15535,8 @@ const setupJourneysModule = () => {
     const startBtn = event.target.closest("[data-journey-start]");
     const cancelBtn = event.target.closest("[data-journey-cancel]");
     const deleteBtn = event.target.closest("[data-journey-delete]");
+    const shareBtn = event.target.closest("[data-journey-share]");
+    if (shareBtn) { await shareJourneyFromCard(shareBtn.dataset.journeyShare); return; }
     if (openBtn) {
       const journeyId = openBtn.dataset.journeyOpen;
       const journeyStatus = normalizeJourneyStatus(journeysCache?.find((j) => j.id === journeyId)?.status);

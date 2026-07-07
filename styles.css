@@ -7757,6 +7757,19 @@ body.sale-journey-modal-open::before {
   transition: width 0.3s;
 }
 .journey-progress-label { font-size: 0.78rem; color: var(--muted); margin-bottom: 10px; }
+.journey-card-brief {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.journey-card-brief span { display: inline-flex; align-items: center; gap: 5px; }
+.journey-card-brief i { width: 14px; height: 14px; }
+.journey-card-brief strong { color: var(--text, #111827); }
 .journey-card-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 
 /* ---- Botón volver ---- */
