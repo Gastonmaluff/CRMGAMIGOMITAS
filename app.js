@@ -510,14 +510,43 @@ const JOURNEY_STATUS_LABELS = {
   completed: "Completada", cancelled: "Cancelada"
 };
 const STOP_STATUS_LABELS = {
-  pending: "Pendiente", en_route: "En camino",
-  sale: "Venta realizada", visited_no_sale: "Visitado sin venta",
+  pending: "Pendiente", en_route: "En camino", visiting: "En visita",
+  sale: "Venta realizada", contact: "Contacto conseguido", follow_up: "Seguimiento abierto",
+  visited_no_sale: "Visitado sin venta",
   closed: "Local cerrado", unavailable: "No disponible",
-  rescheduled: "Reprogramado", skipped: "Omitido"
+  rescheduled: "Reprogramado", not_interested: "No interesado definitivo", skipped: "Omitido"
 };
-const STOP_TERMINAL_STATES = new Set(["sale", "visited_no_sale", "closed", "unavailable", "rescheduled", "skipped"]);
-const REVISIT_REQUIRED_RESULTS = new Set(["visited_no_sale", "closed", "unavailable", "rescheduled"]);
-const REVISIT_OPTIONAL_RESULTS = new Set(["skipped"]);
+const STOP_TERMINAL_STATES = new Set(["sale", "contact", "follow_up", "visited_no_sale", "closed", "unavailable", "rescheduled", "not_interested", "skipped"]);
+const REVISIT_REQUIRED_RESULTS = new Set(["follow_up", "visited_no_sale", "closed", "unavailable", "rescheduled"]);
+const REVISIT_OPTIONAL_RESULTS = new Set(["contact", "skipped"]);
+// Clasificacion resumida de un resultado de visita (2.4). "avance comercial"
+// = cualquiera que no sea sin_avance ni descartado.
+const RESULT_CLASSIFICATION = {
+  sale: "exito",
+  contact: "avance",
+  follow_up: "avance",
+  rescheduled: "pendiente",
+  closed: "pendiente",
+  unavailable: "pendiente",
+  visited_no_sale: "sin_avance",
+  skipped: "sin_avance",
+  not_interested: "descartado"
+};
+const RESULT_CLASSIFICATION_LABELS = {
+  exito: "Éxito", avance: "Avance", pendiente: "Pendiente",
+  sin_avance: "Sin avance", descartado: "Descartado"
+};
+const getResultClassification = (result) => RESULT_CLASSIFICATION[result] || "sin_avance";
+// Una visita fue "fallida real" solo si no hubo venta, ni contacto util, ni
+// seguimiento, ni revisita programada, ni ningun otro avance comercial.
+const isFailedVisit = (stop) => {
+  if (!stop || !STOP_TERMINAL_STATES.has(stop.status)) return false;
+  const klass = getResultClassification(stop.status);
+  if (klass === "exito" || klass === "avance") return false;
+  if (stop.contactObtained) return false;
+  if (stop.nextVisitDate) return false;
+  return klass === "sin_avance";
+};
 const REVISIT_STATUS_LABELS = {
   not_scheduled: "Sin seguimiento",
   scheduled: "Programada",
@@ -8996,9 +9025,9 @@ const convertProspectToClient = async (prospect) => {
 };
 
 const getProspectStatusAfterVisit = (currentStatus, result) => {
-  if (result === "no_interesado") return "no_interesado";
-  if (result === "reagendar") return "visita_pendiente";
-  if (result === "compro" || result === "pidio_precio") return "interesado";
+  if (result === "not_interested" || result === "no_interesado") return "no_interesado";
+  if (result === "rescheduled" || result === "follow_up" || result === "reagendar") return "visita_pendiente";
+  if (result === "sale" || result === "contact" || result === "compro" || result === "pidio_precio") return "interesado";
   return normalizeOptionValue(PROSPECT_STATUS_OPTIONS, currentStatus, "visitado") === "convertido_cliente"
     ? "convertido_cliente"
     : "visitado";
@@ -12880,6 +12909,7 @@ const saveJourneyVisitResult = async (journeyId, stopId, payload) => {
   const stopUpdate = {
     status: result,
     result,
+    classification: getResultClassification(result),
     resultNotes: notes,
     reasonDetail,
     completedAt: serverTimestamp(),
@@ -12911,14 +12941,14 @@ const saveJourneyVisitResult = async (journeyId, stopId, payload) => {
       prospectUpdate.revisitReason = revisitReason || notes;
       prospectUpdate.revisitPriority = revisitPriority;
       prospectUpdate.status = result === "rescheduled" ? "visita_pendiente" : getProspectStatusAfterVisit(getProspectByStop(stop)?.status, result);
-    } else if (result === "skipped") {
-      prospectUpdate.nextVisitDate = "";
-      prospectUpdate.nextVisitTime = "";
-      prospectUpdate.revisitStatus = "not_scheduled";
-    } else if (result === "visited_no_sale" && reasonDetail === "No interesado") {
+    } else if (result === "not_interested") {
       prospectUpdate.nextVisitDate = "";
       prospectUpdate.nextVisitTime = "";
       prospectUpdate.status = "no_interesado";
+      prospectUpdate.revisitStatus = "not_scheduled";
+    } else if (result === "skipped") {
+      prospectUpdate.nextVisitDate = "";
+      prospectUpdate.nextVisitTime = "";
       prospectUpdate.revisitStatus = "not_scheduled";
     } else {
       prospectUpdate.nextVisitDate = "";
@@ -12931,6 +12961,7 @@ const saveJourneyVisitResult = async (journeyId, stopId, payload) => {
       journeyId,
       stopId,
       result,
+      classification: getResultClassification(result),
       notes,
       reasonDetail,
       visitedAt,
@@ -13375,10 +13406,13 @@ const closeResultModal = () => {
 const getSelectedJourneyResult = () => document.querySelector("#journeyResultModal [data-result-value].active")?.dataset.resultValue || "";
 
 const getReasonOptionsForResult = (result) => {
+  if (result === "contact") return ["Encargado conseguido", "Datos de compras", "Pidio catalogo", "Pidio precio", "Otro"];
+  if (result === "follow_up") return ["Interesado, volver", "Va a consultar", "Necesita presupuesto", "Prueba pendiente", "Otro"];
   if (result === "unavailable") return ["Encargado ausente", "No pudo atender", "Horario inconveniente", "Otro"];
-  if (result === "visited_no_sale") return ["No interesado", "Necesita pensarlo", "Ya trabaja con otra marca", "Precio", "Volver otro dia", "Otro"];
+  if (result === "visited_no_sale") return ["Necesita pensarlo", "Ya trabaja con otra marca", "Precio", "Volver otro dia", "Otro"];
   if (result === "closed") return ["Local cerrado", "Volver en otro horario", "Otro"];
   if (result === "rescheduled") return ["Solicito otra fecha", "No estaba listo", "Otro"];
+  if (result === "not_interested") return ["No le interesa el producto", "Ya trabaja con otra marca", "Sin capacidad de compra", "Otro"];
   return ["Motivo operativo", "Otro"];
 };
 
@@ -13402,9 +13436,11 @@ const renderResultDynamicFields = (result) => {
     return;
   }
   const showRevisit = REVISIT_REQUIRED_RESULTS.has(result) || REVISIT_OPTIONAL_RESULTS.has(result);
-  const required = result === "rescheduled";
+  const required = result === "rescheduled" || result === "follow_up";
   const reasonOptions = getReasonOptionsForResult(result).map((label) => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`).join("");
+  const klass = getResultClassification(result);
   container.innerHTML = `
+    <div class="result-classification result-classification-${klass}">${RESULT_CLASSIFICATION_LABELS[klass] || ""}</div>
     <div class="journey-result-reason">
       <label class="form-label" for="resultReason">Motivo</label>
       <select class="form-input" id="resultReason">
@@ -14418,9 +14454,11 @@ const setupJourneysModule = () => {
       const payload = collectResultPayload();
       if (!payload.result) { window.alert("Elige un resultado."); return; }
       if (payload.result === "sale") { window.alert("Para una venta realizada, usa Cargar venta y guarda la venta real."); return; }
-      if (payload.result === "rescheduled" && !payload.nextVisitDate) {
+      if ((payload.result === "rescheduled" || payload.result === "follow_up") && !payload.nextVisitDate) {
         const errorEl = document.getElementById("resultError");
-        if (errorEl) errorEl.textContent = "Para reprogramar, elegi una fecha de proxima visita.";
+        if (errorEl) errorEl.textContent = payload.result === "follow_up"
+          ? "Para un seguimiento abierto, programa una fecha de proxima visita."
+          : "Para reprogramar, elegi una fecha de proxima visita.";
         return;
       }
       journeyResultState.saving = true;

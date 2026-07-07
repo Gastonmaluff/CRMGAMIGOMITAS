@@ -7466,6 +7466,23 @@ body.sale-journey-modal-open::before {
 .result-btn:hover { border-color: var(--primary); background: var(--primary-light, #e8f5e9); }
 .result-btn.active { border-color: var(--primary); background: var(--primary); color: #fff; }
 
+/* Chip de clasificacion resumida del resultado (Exito/Avance/Pendiente/...) */
+.result-classification {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 10px;
+}
+.result-classification-exito { background: #dcfce7; color: #15803d; }
+.result-classification-avance { background: #dbeafe; color: #1d4ed8; }
+.result-classification-pendiente { background: #ede9fe; color: #6d28d9; }
+.result-classification-sin_avance { background: #f1f5f9; color: #475569; }
+.result-classification-descartado { background: #fee2e2; color: #b91c1c; }
+
 .journey-result-dynamic {
   display: flex;
   flex-direction: column;
