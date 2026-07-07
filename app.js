@@ -13138,6 +13138,203 @@ const finalizeJourney = async (journeyId) => {
   await updateDoc(doc(db, "visitJourneys", journeyId), { status: "completed", completedAt: serverTimestamp(), updatedAt: serverTimestamp() });
 };
 
+// ----- Resumen de jornada (6) -----
+const RESULT_LIST_COLORS = {
+  sale: "green", contact: "blue", follow_up: "purple", rescheduled: "purple",
+  visited_no_sale: "gray", closed: "orange", unavailable: "yellow",
+  not_interested: "red", skipped: "gray", pending: "gray", visiting: "blue"
+};
+
+const buildJourneySummary = (journey, stops) => {
+  const s = {
+    name: journey.name || "Jornada",
+    dateLabel: formatJourneyDate(journey),
+    user: journey.assignedUserName || journey.responsable || "—",
+    startedAtMs: qrTimestampMs(journey.startedAt),
+    finishedAtMs: qrTimestampMs(journey.completedAt),
+    totalStops: stops.length,
+    completedStops: 0,
+    byClass: { exito: 0, avance: 0, pendiente: 0, sin_avance: 0, descartado: 0 },
+    salesCount: 0, totalSalesAmount: 0, totalBoxes: 0,
+    contactsObtained: 0, followUpsScheduled: 0, failedVisits: 0,
+    closedStores: 0, unavailableStores: 0, visitedNoSale: 0, notInterested: 0,
+    totalVisitSeconds: 0, visitsWithDuration: 0,
+    totalDistanceMeters: Number(journey.totalDistanceMeters) || 0
+  };
+  stops.forEach((stop) => {
+    const terminal = STOP_TERMINAL_STATES.has(stop.status);
+    if (terminal) s.completedStops += 1;
+    const klass = stop.classification || getResultClassification(stop.status);
+    if (terminal && s.byClass[klass] != null) s.byClass[klass] += 1;
+    if (stop.status === "sale") {
+      s.salesCount += 1;
+      const sale = state.sales.find((x) => x.id === stop.saleId);
+      if (sale) { s.totalSalesAmount += Number(sale.total) || 0; s.totalBoxes += Number(sale.quantity) || 0; }
+    }
+    if (stop.contactObtained) s.contactsObtained += 1;
+    if (stop.nextVisitDate || stop.status === "follow_up" || stop.status === "rescheduled") s.followUpsScheduled += 1;
+    if (stop.status === "closed") s.closedStores += 1;
+    if (stop.status === "unavailable") s.unavailableStores += 1;
+    if (stop.status === "visited_no_sale") s.visitedNoSale += 1;
+    if (stop.status === "not_interested") s.notInterested += 1;
+    if (isFailedVisit(stop)) s.failedVisits += 1;
+    if (Number.isFinite(stop.visitDurationSeconds) && stop.visitDurationSeconds > 0) {
+      s.totalVisitSeconds += stop.visitDurationSeconds;
+      s.visitsWithDuration += 1;
+    }
+  });
+  s.journeySeconds = (s.startedAtMs && s.finishedAtMs) ? Math.max(0, Math.round((s.finishedAtMs - s.startedAtMs) / 1000)) : 0;
+  s.avgVisitSeconds = s.visitsWithDuration ? Math.round(s.totalVisitSeconds / s.visitsWithDuration) : 0;
+  s.conversion = s.completedStops ? Math.round((s.salesCount / s.completedStops) * 100) : 0;
+  return s;
+};
+
+const jsumTimeLabel = (ms) => ms ? formatTime(new Date(ms)) : "—";
+
+const renderJourneySummaryScreen = (journey, stops, summary) => {
+  const orderedStops = [...stops].sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+  const metric = (label, value, opts = {}) => `
+    <div class="jsum-metric${opts.accent ? " jsum-metric-" + opts.accent : ""}">
+      <span class="jsum-metric-val" ${opts.count ? `data-countup="${opts.count}"` : ""} ${opts.money ? `data-money="1"` : ""}>${opts.count ? "0" : value}</span>
+      <span class="jsum-metric-label">${label}</span>
+    </div>`;
+  const groupRow = (label, value, tone) => `
+    <div class="jsum-group-row jsum-tone-${tone}"><span>${label}</span><strong>${value}</strong></div>`;
+  const bizRows = orderedStops.map((stop, idx) => {
+    const color = RESULT_LIST_COLORS[stop.status] || "gray";
+    const resultLabel = STOP_STATUS_LABELS[stop.status] || "Pendiente";
+    const dur = Number.isFinite(stop.visitDurationSeconds) && stop.visitDurationSeconds > 0 ? formatStopwatch(stop.visitDurationSeconds) : "";
+    const sale = stop.status === "sale" ? state.sales.find((x) => x.id === stop.saleId) : null;
+    const amount = sale ? `${formatGs(sale.total)} Gs` : "";
+    const sub = [resultLabel, dur, amount].filter(Boolean).join(" · ");
+    return `
+      <div class="jsum-biz jsum-biz-${color}">
+        <span class="jsum-biz-n">${idx + 1}</span>
+        <div class="jsum-biz-main">
+          <div class="jsum-biz-name">${escapeHtml(stop.businessName || "-")}</div>
+          <div class="jsum-biz-sub">${escapeHtml(sub)}</div>
+          ${stop.resultNotes ? `<div class="jsum-biz-note">${escapeHtml(stop.resultNotes)}</div>` : ""}
+          <div class="jsum-biz-tags">
+            ${stop.contactObtained ? '<span class="jsum-tag jsum-tag-blue">Contacto</span>' : ""}
+            ${stop.nextVisitDate ? `<span class="jsum-tag jsum-tag-purple">Revisita ${escapeHtml(formatDate(normalizeDateValue(stop.nextVisitDate)) || "")}</span>` : ""}
+          </div>
+        </div>
+      </div>`;
+  }).join("");
+  return `
+    <div class="jsum-box" role="document">
+      <header class="jsum-head">
+        <div>
+          <div class="jsum-eyebrow">Resumen de jornada</div>
+          <h2 class="jsum-title">${escapeHtml(summary.name)}</h2>
+          <div class="jsum-headmeta">
+            <span><i data-lucide="calendar"></i> ${escapeHtml(summary.dateLabel)}</span>
+            <span><i data-lucide="user"></i> ${escapeHtml(summary.user)}</span>
+            <span><i data-lucide="flag"></i> Finalizada</span>
+          </div>
+        </div>
+        <button class="journey-modal-close" type="button" data-jsum-close aria-label="Cerrar"><i data-lucide="x"></i></button>
+      </header>
+      <div class="jsum-body">
+        <div class="jsum-times">
+          <div><span>Inicio</span><strong>${jsumTimeLabel(summary.startedAtMs)}</strong></div>
+          <div><span>Fin</span><strong>${jsumTimeLabel(summary.finishedAtMs)}</strong></div>
+          <div><span>Duración</span><strong>${summary.journeySeconds ? formatDuration(summary.journeySeconds) : "—"}</strong></div>
+          <div><span>Distancia</span><strong>${summary.totalDistanceMeters ? formatDistance(summary.totalDistanceMeters) : "—"}</strong></div>
+        </div>
+        <div class="jsum-progress"><div class="jsum-progress-bar" data-bar="${summary.totalStops ? Math.round(summary.completedStops / summary.totalStops * 100) : 0}"></div></div>
+        <div class="jsum-progress-label">${summary.completedStops} de ${summary.totalStops} visitas completadas</div>
+        <div class="jsum-metrics">
+          ${metric("Ventas", summary.salesCount, { count: summary.salesCount, accent: "green" })}
+          ${metric("Total vendido (Gs)", "", { count: summary.totalSalesAmount, money: true, accent: "green" })}
+          ${metric("Cajas", summary.totalBoxes, { count: summary.totalBoxes })}
+          ${metric("Contactos", summary.contactsObtained, { count: summary.contactsObtained, accent: "blue" })}
+          ${metric("Seguimientos", summary.followUpsScheduled, { count: summary.followUpsScheduled, accent: "purple" })}
+          ${metric("Conversión", `${summary.conversion}%`)}
+          ${metric("Duración total", summary.totalVisitSeconds ? formatStopwatch(summary.totalVisitSeconds) : "—")}
+          ${metric("Promedio/visita", summary.avgVisitSeconds ? formatStopwatch(summary.avgVisitSeconds) : "—")}
+        </div>
+        <div class="jsum-groups">
+          <div class="jsum-group">
+            <div class="jsum-group-title jsum-tone-green">Resultado positivo</div>
+            ${groupRow("Ventas", summary.salesCount, "green")}
+            ${groupRow("Contactos conseguidos", summary.contactsObtained, "blue")}
+            ${groupRow("Seguimientos abiertos", summary.byClass.avance, "blue")}
+          </div>
+          <div class="jsum-group">
+            <div class="jsum-group-title jsum-tone-purple">Pendiente</div>
+            ${groupRow("Revisitas programadas", summary.followUpsScheduled, "purple")}
+            ${groupRow("Locales cerrados", summary.closedStores, "orange")}
+            ${groupRow("No disponibles", summary.unavailableStores, "yellow")}
+          </div>
+          <div class="jsum-group">
+            <div class="jsum-group-title jsum-tone-red">Resultado negativo</div>
+            ${groupRow("Visitados sin venta", summary.visitedNoSale, "gray")}
+            ${groupRow("No interesado definitivo", summary.notInterested, "red")}
+            ${groupRow("Visitas fallidas reales", summary.failedVisits, "red")}
+          </div>
+        </div>
+        <div class="jsum-list-title">Negocios visitados</div>
+        <div class="jsum-list">${bizRows || '<div class="jsum-empty">Sin paradas.</div>'}</div>
+      </div>
+      <footer class="jsum-footer">
+        <button class="btn ghost" type="button" data-jsum-close>Volver a jornadas</button>
+      </footer>
+    </div>`;
+};
+
+const animateJourneySummary = (modal) => {
+  modal.querySelectorAll("[data-bar]").forEach((bar) => {
+    const target = Number(bar.dataset.bar) || 0;
+    bar.style.width = "0%";
+    requestAnimationFrame(() => { bar.style.width = `${target}%`; });
+  });
+  modal.querySelectorAll("[data-countup]").forEach((el) => {
+    const target = Number(el.dataset.countup) || 0;
+    const money = el.dataset.money === "1";
+    const fmt = (v) => money ? formatGs(Math.round(v)) : String(Math.round(v));
+    if (target <= 0) { el.textContent = fmt(0); return; }
+    const durationMs = 700;
+    const start = performance.now();
+    const step = (now) => {
+      const p = Math.min(1, (now - start) / durationMs);
+      const eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = fmt(target * eased);
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+};
+
+const closeJourneySummary = () => {
+  const modal = document.getElementById("journeySummaryModal");
+  if (modal) { modal.hidden = true; modal.innerHTML = ""; }
+  document.body.classList.remove("modal-open");
+};
+
+const openJourneySummary = async (journeyId) => {
+  const modal = document.getElementById("journeySummaryModal");
+  if (!modal) return;
+  modal.dataset.journeyId = journeyId;
+  modal.innerHTML = '<div class="jsum-box"><div class="jsum-loading">Generando resumen…</div></div>';
+  modal.hidden = false;
+  document.body.classList.add("modal-open");
+  try {
+    const journeySnap = await getDoc(doc(db, "visitJourneys", journeyId));
+    if (!journeySnap.exists()) { closeJourneySummary(); return; }
+    const journey = { id: journeySnap.id, ...journeySnap.data() };
+    const stopsSnap = await getDocs(query(collection(db, "visitJourneys", journeyId, "stops"), orderBy("order", "asc")));
+    const stops = stopsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const summary = buildJourneySummary(journey, stops);
+    modal.innerHTML = renderJourneySummaryScreen(journey, stops, summary);
+    refreshIcons();
+    animateJourneySummary(modal);
+  } catch (error) {
+    console.error("No se pudo abrir el resumen de la jornada", { journeyId, uid: auth.currentUser?.uid, error });
+    modal.innerHTML = '<div class="jsum-box"><div class="jsum-loading">No se pudo generar el resumen. <button class="btn ghost btn-xs" type="button" data-jsum-close>Cerrar</button></div></div>';
+  }
+};
+
 const deleteJourney = async (journeyId) => {
   await updateDoc(doc(db, "visitJourneys", journeyId), { status: "cancelled", updatedAt: serverTimestamp() });
 };
@@ -13502,9 +13699,11 @@ const renderActiveJourney = async (journeyId, { preserveScroll = false } = {}) =
     renderActiveJourney(journeyId);
   });
   const finalize = async () => {
-    if (!window.confirm("Finalizar la jornada? Las paradas pendientes quedarán sin visitar.")) return;
+    const pending = journeyStopsCache.filter((st) => !STOP_TERMINAL_STATES.has(st.status)).length;
+    if (pending > 0 && !window.confirm(`Todavía hay ${pending} visita${pending === 1 ? "" : "s"} pendiente${pending === 1 ? "" : "s"}. ¿Querés finalizar igual?`)) return;
     await finalizeJourney(journeyId);
-    renderActiveJourney(journeyId);
+    stopActiveJourneyStopsListener();
+    await openJourneySummary(journeyId);
   };
   document.getElementById("journeyFinalizeBtn")?.addEventListener("click", finalize);
   document.getElementById("journeyFinalizeBtn2")?.addEventListener("click", finalize);
@@ -15043,6 +15242,21 @@ const setupJourneysModule = () => {
   document.getElementById("purchaseContactModal")?.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closePurchaseContactModal();
   });
+  // Resumen de jornada (6)
+  document.getElementById("journeySummaryModal")?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-jsum-close]")) {
+      closeJourneySummary();
+      // Volver siempre a la lista de jornadas.
+      stopActiveJourneyStopsListener();
+      activeJourneyId = null;
+      document.getElementById("journeyActiveSection")?.setAttribute("hidden", "");
+      document.getElementById("journeyListSection")?.removeAttribute("hidden");
+      loadAndRenderJourneys();
+    }
+  });
+  document.getElementById("journeySummaryModal")?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeJourneySummary();
+  });
   // Datos fiscales antes de la venta (4.3)
   document.getElementById("saleFiscalSave")?.addEventListener("click", saveSaleFiscalAndContinue);
   document.getElementById("saleFiscalForm")?.addEventListener("submit", (event) => {
@@ -15070,11 +15284,17 @@ const setupJourneysModule = () => {
     const cancelBtn = event.target.closest("[data-journey-cancel]");
     const deleteBtn = event.target.closest("[data-journey-delete]");
     if (openBtn) {
-      activeJourneyId = openBtn.dataset.journeyOpen;
-      document.getElementById("journeyActiveSection")?.removeAttribute("hidden");
-      document.getElementById("journeyListSection")?.setAttribute("hidden", "");
-      await renderActiveJourney(activeJourneyId);
-      startActiveJourneyStopsListener(activeJourneyId);
+      const journeyId = openBtn.dataset.journeyOpen;
+      const journeyStatus = normalizeJourneyStatus(journeysCache?.find((j) => j.id === journeyId)?.status);
+      if (journeyStatus === "completed") {
+        await openJourneySummary(journeyId);
+      } else {
+        activeJourneyId = journeyId;
+        document.getElementById("journeyActiveSection")?.removeAttribute("hidden");
+        document.getElementById("journeyListSection")?.setAttribute("hidden", "");
+        await renderActiveJourney(activeJourneyId);
+        startActiveJourneyStopsListener(activeJourneyId);
+      }
     }
     if (startBtn) {
       await startJourney(startBtn.dataset.journeyStart);

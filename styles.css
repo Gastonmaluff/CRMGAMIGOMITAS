@@ -7875,6 +7875,120 @@ body.sale-journey-modal-open::before {
 .stop-visit-when { color: var(--muted); }
 @keyframes visitPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 
+/* ---- Resumen de jornada (6) ---- */
+.journey-summary-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  overflow-y: auto;
+  padding: max(env(safe-area-inset-top), 16px) 12px calc(env(safe-area-inset-bottom) + 16px);
+}
+.journey-summary-modal[hidden] { display: none; }
+.jsum-box {
+  width: 100%;
+  max-width: 720px;
+  background: var(--surface, #fff);
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+  overflow: hidden;
+  animation: jsumIn 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes jsumIn { from { opacity: 0; transform: translateY(18px) scale(0.985); } to { opacity: 1; transform: none; } }
+.jsum-loading { padding: 48px 24px; text-align: center; color: var(--muted); }
+.jsum-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px 22px 16px;
+  background: linear-gradient(135deg, var(--green-700, #15803d), var(--primary, #16a34a));
+  color: #fff;
+}
+.jsum-eyebrow { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.85; font-weight: 700; }
+.jsum-title { margin: 2px 0 8px; font-size: 1.35rem; line-height: 1.15; }
+.jsum-headmeta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.82rem; opacity: 0.95; }
+.jsum-headmeta span { display: inline-flex; align-items: center; gap: 5px; }
+.jsum-headmeta i { width: 14px; height: 14px; }
+.jsum-head .journey-modal-close { color: #fff; background: rgba(255,255,255,0.15); }
+.jsum-body { padding: 18px 22px; }
+.jsum-times {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.jsum-times > div { text-align: center; padding: 10px 4px; background: var(--surface-raised, #f8faf9); border-radius: 10px; }
+.jsum-times span { display: block; font-size: 0.72rem; color: var(--muted); }
+.jsum-times strong { font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+.jsum-progress { height: 10px; background: var(--border, #e5e7eb); border-radius: 999px; overflow: hidden; }
+.jsum-progress-bar { height: 100%; background: var(--primary, #16a34a); width: 0; transition: width 0.9s cubic-bezier(0.16, 1, 0.3, 1); }
+.jsum-progress-label { font-size: 0.8rem; color: var(--muted); margin: 6px 0 16px; }
+.jsum-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.jsum-metric { padding: 12px 8px; border: 1px solid var(--border); border-radius: 12px; text-align: center; }
+.jsum-metric-val { display: block; font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.jsum-metric-label { display: block; font-size: 0.72rem; color: var(--muted); margin-top: 3px; }
+.jsum-metric-green .jsum-metric-val { color: #15803d; }
+.jsum-metric-blue .jsum-metric-val { color: #1d4ed8; }
+.jsum-metric-purple .jsum-metric-val { color: #6d28d9; }
+.jsum-groups { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
+.jsum-group { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+.jsum-group-title { font-size: 0.78rem; font-weight: 800; margin-bottom: 8px; }
+.jsum-group-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; padding: 3px 0; }
+.jsum-group-row strong { font-variant-numeric: tabular-nums; }
+.jsum-tone-green { color: #15803d; }
+.jsum-tone-blue { color: #1d4ed8; }
+.jsum-tone-purple { color: #6d28d9; }
+.jsum-tone-orange { color: #c2410c; }
+.jsum-tone-yellow { color: #a16207; }
+.jsum-tone-red { color: #b91c1c; }
+.jsum-tone-gray { color: var(--muted); }
+.jsum-list-title { font-weight: 800; font-size: 0.95rem; margin: 4px 0 10px; }
+.jsum-list { display: flex; flex-direction: column; gap: 8px; }
+.jsum-empty { color: var(--muted); text-align: center; padding: 16px; }
+.jsum-biz {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 10px;
+  animation: jsumRowIn 0.4s ease both;
+}
+@keyframes jsumRowIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+.jsum-biz-green { border-left-color: #16a34a; }
+.jsum-biz-blue { border-left-color: #2563eb; }
+.jsum-biz-purple { border-left-color: #8b5cf6; }
+.jsum-biz-orange { border-left-color: #f97316; }
+.jsum-biz-yellow { border-left-color: #eab308; }
+.jsum-biz-red { border-left-color: #dc2626; }
+.jsum-biz-gray { border-left-color: #94a3b8; }
+.jsum-biz-n { min-width: 22px; height: 22px; border-radius: 50%; background: var(--surface-raised, #f1f5f9); display: inline-flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 800; margin-top: 1px; }
+.jsum-biz-main { min-width: 0; flex: 1; }
+.jsum-biz-name { font-weight: 700; font-size: 0.9rem; }
+.jsum-biz-sub { font-size: 0.8rem; color: var(--muted); margin-top: 1px; }
+.jsum-biz-note { font-size: 0.8rem; color: var(--text, #374151); font-style: italic; margin-top: 3px; }
+.jsum-biz-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.jsum-tag { font-size: 0.7rem; font-weight: 700; padding: 2px 7px; border-radius: 999px; }
+.jsum-tag-blue { background: #dbeafe; color: #1d4ed8; }
+.jsum-tag-purple { background: #ede9fe; color: #6d28d9; }
+.jsum-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 22px calc(env(safe-area-inset-bottom) + 16px); border-top: 1px solid var(--border); position: sticky; bottom: 0; background: var(--surface, #fff); }
+@media (max-width: 640px) {
+  .jsum-times { grid-template-columns: repeat(2, 1fr); }
+  .jsum-metrics { grid-template-columns: repeat(2, 1fr); }
+  .jsum-groups { grid-template-columns: 1fr; }
+  .jsum-title { font-size: 1.2rem; }
+}
+
 /* ---- Boton Actualizar jornada (5) ---- */
 .journey-refresh-btn { display: inline-flex; align-items: center; gap: 6px; }
 .journey-refresh-btn i { width: 15px; height: 15px; }
