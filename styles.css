@@ -7875,6 +7875,74 @@ body.sale-journey-modal-open::before {
 .stop-visit-when { color: var(--muted); }
 @keyframes visitPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 
+/* ---- Menu secundario (...) de la parada (2.2) ---- */
+.stop-menu-wrap { position: relative; }
+.stop-menu-btn { width: 32px; height: 32px; color: var(--muted); }
+.stop-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  min-width: 190px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stop-menu-panel[hidden] { display: none; }
+.stop-menu-panel > button,
+.stop-menu-panel > a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text, #111827);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.stop-menu-panel > button:hover,
+.stop-menu-panel > a:hover { background: var(--primary-light, #e8f5e9); color: var(--primary); }
+.stop-menu-panel i { width: 16px; height: 16px; }
+
+/* ---- Form editar prospecto ---- */
+.stop-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.stop-edit-wide { grid-column: 1 / -1; }
+.stop-edit-grid .ruc-split { display: flex; align-items: center; gap: 6px; }
+.stop-edit-grid .ruc-dv { max-width: 72px; }
+@media (max-width: 640px) {
+  .stop-edit-grid { grid-template-columns: 1fr; }
+}
+
+/* ---- Historial de la parada ---- */
+.stop-history-list { display: flex; flex-direction: column; gap: 10px; }
+.stop-history-empty { color: var(--muted); text-align: center; padding: 18px 0; }
+.stop-history-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--surface);
+}
+.stop-history-top { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.stop-history-date { margin-left: auto; color: var(--muted); font-size: 0.8rem; }
+.stop-history-notes { font-size: 0.85rem; color: var(--text, #374151); margin-top: 5px; }
+.stop-history-next { font-size: 0.8rem; color: #6d28d9; margin-top: 5px; display: flex; align-items: center; gap: 5px; }
+.stop-history-next i { width: 14px; height: 14px; }
+.stop-history-user { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+
 /* ---- Dot de mapa en listas ---- */
 .map-dot {
   display: inline-block;

@@ -23,7 +23,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
   <link rel="icon" type="image/png" href="apple-touch-icon.png" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.css" />
-  <link rel="stylesheet" href="styles.css?v=20260707-03" />
+  <link rel="stylesheet" href="styles.css?v=20260707-04" />
 </head>
 <body>
   <div class="app-loader" id="appLoader" role="status" aria-live="polite" aria-label="Cargando sistema">
@@ -2559,12 +2559,80 @@
     </div>
   </div>
 
+  <!-- Editar prospecto desde la jornada (seccion 3) -->
+  <div class="journey-modal journey-modal-sm" id="stopProspectEditModal" hidden role="dialog" aria-modal="true" aria-labelledby="stopProspectEditTitle">
+    <div class="journey-modal-overlay" data-stop-edit-close></div>
+    <div class="journey-modal-box" role="document">
+      <header class="journey-modal-head">
+        <div class="journey-modal-head-text">
+          <h2 class="journey-modal-title" id="stopProspectEditTitle">Editar prospecto</h2>
+          <p class="journey-modal-subtitle" id="stopProspectEditName"></p>
+        </div>
+        <button class="journey-modal-close" type="button" data-stop-edit-close aria-label="Cerrar"><i data-lucide="x"></i></button>
+      </header>
+      <form class="journey-modal-body" id="stopProspectEditForm" novalidate>
+        <div class="stop-edit-grid">
+          <label class="form-row stop-edit-wide"><span class="form-label">Nombre comercial</span><input class="form-input" name="name" type="text" required /></label>
+          <label class="form-row"><span class="form-label">Razon social</span><input class="form-input" name="razonSocial" type="text" /></label>
+          <label class="form-row">
+            <span class="form-label">RUC</span>
+            <span class="ruc-split">
+              <input class="form-input" name="rucMain" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="12" placeholder="1234567" />
+              <span class="ruc-dash">-</span>
+              <input class="form-input ruc-dv" name="rucDv" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" placeholder="0" />
+            </span>
+          </label>
+          <label class="form-row"><span class="form-label">Telefono publico</span><input class="form-input" name="phone" type="tel" inputmode="tel" /></label>
+          <label class="form-row"><span class="form-label">Ciudad</span><input class="form-input" name="city" type="text" /></label>
+          <label class="form-row stop-edit-wide"><span class="form-label">Direccion</span><input class="form-input" name="address" type="text" /></label>
+          <label class="form-row"><span class="form-label">Barrio o zona</span><input class="form-input" name="zone" type="text" /></label>
+          <label class="form-row"><span class="form-label">Rubro</span><select class="form-input" name="businessType"></select></label>
+          <label class="form-row"><span class="form-label">Potencial</span>
+            <select class="form-input" name="potential">
+              <option value="">Sin definir</option>
+              <option value="bajo">Bajo</option>
+              <option value="medio">Medio</option>
+              <option value="alto">Alto</option>
+            </select>
+          </label>
+          <label class="form-row"><span class="form-label">Latitud</span><input class="form-input" name="latitude" type="text" inputmode="decimal" /></label>
+          <label class="form-row"><span class="form-label">Longitud</span><input class="form-input" name="longitude" type="text" inputmode="decimal" /></label>
+          <label class="form-row stop-edit-wide"><span class="form-label">Observaciones</span><textarea class="form-input" name="observations" rows="2"></textarea></label>
+          <label class="form-row"><span class="form-label">Encargado de compras</span><input class="form-input" name="purchaseContactName" type="text" placeholder="Nombre del encargado" /></label>
+          <label class="form-row"><span class="form-label">Tel / WhatsApp del encargado</span><input class="form-input" name="purchaseContactPhone" type="tel" inputmode="tel" /></label>
+        </div>
+        <div class="journey-result-error" id="stopProspectEditError" role="alert"></div>
+      </form>
+      <footer class="journey-modal-footer">
+        <button class="btn ghost" type="button" data-stop-edit-close>Cancelar</button>
+        <button class="btn primary" type="button" id="stopProspectEditSave"><i data-lucide="save"></i> Guardar</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Ver historial de visitas de la parada (2.2) -->
+  <div class="journey-modal journey-modal-sm" id="stopHistoryModal" hidden role="dialog" aria-modal="true" aria-labelledby="stopHistoryTitle">
+    <div class="journey-modal-overlay" data-stop-history-close></div>
+    <div class="journey-modal-box" role="document">
+      <header class="journey-modal-head">
+        <div class="journey-modal-head-text">
+          <h2 class="journey-modal-title" id="stopHistoryTitle">Historial de visitas</h2>
+          <p class="journey-modal-subtitle" id="stopHistoryName"></p>
+        </div>
+        <button class="journey-modal-close" type="button" data-stop-history-close aria-label="Cerrar"><i data-lucide="x"></i></button>
+      </header>
+      <div class="journey-modal-body">
+        <div class="stop-history-list" id="stopHistoryList"></div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.js"></script>
   <script src="vendor/qrcode.min.js?v=20260705-01"></script>
-  <script type="module" src="app.js?v=20260707-03"></script>
+  <script type="module" src="app.js?v=20260707-04"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();

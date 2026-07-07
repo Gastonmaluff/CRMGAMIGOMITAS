@@ -12893,6 +12893,19 @@ const getProspectByStop = (stop) => {
   return state.prospects.find((item) => item.id === documentId) || null;
 };
 
+const getClientByStop = (stop) => {
+  if (!stop || stop.entityType !== "client") return null;
+  const documentId = getStopSourceDocumentId(stop);
+  return state.clients.find((item) => item.id === documentId) || null;
+};
+
+const getEntityRecordByStop = (stop) => getProspectByStop(stop) || getClientByStop(stop);
+
+const getStopPhone = (stop) => {
+  const entity = getEntityRecordByStop(stop);
+  return String(entity?.phone || stop?.phone || "").trim();
+};
+
 const saveJourneyVisitResult = async (journeyId, stopId, payload) => {
   const user = auth.currentUser;
   if (!user) throw new Error("No autenticado");
@@ -13469,6 +13482,29 @@ const renderActiveJourney = async (journeyId) => {
       openResultModal(journeyId, stopId);
     });
   });
+  jEl.querySelectorAll("[data-stop-menu]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.stopMenu;
+      const panel = jEl.querySelector(`[data-stop-menu-panel="${id}"]`);
+      const willOpen = panel?.hidden;
+      jEl.querySelectorAll("[data-stop-menu-panel]").forEach((p) => { p.hidden = true; });
+      jEl.querySelectorAll("[data-stop-menu]").forEach((b) => b.setAttribute("aria-expanded", "false"));
+      if (panel && willOpen) { panel.hidden = false; btn.setAttribute("aria-expanded", "true"); }
+    });
+  });
+  jEl.querySelectorAll("[data-stop-edit-prospect]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      jEl.querySelectorAll("[data-stop-menu-panel]").forEach((p) => { p.hidden = true; });
+      openStopProspectEditModal(journeyId, btn.dataset.stopEditProspect);
+    });
+  });
+  jEl.querySelectorAll("[data-stop-history]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      jEl.querySelectorAll("[data-stop-menu-panel]").forEach((p) => { p.hidden = true; });
+      openStopHistoryModal(btn.dataset.stopHistory);
+    });
+  });
   syncVisitTimerFromStops(journeyId);
 };
 
@@ -13496,6 +13532,20 @@ const renderStopCard = (stop, idx, journeyStatus) => {
           : durationLabel ? `<span class="stop-visit-dur"><i data-lucide="timer"></i> ${durationLabel}</span>` : ""}
         ${startLabel ? `<span class="stop-visit-when">Inicio ${startLabel}${endLabel ? ` · Fin ${endLabel}` : ""}</span>` : ""}
       </div>` : "";
+  const isProspect = stop.entityType === "prospect";
+  const phone = getStopPhone(stop);
+  const waLink = phone ? buildWhatsAppLink(phone, stop.businessName || "") : "";
+  const stopMenu = `
+      <div class="stop-menu-wrap">
+        <button class="icon-btn btn-xs stop-menu-btn" type="button" data-stop-menu="${stop.id}" aria-label="Mas acciones" aria-haspopup="true" aria-expanded="false"><i data-lucide="more-vertical"></i></button>
+        <div class="stop-menu-panel" data-stop-menu-panel="${stop.id}" hidden>
+          ${isProspect ? `<button type="button" data-stop-edit-prospect="${stop.id}"><i data-lucide="pencil"></i> Editar prospecto</button>` : ""}
+          <button type="button" data-stop-history="${stop.id}"><i data-lucide="history"></i> Ver historial</button>
+          <button type="button" data-stop-maps="${stop.id}"><i data-lucide="map-pin"></i> Ver ubicación</button>
+          ${phone ? `<a href="tel:${escapeHtml(phone)}"><i data-lucide="phone"></i> Llamar</a>` : ""}
+          ${waLink ? `<a href="${escapeHtml(waLink)}" target="_blank" rel="noopener noreferrer"><i data-lucide="message-circle"></i> WhatsApp</a>` : ""}
+        </div>
+      </div>`;
   return `
   <div class="stop-card ${isComplete ? "stop-complete" : isVisiting ? "stop-visiting" : "stop-pending"}" data-stop-id="${stop.id}">
     <div class="stop-number">${idx + 1}</div>
@@ -13522,6 +13572,7 @@ const renderStopCard = (stop, idx, journeyStatus) => {
              <button class="btn ghost btn-xs" type="button" data-stop-result="${stop.id}">Registrar resultado</button>`}
       ` : ""}
       ${isComplete ? `<span class="stop-check"><i data-lucide="check-circle"></i></span>` : ""}
+      ${stopMenu}
     </div>
   </div>`;
 };
@@ -13552,6 +13603,164 @@ const closeResultModal = () => {
   if (modal) modal.hidden = true;
   if (!document.body.classList.contains("sale-journey-modal-open")) {
     document.body.classList.remove("modal-open");
+  }
+};
+
+// ----- Editar prospecto desde la jornada (seccion 3) -----
+const closeStopEditModal = () => {
+  const modal = document.getElementById("stopProspectEditModal");
+  if (modal) modal.hidden = true;
+  if (!document.querySelector('.journey-modal:not([hidden])')) document.body.classList.remove("modal-open");
+};
+
+const openStopProspectEditModal = (journeyId, stopId) => {
+  const modal = document.getElementById("stopProspectEditModal");
+  const form = document.getElementById("stopProspectEditForm");
+  if (!modal || !form) return;
+  const stop = getStopById(stopId);
+  const prospect = getProspectByStop(stop);
+  if (!prospect) { window.alert("No se encontro el prospecto de esta parada."); return; }
+  modal.dataset.journeyId = journeyId;
+  modal.dataset.stopId = stopId;
+  modal.dataset.prospectId = prospect.id;
+  const nameEl = document.getElementById("stopProspectEditName");
+  if (nameEl) nameEl.textContent = prospect.name || stop?.businessName || "";
+  form.name.value = prospect.name || "";
+  form.razonSocial.value = prospect.razonSocial || "";
+  const ruc = splitRuc(prospect.ruc || "");
+  form.rucMain.value = ruc.main;
+  form.rucDv.value = ruc.dv;
+  form.phone.value = prospect.phone || "";
+  form.city.value = prospect.city || "";
+  form.address.value = prospect.address || "";
+  form.zone.value = prospect.zone || "";
+  fillBusinessTypeSelect(form.businessType, { includeAll: false, currentValue: prospect.businessType });
+  form.potential.value = normalizeOptionValue(PROSPECT_POTENTIAL_OPTIONS, prospect.potential) || "";
+  form.latitude.value = prospect.latitude != null ? prospect.latitude : "";
+  form.longitude.value = prospect.longitude != null ? prospect.longitude : "";
+  form.observations.value = prospect.observations || "";
+  form.purchaseContactName.value = prospect.purchaseContact?.name || prospect.contactName || "";
+  form.purchaseContactPhone.value = prospect.purchaseContact?.phone || prospect.purchaseContact?.whatsapp || "";
+  const errorEl = document.getElementById("stopProspectEditError");
+  if (errorEl) errorEl.textContent = "";
+  modal.hidden = false;
+  document.body.classList.add("modal-open");
+  refreshIcons();
+};
+
+const saveStopProspectEdit = async () => {
+  const modal = document.getElementById("stopProspectEditModal");
+  const form = document.getElementById("stopProspectEditForm");
+  if (!modal || !form) return;
+  const { journeyId, stopId, prospectId } = modal.dataset;
+  const errorEl = document.getElementById("stopProspectEditError");
+  const setError = (msg) => { if (errorEl) errorEl.textContent = msg; };
+  const name = formatClientName(form.name.value || "");
+  if (!name) { setError("Completa el nombre comercial."); return; }
+  const ruc = buildRuc(form.rucMain.value, form.rucDv.value);
+  if (ruc === null) { setError("El RUC esta incompleto: falta el numero o el digito verificador."); return; }
+  const latitude = parseOptionalCoordinate(form.latitude.value);
+  const longitude = parseOptionalCoordinate(form.longitude.value);
+  if (latitude !== null && (latitude < -90 || latitude > 90)) { setError("La latitud no es valida."); return; }
+  if (longitude !== null && (longitude < -180 || longitude > 180)) { setError("La longitud no es valida."); return; }
+  const purchaseName = String(form.purchaseContactName.value || "").trim();
+  const purchasePhone = String(form.purchaseContactPhone.value || "").trim();
+  const prospectUpdate = {
+    name,
+    razonSocial: String(form.razonSocial.value || "").trim(),
+    ruc: ruc || "",
+    phone: normalizeProspectPhone(form.phone.value || ""),
+    city: String(form.city.value || "").trim(),
+    address: String(form.address.value || "").trim(),
+    zone: String(form.zone.value || "").trim(),
+    businessType: normalizeRubroKey(form.businessType.value),
+    potential: normalizeOptionValue(PROSPECT_POTENTIAL_OPTIONS, form.potential.value),
+    observations: String(form.observations.value || "").trim(),
+    latitude,
+    longitude,
+    updatedAt: serverTimestamp()
+  };
+  if (purchaseName || purchasePhone) {
+    prospectUpdate.purchaseContact = { name: purchaseName, phone: purchasePhone, whatsapp: purchasePhone };
+    prospectUpdate.contactObtained = true;
+  }
+  const saveBtn = document.getElementById("stopProspectEditSave");
+  try {
+    if (saveBtn) saveBtn.disabled = true;
+    setError("");
+    const batch = writeBatch(db);
+    batch.update(doc(db, "prospects", prospectId), prospectUpdate);
+    batch.update(doc(db, "visitJourneys", journeyId, "stops", stopId), {
+      businessName: name,
+      city: prospectUpdate.city,
+      address: prospectUpdate.address,
+      ...(latitude !== null ? { latitude } : {}),
+      ...(longitude !== null ? { longitude } : {}),
+      updatedAt: serverTimestamp()
+    });
+    await batch.commit();
+    closeStopEditModal();
+    await renderActiveJourney(journeyId);
+  } catch (error) {
+    console.error("No se pudo guardar el prospecto desde la jornada", { journeyId, stopId, prospectId, uid: auth.currentUser?.uid, error });
+    setError("No se pudo guardar. Reintenta.");
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
+};
+
+// ----- Ver historial de visitas de la parada (2.2) -----
+const closeStopHistoryModal = () => {
+  const modal = document.getElementById("stopHistoryModal");
+  if (modal) modal.hidden = true;
+  if (!document.querySelector('.journey-modal:not([hidden])')) document.body.classList.remove("modal-open");
+};
+
+const openStopHistoryModal = async (stopId) => {
+  const modal = document.getElementById("stopHistoryModal");
+  const listEl = document.getElementById("stopHistoryList");
+  if (!modal || !listEl) return;
+  const stop = getStopById(stopId);
+  const nameEl = document.getElementById("stopHistoryName");
+  if (nameEl) nameEl.textContent = stop?.businessName || "";
+  listEl.innerHTML = '<div class="stop-history-empty">Cargando historial...</div>';
+  modal.hidden = false;
+  document.body.classList.add("modal-open");
+  try {
+    let entries = [];
+    if (stop?.entityType === "prospect") {
+      const pid = getStopSourceDocumentId(stop);
+      const snap = await getDocs(query(collection(db, "prospects", pid, "visitHistory"), orderBy("createdAt", "desc")));
+      entries = snap.docs.map((d) => d.data());
+    } else {
+      const client = getClientByStop(stop);
+      entries = Array.isArray(client?.visitHistory) ? [...client.visitHistory].reverse() : [];
+    }
+    if (!entries.length) {
+      listEl.innerHTML = '<div class="stop-history-empty">Sin visitas registradas todavia.</div>';
+      return;
+    }
+    listEl.innerHTML = entries.map((e) => {
+      const dateLabel = formatDate(normalizeDateValue(e.visitedAt || e.date || e.createdAt) || "") || "";
+      const resultLabel = STOP_STATUS_LABELS[e.result] || getOptionLabel(VISIT_RESULT_OPTIONS, e.result) || e.result || "-";
+      const klass = e.classification || getResultClassification(e.result);
+      const notes = e.notes || e.observation || "";
+      return `
+        <div class="stop-history-item">
+          <div class="stop-history-top">
+            <span class="result-classification result-classification-${klass}">${RESULT_CLASSIFICATION_LABELS[klass] || ""}</span>
+            <strong>${escapeHtml(resultLabel)}</strong>
+            ${dateLabel ? `<span class="stop-history-date">${escapeHtml(dateLabel)}</span>` : ""}
+          </div>
+          ${notes ? `<div class="stop-history-notes">${escapeHtml(notes)}</div>` : ""}
+          ${e.nextVisitDate ? `<div class="stop-history-next"><i data-lucide="calendar-clock"></i> Proxima visita: ${escapeHtml(formatDate(normalizeDateValue(e.nextVisitDate)) || "")}</div>` : ""}
+          ${e.userName ? `<div class="stop-history-user">${escapeHtml(e.userName)}</div>` : ""}
+        </div>`;
+    }).join("");
+    refreshIcons();
+  } catch (error) {
+    console.error("No se pudo cargar el historial de la parada", { stopId, uid: auth.currentUser?.uid, error });
+    listEl.innerHTML = '<div class="stop-history-empty">No se pudo cargar el historial.</div>';
   }
 };
 
@@ -14542,6 +14751,33 @@ const renderJourneySelectionDrawer = () => {
 
 // ----- Journeys section setup -----
 const setupJourneysModule = () => {
+  // Editar prospecto desde la jornada (seccion 3)
+  document.getElementById("stopProspectEditSave")?.addEventListener("click", saveStopProspectEdit);
+  document.getElementById("stopProspectEditModal")?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-stop-edit-close]")) closeStopEditModal();
+  });
+  document.getElementById("stopProspectEditModal")?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeStopEditModal();
+  });
+  document.getElementById("stopProspectEditForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveStopProspectEdit();
+  });
+  // Historial de la parada (2.2)
+  document.getElementById("stopHistoryModal")?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-stop-history-close]")) closeStopHistoryModal();
+  });
+  document.getElementById("stopHistoryModal")?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeStopHistoryModal();
+  });
+  // Cerrar el menu ⋯ de una parada al hacer click fuera
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest(".stop-menu-wrap")) {
+      document.querySelectorAll("[data-stop-menu-panel]").forEach((p) => { p.hidden = true; });
+      document.querySelectorAll("[data-stop-menu]").forEach((b) => b.setAttribute("aria-expanded", "false"));
+    }
+  });
+
   // Journey list actions (delegated)
   document.getElementById("journeysList")?.parentElement?.addEventListener("click", async (event) => {
     const openBtn = event.target.closest("[data-journey-open]");
