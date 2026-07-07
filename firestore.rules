@@ -45,7 +45,9 @@ service cloud.firestore {
     match /sales/{saleId} {
       allow read: if isAdminOrSales();
       allow create: if isAdminOrSales()
-        && request.resource.data.userId == request.auth.uid;
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.createdByRole == profile().role;
       allow update, delete: if isAdmin();
     }
 

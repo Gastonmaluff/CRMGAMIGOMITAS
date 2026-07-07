@@ -803,6 +803,37 @@ const canUseCollapse = (collapseId) => {
   return !allowed || allowed.has(collapseId);
 };
 
+// Autorizacion centralizada. En vez de comparar roles sueltos por todo el
+// codigo se consulta can("recurso.accion"). admin => ["*"] (todo permitido).
+const ROLE_PERMISSIONS = {
+  admin: ["*"],
+  sales: [
+    "sales.read",
+    "sales.create",
+    "clients.lookup",
+    "clients.create",
+    "products.lookup"
+  ]
+};
+const getRolePermissions = (role) => ROLE_PERMISSIONS[role] || [];
+const can = (permission) => {
+  const perms = getRolePermissions(getCurrentRole());
+  return perms.includes("*") || perms.includes(permission);
+};
+let authLoading = true;
+// Contexto de autenticacion de solo lectura, equivalente a un AuthContext.
+const authContext = {
+  get firebaseUser() { return auth.currentUser; },
+  get userProfile() { return currentUserProfile; },
+  get role() { return getCurrentRole(); },
+  get permissions() { return getRolePermissions(getCurrentRole()); },
+  get loading() { return authLoading; },
+  get isAuthenticated() { return Boolean(currentUserProfile); },
+  get isAdmin() { return isAdminRole(); },
+  can,
+  logout: () => signOut(auth)
+};
+
 const getCallableErrorMessage = (error, fallback = "No se pudo completar la operacion.") => {
   if (error?.message) return error.message;
   return fallback;
@@ -2192,7 +2223,7 @@ const renderQrManager = () => {
 
 const renderUserManagement = () => {
   if (!userManagementSection || !userList) return;
-  if (!isAdminRole()) {
+  if (!can("users.manage")) {
     userList.innerHTML = "";
     return;
   }
@@ -2516,7 +2547,7 @@ const setupUserManagement = () => {
   if (!userCreateForm) return;
   userCreateForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (!isAdminRole()) return;
+    if (!can("users.manage")) return;
     const submitBtn = userCreateForm.querySelector('button[type="submit"]');
     const formData = new FormData(userCreateForm);
     const payload = {
@@ -2561,7 +2592,7 @@ const setupUserManagement = () => {
   });
 
   userList?.addEventListener("click", async (event) => {
-    if (!isAdminRole()) return;
+    if (!can("users.manage")) return;
     const activeBtn = event.target.closest("[data-user-toggle-active]");
     const roleBtn = event.target.closest("[data-user-set-role]");
     if (!activeBtn && !roleBtn) return;
@@ -7402,6 +7433,20 @@ const applyRoleUi = () => {
     const section = link.dataset.appSection || "";
     link.hidden = !canAccessSection(section);
   });
+  // Ocultar los titulos de grupo que quedan sin ningun link visible, para que
+  // el sidebar del rol sales no muestre encabezados vacios ni huecos.
+  document.querySelectorAll(".sidebar-nav .sidebar-group-title").forEach((title) => {
+    let hasVisibleLink = false;
+    let node = title.nextElementSibling;
+    while (node && !node.classList.contains("sidebar-group-title")) {
+      if (node.classList.contains("sidebar-link") && !node.hidden) {
+        hasVisibleLink = true;
+        break;
+      }
+      node = node.nextElementSibling;
+    }
+    title.hidden = !hasVisibleLink;
+  });
   tabs.forEach((tab) => {
     const canReachTab = Object.entries(APP_SECTION_CONFIG).some(([section, config]) => (
       config.tab === tab.dataset.tab && canAccessSection(section)
@@ -8356,6 +8401,9 @@ saleForm.addEventListener("submit", async (event) => {
     repurchaseNextContactDate: nextRepurchaseDate,
     observation,
     userId: user.uid,
+    createdByUid: user.uid,
+    createdByName: currentUserProfile?.displayName || currentUserProfile?.username || user.displayName || "",
+    createdByRole: getCurrentRole(),
     createdAt: serverTimestamp()
   };
   let saleId = "";
@@ -14663,7 +14711,9 @@ if (await handlePublicQrRoute()) {
     unsubscribers = [];
     stopJourneysListener();
     currentUserProfile = null;
+    authLoading = true;
     if (!user) {
+      authLoading = false;
       closeAllOverlays();
       clearStateCollections([]);
       showAuth();
@@ -14673,6 +14723,7 @@ if (await handlePublicQrRoute()) {
     try {
       setAuthFeedback("Cargando permisos...", "info");
       currentUserProfile = await loadCurrentUserProfile(user);
+      authLoading = false;
       setAuthFeedback("");
       clearStateCollections((ROLE_COLLECTIONS[getCurrentRole()] || []).map(([, key]) => key));
       applyRoleUi();
@@ -14687,6 +14738,7 @@ if (await handlePublicQrRoute()) {
       });
     } catch (error) {
       console.error("[auth] profile error", error);
+      authLoading = false;
       await signOut(auth).catch(() => {});
       showAuth();
       setAuthFeedback(getCallableErrorMessage(error, "No se pudo cargar tu perfil de usuario."), "error");
