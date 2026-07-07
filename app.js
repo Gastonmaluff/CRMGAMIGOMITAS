@@ -13409,9 +13409,53 @@ const renderJourneysList = (journeys) => {
 };
 
 // ----- Active journey rendering -----
-const renderActiveJourney = async (journeyId) => {
+// ----- Sincronizacion de la jornada activa (5) -----
+const stopActiveJourneyStopsListener = () => {
+  if (activeJourneyStopsUnsubscribe) {
+    try { activeJourneyStopsUnsubscribe(); } catch (e) { /* noop */ }
+    activeJourneyStopsUnsubscribe = null;
+  }
+};
+
+// Listener en vivo de las paradas: refleja al instante ventas/resultados/ediciones
+// (propias y desde otro dispositivo) sin recargar la pagina.
+const startActiveJourneyStopsListener = (journeyId) => {
+  stopActiveJourneyStopsListener();
+  if (!journeyId) return;
+  activeJourneyStopsUnsubscribe = onSnapshot(
+    query(collection(db, "visitJourneys", journeyId, "stops"), orderBy("order", "asc")),
+    () => {
+      if (activeJourneyId !== journeyId) return;
+      // No re-renderizar con un modal abierto para no interrumpir la edicion.
+      if (document.body.classList.contains("modal-open")) return;
+      renderActiveJourney(journeyId, { preserveScroll: true });
+    },
+    (error) => console.error("Listener de paradas de jornada", { journeyId, uid: auth.currentUser?.uid, error })
+  );
+};
+
+// Boton "Actualizar" (respaldo manual): re-consulta la jornada manteniendo scroll.
+const refreshActiveJourney = async ({ manual = false } = {}) => {
+  if (!activeJourneyId) return;
+  const btn = document.getElementById("journeyRefreshBtn");
+  if (manual && btn) { btn.classList.add("is-loading"); btn.disabled = true; }
+  try {
+    await renderActiveJourney(activeJourneyId, { preserveScroll: true });
+    try { if (commercialMap) refreshCommercialMap(); } catch (e) { /* noop */ }
+    if (manual) showToast("Jornada actualizada.");
+  } catch (error) {
+    console.error("No se pudo actualizar la jornada", { journeyId: activeJourneyId, uid: auth.currentUser?.uid, error });
+    if (manual) showToast("No se pudo actualizar la jornada.");
+  } finally {
+    const b = document.getElementById("journeyRefreshBtn");
+    if (b) { b.classList.remove("is-loading"); b.disabled = false; }
+  }
+};
+
+const renderActiveJourney = async (journeyId, { preserveScroll = false } = {}) => {
   const jEl = document.getElementById("journeyActiveSectionContent");
   if (!jEl) return;
+  const prevScroll = preserveScroll ? window.scrollY : null;
   const journeySnap = await getDoc(doc(db, "visitJourneys", journeyId));
   if (!journeySnap.exists()) { jEl.innerHTML = '<div class="empty-hint">Jornada no encontrada.</div>'; return; }
   const j = { id: journeySnap.id, ...journeySnap.data() };
@@ -13427,6 +13471,7 @@ const renderActiveJourney = async (journeyId) => {
         <div class="journey-active-sub">${j.completedStops || 0} de ${j.totalStops || 0} visitas completadas</div>
       </div>
       <div class="journey-active-controls">
+        <button class="btn ghost btn-sm journey-refresh-btn" type="button" id="journeyRefreshBtn" title="Actualizar jornada" aria-label="Actualizar jornada"><i data-lucide="refresh-cw"></i> <span>Actualizar</span></button>
         ${status === "planned" || status === "draft" ? '<button class="btn primary" type="button" id="journeyStartBtn">Iniciar jornada</button>' : ""}
         ${status === "active" ? '<button class="btn ghost" type="button" id="journeyFinalizeBtn">Finalizar</button>' : ""}
       </div>
@@ -13449,7 +13494,9 @@ const renderActiveJourney = async (journeyId) => {
     </div>` : ""}
   `;
   refreshIcons();
+  if (prevScroll != null) window.scrollTo(0, prevScroll);
   // journeyBackToList is a static button handled in setupJourneysModule
+  document.getElementById("journeyRefreshBtn")?.addEventListener("click", () => refreshActiveJourney({ manual: true }));
   document.getElementById("journeyStartBtn")?.addEventListener("click", async () => {
     await startJourney(journeyId);
     renderActiveJourney(journeyId);
@@ -14230,7 +14277,11 @@ const finalizeJourneySaleAfterSave = async (saleId) => {
     prospectId: context.prospectId || ""
   });
   if (context.prospectId) await clearProspectRevisit(context.prospectId);
+  const journeyId = context.journeyId;
   resetJourneySaleContext();
+  // Refrescar la jornada de inmediato para que la parada no quede como pendiente (5).
+  if (activeJourneyId === journeyId) await renderActiveJourney(journeyId, { preserveScroll: true });
+  showToast("Venta registrada correctamente.");
 };
 
 // ----- Nuevo modal de jornada -----
@@ -15023,6 +15074,7 @@ const setupJourneysModule = () => {
       document.getElementById("journeyActiveSection")?.removeAttribute("hidden");
       document.getElementById("journeyListSection")?.setAttribute("hidden", "");
       await renderActiveJourney(activeJourneyId);
+      startActiveJourneyStopsListener(activeJourneyId);
     }
     if (startBtn) {
       await startJourney(startBtn.dataset.journeyStart);
@@ -15030,6 +15082,7 @@ const setupJourneysModule = () => {
       document.getElementById("journeyActiveSection")?.removeAttribute("hidden");
       document.getElementById("journeyListSection")?.setAttribute("hidden", "");
       await renderActiveJourney(activeJourneyId);
+      startActiveJourneyStopsListener(activeJourneyId);
     }
     if (cancelBtn) {
       if (!window.confirm("Cancelar esta jornada?")) return;
@@ -15174,6 +15227,7 @@ const setupJourneysModule = () => {
 
   // Volver a lista desde vista activa
   document.getElementById("journeyBackToList")?.addEventListener("click", () => {
+    stopActiveJourneyStopsListener();
     document.getElementById("journeyActiveSection")?.setAttribute("hidden", "");
     document.getElementById("journeyListSection")?.removeAttribute("hidden");
     activeJourneyId = null;
@@ -15369,12 +15423,14 @@ if (await handlePublicQrRoute()) {
     unsubscribers.forEach((unsubscribe) => unsubscribe());
     unsubscribers = [];
     stopJourneysListener();
+    stopActiveJourneyStopsListener();
     currentUserProfile = null;
     authLoading = true;
     if (!user) {
       authLoading = false;
       stopVisitTimer();
       activeVisit = null;
+      activeJourneyId = null;
       closeAllOverlays();
       clearStateCollections([]);
       showAuth();

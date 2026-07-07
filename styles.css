@@ -7875,6 +7875,13 @@ body.sale-journey-modal-open::before {
 .stop-visit-when { color: var(--muted); }
 @keyframes visitPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 
+/* ---- Boton Actualizar jornada (5) ---- */
+.journey-refresh-btn { display: inline-flex; align-items: center; gap: 6px; }
+.journey-refresh-btn i { width: 15px; height: 15px; }
+.journey-refresh-btn.is-loading { pointer-events: none; opacity: 0.7; }
+.journey-refresh-btn.is-loading i { animation: journeyRefreshSpin 0.8s linear infinite; }
+@keyframes journeyRefreshSpin { to { transform: rotate(360deg); } }
+
 /* ---- Menu secundario (...) de la parada (2.2) ---- */
 .stop-menu-wrap { position: relative; }
 .stop-menu-btn { width: 32px; height: 32px; color: var(--muted); }
