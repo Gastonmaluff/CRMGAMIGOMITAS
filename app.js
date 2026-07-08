@@ -595,6 +595,7 @@ let journeysError = null;
 let lastCreatedJourneyId = null;
 const journeyResultState = { saving: false };
 let lastJourneySummary = null; // { journey, stops, summary } para exportar imagen (6.4)
+let jsumMap = null; // instancia MapLibre del mapa del resumen de jornada (en pantalla)
 // Visita en curso (cronometro). Solo puede haber una activa por usuario (2.1).
 let activeVisit = null; // { journeyId, stopId, startedMs }
 let visitTimerInterval = null;
@@ -13217,41 +13218,6 @@ const jsumTimeLabel = (ms) => ms ? formatTime(new Date(ms)) : "—";
 // ----- Recorrido visual (6.2 / 6.4) -----
 const ROUTE_COLORS = { green: "#16a34a", blue: "#2563eb", purple: "#8b5cf6", orange: "#f97316", yellow: "#eab308", red: "#dc2626", gray: "#94a3b8" };
 
-const getRouteBounds = (stops) => {
-  const pts = [...stops]
-    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
-    .map((s) => ({ lat: Number(s.latitude), lng: Number(s.longitude), stop: s }))
-    .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && p.lat !== 0 && p.lng !== 0);
-  if (!pts.length) return null;
-  const lats = pts.map((p) => p.lat);
-  const lngs = pts.map((p) => p.lng);
-  return { pts, minLat: Math.min(...lats), maxLat: Math.max(...lats), minLng: Math.min(...lngs), maxLng: Math.max(...lngs) };
-};
-
-const projectRoutePoints = (bounds, w, h, pad) => {
-  const spanLat = (bounds.maxLat - bounds.minLat) || 1e-6;
-  const spanLng = (bounds.maxLng - bounds.minLng) || 1e-6;
-  return bounds.pts.map((p) => ({
-    x: pad + ((p.lng - bounds.minLng) / spanLng) * (w - 2 * pad),
-    y: pad + ((bounds.maxLat - p.lat) / spanLat) * (h - 2 * pad),
-    stop: p.stop
-  }));
-};
-
-const buildRouteSvg = (stops, w = 640, h = 220) => {
-  const bounds = getRouteBounds(stops);
-  if (!bounds) return '<div class="jsum-route-empty"><i data-lucide="map-off"></i> Sin coordenadas para dibujar el recorrido.</div>';
-  const pad = 22;
-  const proj = projectRoutePoints(bounds, w, h, pad);
-  const line = proj.map((pt, i) => `${i === 0 ? "M" : "L"}${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`).join(" ");
-  const dots = proj.map((pt, i) => {
-    const color = ROUTE_COLORS[RESULT_LIST_COLORS[pt.stop.status] || "gray"];
-    return `<circle cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="10" fill="${color}" stroke="#fff" stroke-width="2"/><text x="${pt.x.toFixed(1)}" y="${(pt.y + 3.5).toFixed(1)}" text-anchor="middle" font-size="11" fill="#fff" font-weight="700">${i + 1}</text>`;
-  }).join("");
-  return `<svg viewBox="0 0 ${w} ${h}" class="jsum-route-svg" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-    <path d="${line}" fill="none" stroke="#cbd5e1" stroke-width="3" stroke-dasharray="5 5" stroke-linecap="round"/>${dots}</svg>`;
-};
-
 const renderJourneySummaryScreen = (journey, stops, summary) => {
   const orderedStops = [...stops].sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
   const metric = (label, value, opts = {}) => `
@@ -13305,7 +13271,7 @@ const renderJourneySummaryScreen = (journey, stops, summary) => {
         </div>
         <div class="jsum-progress"><div class="jsum-progress-bar" data-bar="${summary.totalStops ? Math.round(summary.completedStops / summary.totalStops * 100) : 0}"></div></div>
         <div class="jsum-progress-label">${summary.completedStops} de ${summary.totalStops} visitas completadas</div>
-        <div class="jsum-route">${buildRouteSvg(stops)}</div>
+        <div class="jsum-route"><div class="jsum-map" id="jsumMap"><div class="jsum-map-loading">Cargando mapa…</div></div></div>
         <div class="jsum-metrics">
           ${metric("Ventas", summary.salesCount, { count: summary.salesCount, accent: "green" })}
           ${metric("Total vendido (Gs)", "", { count: summary.totalSalesAmount, money: true, accent: "green" })}
@@ -13372,9 +13338,69 @@ const animateJourneySummary = (modal) => {
 };
 
 const closeJourneySummary = () => {
+  if (jsumMap) { try { jsumMap.remove(); } catch (_) { /* noop */ } jsumMap = null; }
   const modal = document.getElementById("journeySummaryModal");
   if (modal) { modal.hidden = true; modal.innerHTML = ""; }
   document.body.classList.remove("modal-open");
+};
+
+// Mapa real e interactivo del recorrido en la vista de resumen (en pantalla, no
+// el export). Al ser visible, MapLibre WebGL funciona sin problemas.
+const renderJourneySummaryMap = (stops) => {
+  const el = document.getElementById("jsumMap");
+  if (!el) return;
+  const coordStops = [...stops]
+    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
+    .map((s) => ({ lat: Number(s.latitude), lng: Number(s.longitude), stop: s }))
+    .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && p.lat !== 0 && p.lng !== 0);
+  if (!coordStops.length || typeof maplibregl === "undefined") {
+    el.innerHTML = '<div class="jsum-map-empty"><i data-lucide="map-off"></i> Sin coordenadas para dibujar el recorrido.</div>';
+    refreshIcons();
+    return;
+  }
+  if (jsumMap) { try { jsumMap.remove(); } catch (_) { /* noop */ } jsumMap = null; }
+  el.innerHTML = "";
+  const coords = coordStops.map((p) => [p.lng, p.lat]);
+  const map = new maplibregl.Map({
+    container: el,
+    style: MAP_STYLES.streets,
+    attributionControl: false,
+    dragRotate: false,
+    pitchWithRotate: false,
+    center: coords[0],
+    zoom: 12
+  });
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+  jsumMap = map;
+  // Marcadores numerados: son overlays DOM y no requieren que el estilo esté
+  // cargado, así que se agregan ya (no se pierden si la ruta falla).
+  coordStops.forEach((p, i) => {
+    const pin = document.createElement("div");
+    pin.className = "jsum-pin";
+    pin.style.background = ROUTE_COLORS[RESULT_LIST_COLORS[p.stop.status] || "gray"];
+    pin.textContent = String(i + 1);
+    new maplibregl.Marker({ element: pin, anchor: "center" }).setLngLat([p.lng, p.lat]).addTo(map);
+  });
+  // Línea del recorrido: sólo cuando el estilo terminó de cargar (evita "Style
+  // is not done loading"); si algo falla, el mapa igual queda con los pines.
+  const addRouteLayer = () => {
+    if (coords.length < 2 || !map.isStyleLoaded()) return;
+    try {
+      if (map.getSource("jsum-route")) return;
+      map.addSource("jsum-route", { type: "geojson", data: { type: "Feature", geometry: { type: "LineString", coordinates: coords } } });
+      map.addLayer({ id: "jsum-route-casing", type: "line", source: "jsum-route", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#ffffff", "line-width": 6, "line-opacity": 0.9 } });
+      map.addLayer({ id: "jsum-route-line", type: "line", source: "jsum-route", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#16a34a", "line-width": 3 } });
+    } catch (err) {
+      console.warn("No se pudo dibujar la ruta en el mapa del resumen.", err);
+    }
+  };
+  map.on("load", () => {
+    map.resize(); // el modal puede haberse ensanchado tras crear el mapa
+    addRouteLayer();
+    if (!map.isStyleLoaded()) map.once("styledata", addRouteLayer);
+    const bounds = coords.reduce((bb, c) => bb.extend(c), new maplibregl.LngLatBounds(coords[0], coords[0]));
+    map.fitBounds(bounds, { padding: 44, maxZoom: 16, duration: 0 });
+  });
 };
 
 const loadJourneySummaryData = async (journeyId) => {
@@ -13400,6 +13426,7 @@ const openJourneySummary = async (journeyId) => {
     modal.innerHTML = renderJourneySummaryScreen(data.journey, data.stops, data.summary);
     refreshIcons();
     animateJourneySummary(modal);
+    renderJourneySummaryMap(data.stops);
   } catch (error) {
     console.error("No se pudo abrir el resumen de la jornada", { journeyId, uid: auth.currentUser?.uid, error });
     modal.innerHTML = '<div class="jsum-box"><div class="jsum-loading">No se pudo generar el resumen. <button class="btn ghost btn-xs" type="button" data-jsum-close>Cerrar</button></div></div>';
