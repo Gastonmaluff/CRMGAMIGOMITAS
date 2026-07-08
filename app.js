@@ -13431,6 +13431,7 @@ const EXPORT_COLORS = {
 const exportLoadImage = (src) => new Promise((resolve) => {
   if (!src) { resolve(null); return; }
   const img = new Image();
+  img.crossOrigin = "anonymous"; // para poder dibujar la imagen sin "tainted canvas"
   img.onload = () => resolve(img);
   img.onerror = () => resolve(null);
   img.src = src;
@@ -13492,86 +13493,87 @@ const drawGamiIsotipo = (ctx, x, y, size, color) => {
   ctx.restore();
 };
 
-// Renderiza un mapa MapLibre real fuera de pantalla, dibuja la ruta + paradas,
-// encuadra todos los puntos y devuelve una imagen PNG (dataURL) del mapa junto
-// con las posiciones en píxeles de cada parada numerada. Espera explícitamente
-// a los eventos load e idle para asegurar que los mosaicos ya estén pintados.
+// Proyección Web Mercator normalizada (Y en [0,1]). Tiles de 512 px como usa
+// MapTiler, para que los pines caigan exactamente sobre la imagen estática.
+const EXPORT_MAP_TILE = 512;
+const exportMercatorNormY = (lat) => {
+  const clamped = Math.max(-85.05112878, Math.min(85.05112878, lat));
+  const s = Math.sin((clamped * Math.PI) / 180);
+  return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI);
+};
+
+// Devuelve una imagen ESTÁTICA del mapa (PNG renderizado por el servidor de
+// MapTiler Static Maps) más la posición en píxeles de cada parada numerada.
+// Antes se usaba MapLibre WebGL fuera de pantalla, pero los navegadores móviles
+// (sobre todo iOS Safari) no pintan un canvas WebGL oculto/offscreen, así que en
+// el celular el mapa salía SIN calles. El mapa estático no usa WebGL: sale igual
+// en PC y en el teléfono. La ruta y los pines se dibujan luego sobre esta imagen
+// con la misma proyección (en buildJourneyExportBlob).
 const renderJourneyExportMap = async (stops) => {
   const coordStops = [...stops]
     .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
     .map((s) => ({ lat: Number(s.latitude), lng: Number(s.longitude), stop: s }))
     .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && p.lat !== 0 && p.lng !== 0);
-  if (!coordStops.length || typeof maplibregl === "undefined") {
-    return { dataUrl: null, pins: [] };
+  if (!coordStops.length) return { img: null, pins: [] };
+
+  const W = EXPORT_MAP_W, H = EXPORT_MAP_H, TILE = EXPORT_MAP_TILE, PADPX = 48, DPR = 2;
+  const lats = coordStops.map((p) => p.lat), lngs = coordStops.map((p) => p.lng);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+  const centerLng = (minLng + maxLng) / 2;
+  const centerLat = (minLat + maxLat) / 2;
+
+  // Zoom entero que encuadra todos los puntos con margen (entero para que los
+  // tiles existan y la proyección de los pines calce exacta con los mosaicos).
+  const lngSpan = (maxLng - minLng) / 360;
+  const latSpan = Math.abs(exportMercatorNormY(maxLat) - exportMercatorNormY(minLat));
+  let zoom;
+  if (lngSpan <= 1e-9 && latSpan <= 1e-9) {
+    zoom = 15; // todas las paradas en el mismo punto
+  } else {
+    const zoomX = lngSpan > 1e-12 ? Math.log2((W - 2 * PADPX) / TILE / lngSpan) : 22;
+    const zoomY = latSpan > 1e-12 ? Math.log2((H - 2 * PADPX) / TILE / latSpan) : 22;
+    zoom = Math.floor(Math.min(zoomX, zoomY, 16));
   }
-  const holder = document.createElement("div");
-  holder.style.cssText = `position:fixed;left:-100000px;top:0;width:${EXPORT_MAP_W}px;height:${EXPORT_MAP_H}px;`;
-  document.body.appendChild(holder);
-  let map = null;
-  try {
-    map = new maplibregl.Map({
-      container: holder,
-      style: MAP_STYLES.streets,
-      interactive: false,
-      attributionControl: false,
-      preserveDrawingBuffer: true,     // imprescindible para leer el canvas
-      fadeDuration: 0,
-      center: [coordStops[0].lng, coordStops[0].lat],
-      zoom: 12
-    });
-    // 1) Esperar a que el estilo esté cargado.
-    await new Promise((resolve) => {
-      let settled = false;
-      const done = () => { if (!settled) { settled = true; resolve(); } };
-      map.once("load", done);
-      window.setTimeout(done, 9000);
-    });
-    // 1b) Confirmar que el estilo terminó de cargar (evita "Style is not done
-    // loading" al agregar fuentes/capas en cargas en frío del mapa).
-    if (!map.isStyleLoaded()) {
-      await new Promise((resolve) => {
-        const check = () => { if (map.isStyleLoaded()) { map.off("styledata", check); resolve(); } };
-        map.on("styledata", check);
-        window.setTimeout(() => { map.off("styledata", check); resolve(); }, 5000);
-      });
+  zoom = Math.max(1, Math.min(16, zoom));
+
+  // Proyección lng/lat → píxel mundial (coords lógicas) en este zoom.
+  const worldSize = TILE * Math.pow(2, zoom);
+  const project = (lng, lat) => ({ x: ((lng + 180) / 360) * worldSize, y: exportMercatorNormY(lat) * worldSize });
+  const c = project(centerLng, centerLat);
+  const originX = c.x - W / 2; // píxel mundial de la esquina superior-izquierda del mapa
+  const originY = c.y - H / 2;
+  const pins = coordStops.map((p, i) => {
+    const pt = project(p.lng, p.lat);
+    return { x: pt.x - originX, y: pt.y - originY, n: i + 1, color: ROUTE_COLORS[RESULT_LIST_COLORS[p.stop.status] || "gray"] };
+  });
+
+  // Fondo del mapa armado uniendo tiles raster de MapTiler (@2x). Son PNGs
+  // normales con CORS: sin WebGL, se ven igual en PC y en el celular, y el
+  // canvas no queda "tainted".
+  const mapCanvas = document.createElement("canvas");
+  mapCanvas.width = W * DPR;
+  mapCanvas.height = H * DPR;
+  const mctx = mapCanvas.getContext("2d");
+  mctx.scale(DPR, DPR);
+  mctx.fillStyle = "#eef2f7";
+  mctx.fillRect(0, 0, W, H);
+  const nTiles = Math.pow(2, zoom);
+  const minTX = Math.floor(originX / TILE), maxTX = Math.floor((originX + W) / TILE);
+  const minTY = Math.floor(originY / TILE), maxTY = Math.floor((originY + H) / TILE);
+  const tileTasks = [];
+  for (let tx = minTX; tx <= maxTX; tx += 1) {
+    for (let ty = minTY; ty <= maxTY; ty += 1) {
+      if (ty < 0 || ty >= nTiles) continue;
+      const wx = ((tx % nTiles) + nTiles) % nTiles; // envolver en X
+      const url = `https://api.maptiler.com/maps/streets-v2/${zoom}/${wx}/${ty}@2x.png?key=${MAPTILER_API_KEY}`;
+      const dx = tx * TILE - originX;
+      const dy = ty * TILE - originY;
+      tileTasks.push(exportLoadImage(url).then((img) => { if (img) mctx.drawImage(img, dx, dy, TILE, TILE); }));
     }
-    // 2) Dibujar la ruta que conecta las paradas en orden (no debe abortar el
-    // mapa si algo falla: mejor un mapa sin línea que ningún mapa).
-    const coords = coordStops.map((p) => [p.lng, p.lat]);
-    try {
-      if (coords.length >= 2 && map.isStyleLoaded()) {
-        map.addSource("jx-route", { type: "geojson", data: { type: "Feature", geometry: { type: "LineString", coordinates: coords } } });
-        map.addLayer({ id: "jx-route-casing", type: "line", source: "jx-route", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#ffffff", "line-width": 8, "line-opacity": 0.9 } });
-        map.addLayer({ id: "jx-route-line", type: "line", source: "jx-route", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#16a34a", "line-width": 4 } });
-      }
-    } catch (routeErr) {
-      console.warn("No se pudo dibujar la ruta en el mapa exportado (se continúa sin línea).", routeErr);
-    }
-    // 3) Encuadrar todos los puntos con padding para que ningún pin quede cortado.
-    const bounds = coords.reduce((bb, c) => bb.extend(c), new maplibregl.LngLatBounds(coords[0], coords[0]));
-    map.fitBounds(bounds, { padding: { top: 64, bottom: 64, left: 78, right: 78 }, duration: 0, maxZoom: 16, animate: false });
-    // 4) Esperar a que el mapa quede idle (mosaicos e imágenes del estilo listos).
-    await new Promise((resolve) => {
-      let settled = false;
-      const done = () => { if (!settled) { settled = true; resolve(); } };
-      map.once("idle", done);
-      window.setTimeout(done, 7000);
-    });
-    // 5) Un par de frames extra para asegurar el último render antes de leer el canvas.
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    const pins = coordStops.map((p, i) => {
-      const pt = map.project([p.lng, p.lat]);
-      return { x: pt.x, y: pt.y, n: i + 1, color: ROUTE_COLORS[RESULT_LIST_COLORS[p.stop.status] || "gray"] };
-    });
-    const dataUrl = map.getCanvas().toDataURL("image/png");
-    return { dataUrl, pins };
-  } catch (error) {
-    console.error("No se pudo renderizar el mapa para la exportación", { error });
-    return { dataUrl: null, pins: [] };
-  } finally {
-    if (map) { try { map.remove(); } catch (_) { /* noop */ } }
-    holder.remove();
   }
+  await Promise.all(tileTasks);
+  return { img: mapCanvas, pins };
 };
 
 // Prepara los datos de cada negocio para el listado (sin textos vacíos/undefined).
@@ -13622,7 +13624,7 @@ const layoutJourneyExportBiz = (mc, bizList, colW) => {
 // Dibuja la imagen completa de la jornada en un canvas y devuelve un Blob PNG.
 const buildJourneyExportBlob = async (journey, stops, summary) => {
   const mapResult = await renderJourneyExportMap(stops);
-  const mapImg = await exportLoadImage(mapResult.dataUrl);
+  const mapImg = mapResult.img;
   const bizList = buildJourneyExportBizData(stops);
 
   const W = EXPORT_WIDTH, PAD = EXPORT_PAD, CW = W - 2 * PAD, C = EXPORT_COLORS;
@@ -13717,7 +13719,9 @@ const buildJourneyExportBlob = async (journey, stops, summary) => {
   ctx.fillText("Gami Gomitas", W - PAD - 31, 132);
   ctx.textAlign = "left";
 
-  // Mapa real (imagen) con esquinas redondeadas + pins numerados.
+  // Mapa (imagen estática de MapTiler) con esquinas redondeadas. La ruta y los
+  // pines se dibujan encima con la proyección calculada en renderJourneyExportMap.
+  const pins = mapResult.pins || [];
   ctx.save();
   roundRectPath(ctx, PAD, mapY, EXPORT_MAP_W, mapH, 22);
   ctx.fillStyle = "#eef2f7";
@@ -13725,26 +13729,36 @@ const buildJourneyExportBlob = async (journey, stops, summary) => {
   ctx.clip();
   if (mapImg) {
     ctx.drawImage(mapImg, PAD, mapY, EXPORT_MAP_W, mapH);
-  } else {
+  } else if (!pins.length) {
     ctx.fillStyle = C.gray;
     ctx.font = `600 24px ${EXPORT_FF}`;
     ctx.textAlign = "center";
     ctx.fillText("Sin coordenadas para dibujar el recorrido", PAD + EXPORT_MAP_W / 2, mapY + mapH / 2);
     ctx.textAlign = "left";
   }
-  ctx.restore();
-  if (mapImg) {
-    mapResult.pins.forEach((p) => {
-      const cx = PAD + p.x, cy = mapY + p.y;
-      ctx.beginPath(); ctx.arc(cx, cy, 18, 0, Math.PI * 2);
-      ctx.fillStyle = p.color; ctx.fill();
-      ctx.lineWidth = 3; ctx.strokeStyle = "#ffffff"; ctx.stroke();
-      ctx.fillStyle = "#ffffff"; ctx.font = `800 17px ${EXPORT_FF}`;
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(String(p.n), cx, cy + 1);
-      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  // Ruta que conecta las paradas en orden (casing blanco + línea verde).
+  if (pins.length >= 2) {
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    ctx.beginPath();
+    pins.forEach((p, i) => {
+      const px = PAD + p.x, py = mapY + p.y;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
     });
+    ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = 7; ctx.stroke();
+    ctx.strokeStyle = C.green; ctx.lineWidth = 4; ctx.stroke();
   }
+  // Pines numerados según orden y color de resultado.
+  pins.forEach((p) => {
+    const cx = PAD + p.x, cy = mapY + p.y;
+    ctx.beginPath(); ctx.arc(cx, cy, 18, 0, Math.PI * 2);
+    ctx.fillStyle = p.color; ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = "#ffffff"; ctx.stroke();
+    ctx.fillStyle = "#ffffff"; ctx.font = `800 17px ${EXPORT_FF}`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(String(p.n), cx, cy + 1);
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  });
+  ctx.restore();
   // Borde del mapa.
   roundRectPath(ctx, PAD, mapY, EXPORT_MAP_W, mapH, 22);
   ctx.lineWidth = 1; ctx.strokeStyle = "#e2e8f0"; ctx.stroke();
