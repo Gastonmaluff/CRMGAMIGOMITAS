@@ -312,6 +312,7 @@ const salesHistoryPeriodLabel = document.getElementById("salesHistoryPeriodLabel
 const salesHistorySearch = document.getElementById("salesHistorySearch");
 const salesHistoryPaymentFilter = document.getElementById("salesHistoryPaymentFilter");
 const salesHistoryCreditFilter = document.getElementById("salesHistoryCreditFilter");
+const salesHistoryStatusFilter = document.getElementById("salesHistoryStatusFilter");
 const salesHistoryClearFilters = document.getElementById("salesHistoryClearFilters");
 const commercialRangePanel = document.getElementById("commercialRangePanel");
 const commercialRangeFrom = document.getElementById("commercialRangeFrom");
@@ -478,7 +479,8 @@ const salesHistoryState = {
   customEnd: "",
   search: "",
   payment: "",
-  credit: ""
+  credit: "",
+  status: ""
 };
 const qrManagerState = {
   search: "",
@@ -1480,6 +1482,69 @@ const getSaleClientDetails = (sale) => {
     phone: linkedClient?.phone || "",
     address: linkedClient?.address || ""
   };
+};
+
+// ----- Estado logístico de la venta (preparación / despacho / entrega) -----
+const SALE_FULFILLMENT_STEPS = [
+  { key: "pending", label: "Pendiente", tone: "pending", icon: "clock", action: "" },
+  { key: "prepared", label: "Preparado", tone: "prepared", icon: "package-check", action: "Marcar como preparado" },
+  { key: "dispatched", label: "Despachado", tone: "dispatched", icon: "truck", action: "Marcar como despachado" },
+  { key: "delivered", label: "Entregado", tone: "delivered", icon: "check-circle-2", action: "Marcar como entregado" }
+];
+const SALE_FULFILLMENT_INDEX = Object.fromEntries(SALE_FULFILLMENT_STEPS.map((step, i) => [step.key, i]));
+const getSaleFulfillmentStep = (key) => SALE_FULFILLMENT_STEPS[SALE_FULFILLMENT_INDEX[key] ?? 0];
+const getSaleFulfillmentStatus = (sale) => {
+  const key = String(sale?.fulfillmentStatus || "pending");
+  return SALE_FULFILLMENT_INDEX[key] != null ? key : "pending";
+};
+const getSaleFulfillmentEvent = (sale, key) => {
+  const ev = sale?.fulfillment?.[key];
+  if (!ev) return null;
+  const atMs = Number(ev.atMs) || (typeof ev.at?.seconds === "number" ? ev.at.seconds * 1000 : 0);
+  return { byName: ev.byName || "Usuario", atMs };
+};
+const formatFulfillmentEvent = (event) => {
+  if (!event) return "";
+  const when = event.atMs ? new Date(event.atMs) : null;
+  const parts = [event.byName];
+  if (when) parts.push(formatDate(when), formatTime(when));
+  return parts.filter(Boolean).join(" · ");
+};
+
+// Avanza (o corrige) el estado logístico guardando usuario, fecha y hora.
+const setSaleFulfillment = async (saleId, statusKey) => {
+  const sale = state.sales.find((item) => item.id === saleId);
+  if (!sale || SALE_FULFILLMENT_INDEX[statusKey] == null) return;
+  const user = auth.currentUser;
+  const byName = currentUserProfile?.displayName || currentUserProfile?.username || user?.displayName || user?.email || "Usuario";
+  const patch = { fulfillmentStatus: statusKey, updatedAt: serverTimestamp() };
+  if (statusKey !== "pending") {
+    patch[`fulfillment.${statusKey}`] = { byName, byUid: user?.uid || "", atMs: Date.now() };
+  }
+  try {
+    await updateDoc(doc(db, "sales", saleId), patch);
+  } catch (error) {
+    console.error("No se pudo actualizar el estado logistico de la venta", { saleId, statusKey, uid: user?.uid, error });
+    window.alert("No se pudo actualizar el estado de la venta. Reintentá.");
+  }
+};
+
+// Retrocede un paso el estado logístico (solo admin) y borra el evento deshecho.
+const revertSaleFulfillment = async (saleId) => {
+  const sale = state.sales.find((item) => item.id === saleId);
+  if (!sale) return;
+  const current = getSaleFulfillmentStatus(sale);
+  const idx = SALE_FULFILLMENT_INDEX[current];
+  if (idx <= 0) return;
+  const prev = SALE_FULFILLMENT_STEPS[idx - 1].key;
+  const patch = { fulfillmentStatus: prev, updatedAt: serverTimestamp() };
+  patch[`fulfillment.${current}`] = null;
+  try {
+    await updateDoc(doc(db, "sales", saleId), patch);
+  } catch (error) {
+    console.error("No se pudo revertir el estado logistico de la venta", { saleId, uid: auth.currentUser?.uid, error });
+    window.alert("No se pudo revertir el estado. Reintentá.");
+  }
 };
 
 const slugifyFilePart = (value) => String(value || "")
@@ -7077,6 +7142,7 @@ const getFilteredSalesHistory = () => {
   const search = normalizeText(salesHistoryState.search);
   const payment = normalizeText(salesHistoryState.payment);
   const credit = salesHistoryState.credit;
+  const status = salesHistoryState.status;
   return state.sales
     .filter((sale) => {
       const saleDate = getSaleDateValue(sale);
@@ -7086,6 +7152,7 @@ const getFilteredSalesHistory = () => {
       if (payment && normalizeText(sale.payment) !== payment) return false;
       if (credit === "cash" && isCreditSaleRecord(sale)) return false;
       if (credit === "credit" && !isCreditSaleRecord(sale)) return false;
+      if (status && getSaleFulfillmentStatus(sale) !== status) return false;
       return true;
     })
     .sort((a, b) => {
@@ -7120,53 +7187,118 @@ const renderSalesHistory = () => {
     const lines = getSaleLineItems(item);
     const saleTotal = getSaleTotalAmount(item);
     const isCreditSale = isCreditSaleRecord(item);
-    const productsPreview = lines.slice(0, 2).map((line) => `
-      <span class="sale-product-pill">${escapeHtml(line.productName || "Producto")} · ${formatInteger(line.quantity)} ${escapeHtml(line.unit || "disp")}</span>
-    `).join("");
-    const hiddenCount = Math.max(0, lines.length - 2);
     const detailOpen = saleDetailOpenState.has(item.id);
+    const clientName = item.clientName || getSaleClientDetails(item).name || "Sin cliente";
+    const dateLabel = formatDate(getSaleDateValue(item));
+    const timeLabel = getSaleTimeLabel(item);
+    const method = String(item.payment || "-");
+    const condition = isCreditSale ? "Crédito" : "Contado";
     const repurchaseText = item.repurchaseActive
-      ? `Cada ${formatInteger(item.repurchaseFrequencyDays || 0)} dias`
+      ? `Cada ${formatInteger(item.repurchaseFrequencyDays || 0)} días`
       : "Sin recompra";
     const nextRepurchase = item.repurchaseNextContactDate ? formatDate(item.repurchaseNextContactDate) : "-";
-    const adminActions = isAdminRole()
-      ? `
-            <button class="icon-btn" type="button" data-edit-sale="${item.id}" title="Editar"><i data-lucide="pencil"></i></button>
-            <button class="icon-btn icon-btn-danger" type="button" data-delete-sale="${item.id}" title="Eliminar"><i data-lucide="trash-2"></i></button>
-        `
+    const observation = item.observation ? String(item.observation).trim() : "";
+    const fromJourney = Boolean(item.journeyId);
+    const admin = isAdminRole();
+
+    // Estado logístico
+    const status = getSaleFulfillmentStatus(item);
+    const step = getSaleFulfillmentStep(status);
+    const curIdx = SALE_FULFILLMENT_INDEX[status];
+    const statusChip = `<span class="sale-status-chip sale-status-${step.tone}"><i data-lucide="${step.icon}"></i>${step.label}</span>`;
+
+    const editDelete = admin
+      ? `<button class="icon-btn" type="button" data-edit-sale="${item.id}" title="Editar"><i data-lucide="pencil"></i></button>
+         <button class="icon-btn icon-btn-danger" type="button" data-delete-sale="${item.id}" title="Eliminar"><i data-lucide="trash-2"></i></button>`
       : "";
+
+    const stepper = SALE_FULFILLMENT_STEPS.map((s, i) => `
+      <div class="sale-step${i <= curIdx ? " is-done" : ""}${i === curIdx ? " is-current" : ""} sale-step-${s.tone}">
+        <span class="sale-step-dot"><i data-lucide="${s.icon}"></i></span>
+        <span class="sale-step-label">${s.label}</span>
+      </div>`).join('<span class="sale-step-sep"></span>');
+
+    const nextStep = SALE_FULFILLMENT_STEPS[curIdx + 1];
+    const advanceBtn = (admin && nextStep)
+      ? `<button class="btn primary btn-sm" type="button" data-sale-fulfill="${item.id}" data-status="${nextStep.key}"><i data-lucide="${nextStep.icon}"></i> ${nextStep.action}</button>`
+      : "";
+    const undoBtn = (admin && curIdx > 0)
+      ? `<button class="btn ghost btn-sm" type="button" data-sale-fulfill-undo="${item.id}"><i data-lucide="undo-2"></i> Revertir</button>`
+      : "";
+    const doneMsg = (curIdx === SALE_FULFILLMENT_STEPS.length - 1)
+      ? `<span class="sale-fulfill-done"><i data-lucide="check-circle-2"></i> Entrega completada</span>`
+      : "";
+    const nonAdminHint = (!admin && curIdx < SALE_FULFILLMENT_STEPS.length - 1)
+      ? `<span class="muted sale-fulfill-hint">Solo un administrador puede actualizar el estado.</span>`
+      : "";
+
+    const historyRows = SALE_FULFILLMENT_STEPS.slice(1).map((s) => {
+      const ev = getSaleFulfillmentEvent(item, s.key);
+      if (!ev) return "";
+      return `<div class="sale-hist-row"><span class="sale-status-dot sale-status-${s.tone}"></span><div class="sale-hist-body"><strong>${s.label}</strong><small>${escapeHtml(formatFulfillmentEvent(ev))}</small></div></div>`;
+    }).filter(Boolean).join("");
+
+    const productRows = lines.map((line) => {
+      const lineTotal = line.total ?? Number(line.quantity || 0) * Number(line.unitPrice || 0);
+      return `<div class="sale-prod-row">
+        <span class="sale-prod-name">${escapeHtml(line.productName || "Producto")}</span>
+        <span class="sale-prod-qty">${formatInteger(line.quantity)} ${escapeHtml(line.unit || "disp")} · Gs ${formatGs(line.unitPrice)}</span>
+        <span class="sale-prod-total">Gs ${formatGs(lineTotal)}</span>
+      </div>`;
+    }).join("") || '<div class="muted">Sin detalle de productos.</div>';
+
     return `
-      <div class="sale-history-item">
-        <div class="sale-history-main">
-          <div class="sale-history-block sale-history-client">
-            <strong>${escapeHtml(item.clientName || getSaleClientDetails(item).name || "Sin cliente")}</strong>
-            <span>${formatDate(getSaleDateValue(item))}${getSaleTimeLabel(item) ? ` · ${getSaleTimeLabel(item)}` : ""}</span>
+      <article class="sale-card${detailOpen ? " is-open" : ""}">
+        <div class="sale-card-summary">
+          <div class="sale-col sale-col-client">
+            <strong>${escapeHtml(clientName)}</strong>
+            <span>${escapeHtml(dateLabel)}${timeLabel ? ` · ${escapeHtml(timeLabel)}` : ""}</span>
           </div>
-          <div class="sale-history-block sale-history-products">
-            ${productsPreview || '<span class="muted">Sin productos</span>'}
-            ${hiddenCount ? `<span class="sale-product-more">+${hiddenCount} productos</span>` : ""}
-          </div>
-          <div class="sale-history-block sale-history-payment">
+          <div class="sale-col sale-col-amount">
             <strong>Gs ${formatGs(saleTotal)}</strong>
-            <span>${escapeHtml(item.payment || "-")} · ${isCreditSale ? "Credito" : "Contado"}</span>
+            <span>${escapeHtml(method)} · ${condition}</span>
           </div>
-          <div class="sale-history-block sale-history-followup">
-            <span>${repurchaseText}</span>
-            <small>Proxima: ${nextRepurchase}</small>
-            ${item.observation ? `<small title="${escapeHtml(item.observation)}">${escapeHtml(item.observation)}</small>` : ""}
+          <div class="sale-col sale-col-repurchase">
+            <span class="sale-col-tag">Recompra</span>
+            <span>${escapeHtml(repurchaseText)}</span>
+            <small>Próxima: ${escapeHtml(nextRepurchase)}</small>
           </div>
-          <div class="sale-history-actions">
+          <div class="sale-col sale-col-status">${statusChip}</div>
+          <div class="sale-col sale-col-actions">
             <button class="icon-btn" type="button" data-share-sale="${item.id}" title="Compartir"><i data-lucide="share-2"></i></button>
-            <button class="icon-btn" type="button" data-toggle-sale-detail="${item.id}" title="Ver detalle"><i data-lucide="${detailOpen ? "chevron-up" : "chevron-down"}"></i></button>
-            ${adminActions}
+            ${editDelete}
+            <button class="icon-btn sale-expand-btn" type="button" data-toggle-sale-detail="${item.id}" title="${detailOpen ? "Contraer" : "Ver detalle"}" aria-expanded="${detailOpen}"><i data-lucide="chevron-down"></i></button>
           </div>
         </div>
-        <div class="sale-history-detail ${detailOpen ? "open" : ""}">
-          ${lines.map((line) => `
-            <div><span>${escapeHtml(line.productName || "Producto")}</span><strong>${formatInteger(line.quantity)} x Gs ${formatGs(line.unitPrice)} = Gs ${formatGs(line.total ?? Number(line.quantity || 0) * Number(line.unitPrice || 0))}</strong></div>
-          `).join("") || '<div class="muted">Sin detalle de productos.</div>'}
+        <div class="sale-card-detail">
+          <div class="sale-detail-inner">
+            ${fromJourney ? `<div class="sale-journey-badge"><i data-lucide="route"></i> Venta cargada desde jornada</div>` : ""}
+            <div class="sale-detail-grid">
+              <section class="sale-detail-block">
+                <h4><i data-lucide="package"></i> Productos</h4>
+                <div class="sale-prod-list">${productRows}</div>
+                <div class="sale-prod-foot"><span>Total</span><strong>Gs ${formatGs(saleTotal)}</strong></div>
+              </section>
+              <section class="sale-detail-block">
+                <h4><i data-lucide="wallet"></i> Pago</h4>
+                <div class="sale-kv"><span>Método</span><strong>${escapeHtml(method)}</strong></div>
+                <div class="sale-kv"><span>Condición</span><strong>${condition}</strong></div>
+                <div class="sale-kv"><span>Próxima recompra</span><strong>${escapeHtml(repurchaseText)}${item.repurchaseActive && nextRepurchase !== "-" ? ` · ${escapeHtml(nextRepurchase)}` : ""}</strong></div>
+                ${observation ? `<div class="sale-kv sale-kv-note"><span>Observaciones</span><p>${escapeHtml(observation)}</p></div>` : ""}
+              </section>
+              <section class="sale-detail-block sale-detail-logistics">
+                <h4><i data-lucide="truck"></i> Logística</h4>
+                <div class="sale-stepper">${stepper}</div>
+                <div class="sale-fulfill-actions">${advanceBtn}${undoBtn}${doneMsg}${nonAdminHint}</div>
+              </section>
+              <section class="sale-detail-block">
+                <h4><i data-lucide="history"></i> Historial</h4>
+                <div class="sale-hist-list">${historyRows || '<div class="muted">Sin movimientos registrados aún.</div>'}</div>
+              </section>
+            </div>
+          </div>
         </div>
-      </div>
+      </article>
     `;
   }).join("");
   refreshIcons();
@@ -9387,16 +9519,30 @@ saleList.addEventListener("click", async (event) => {
   const shareId = event.target.closest("[data-share-sale]")?.dataset.shareSale;
   const editId = event.target.closest("[data-edit-sale]")?.dataset.editSale;
   const deleteId = event.target.closest("[data-delete-sale]")?.dataset.deleteSale;
-  const detailId = event.target.closest("[data-toggle-sale-detail]")?.dataset.toggleSaleDetail;
-  if (detailId) {
-    const safeId = String(detailId).trim();
-    if (saleDetailOpenState.has(safeId)) {
-      saleDetailOpenState.delete(safeId);
-    } else {
-      saleDetailOpenState.add(safeId);
-    }
-    renderSalesHistory();
+  const detailBtn = event.target.closest("[data-toggle-sale-detail]");
+  const fulfillBtn = event.target.closest("[data-sale-fulfill]");
+  const undoBtn = event.target.closest("[data-sale-fulfill-undo]");
+  if (fulfillBtn) {
+    if (!isAdminRole()) return;
+    await setSaleFulfillment(fulfillBtn.dataset.saleFulfill, fulfillBtn.dataset.status);
+    return;
+  }
+  if (undoBtn) {
+    if (!isAdminRole()) return;
+    await revertSaleFulfillment(undoBtn.dataset.saleFulfillUndo);
+    return;
+  }
+  if (detailBtn) {
+    // Toggle en el lugar (sin re-render) para que la transición sea suave.
+    const safeId = String(detailBtn.dataset.toggleSaleDetail).trim();
+    const isOpen = !saleDetailOpenState.has(safeId);
+    if (isOpen) saleDetailOpenState.add(safeId); else saleDetailOpenState.delete(safeId);
+    const card = detailBtn.closest(".sale-card");
+    if (card) card.classList.toggle("is-open", isOpen);
+    detailBtn.setAttribute("aria-expanded", String(isOpen));
+    detailBtn.setAttribute("title", isOpen ? "Contraer" : "Ver detalle");
     requestAnimationFrame(refreshCollapseHeights);
+    window.setTimeout(refreshCollapseHeights, 320);
     return;
   }
   if (shareId) {
@@ -9739,30 +9885,29 @@ salesHistoryRangeCancel?.addEventListener("click", () => {
   salesHistoryPeriodSelector?.querySelector('[data-sales-period="custom"]')?.setAttribute("aria-expanded", "false");
 });
 
-[salesHistorySearch, salesHistoryPaymentFilter, salesHistoryCreditFilter].forEach((input) => {
-  input?.addEventListener("input", () => {
-    salesHistoryState.search = salesHistorySearch?.value || "";
-    salesHistoryState.payment = salesHistoryPaymentFilter?.value || "";
-    salesHistoryState.credit = salesHistoryCreditFilter?.value || "";
-    renderSalesHistory();
-    requestAnimationFrame(refreshCollapseHeights);
-  });
-  input?.addEventListener("change", () => {
-    salesHistoryState.search = salesHistorySearch?.value || "";
-    salesHistoryState.payment = salesHistoryPaymentFilter?.value || "";
-    salesHistoryState.credit = salesHistoryCreditFilter?.value || "";
-    renderSalesHistory();
-    requestAnimationFrame(refreshCollapseHeights);
-  });
+const syncSalesHistoryFiltersFromInputs = () => {
+  salesHistoryState.search = salesHistorySearch?.value || "";
+  salesHistoryState.payment = salesHistoryPaymentFilter?.value || "";
+  salesHistoryState.credit = salesHistoryCreditFilter?.value || "";
+  salesHistoryState.status = salesHistoryStatusFilter?.value || "";
+  renderSalesHistory();
+  requestAnimationFrame(refreshCollapseHeights);
+};
+
+[salesHistorySearch, salesHistoryPaymentFilter, salesHistoryCreditFilter, salesHistoryStatusFilter].forEach((input) => {
+  input?.addEventListener("input", syncSalesHistoryFiltersFromInputs);
+  input?.addEventListener("change", syncSalesHistoryFiltersFromInputs);
 });
 
 salesHistoryClearFilters?.addEventListener("click", () => {
   salesHistoryState.search = "";
   salesHistoryState.payment = "";
   salesHistoryState.credit = "";
+  salesHistoryState.status = "";
   if (salesHistorySearch) salesHistorySearch.value = "";
   if (salesHistoryPaymentFilter) salesHistoryPaymentFilter.value = "";
   if (salesHistoryCreditFilter) salesHistoryCreditFilter.value = "";
+  if (salesHistoryStatusFilter) salesHistoryStatusFilter.value = "";
   renderSalesHistory();
   requestAnimationFrame(refreshCollapseHeights);
 });

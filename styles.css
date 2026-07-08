@@ -2234,107 +2234,152 @@ body.sale-journey-modal-open .dashboard[data-sale-journey-modal="true"] #sales.t
 }
 
 .history-filter-grid {
-  display: grid;
-  grid-template-columns: minmax(220px, 1.5fr) repeat(2, minmax(160px, 1fr)) auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: center;
 }
+.history-filter-grid > input[type="search"] { flex: 2 1 220px; min-width: 0; }
+.history-filter-grid > select { flex: 1 1 150px; min-width: 0; }
+.history-filter-grid > button { flex: 0 0 auto; margin-left: auto; }
 
 .sales-history-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
-.sale-history-item {
+/* ===== Card de venta (premium) ===== */
+.sale-card {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 16px;
   background: #fff;
-  padding: 12px;
   box-shadow: var(--shadow-soft);
+  transition: box-shadow .2s ease, border-color .2s ease;
 }
+.sale-card:hover { box-shadow: var(--shadow); border-color: var(--border-dark); }
+.sale-card.is-open { border-color: var(--green-200); box-shadow: var(--shadow); }
 
-.sale-history-main {
+.sale-card-summary {
   display: grid;
-  grid-template-columns: minmax(150px, 1.2fr) minmax(220px, 1.5fr) minmax(150px, 0.9fr) minmax(170px, 1fr) auto;
-  gap: 14px;
+  grid-template-columns: minmax(150px, 1.4fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(120px, auto) auto;
+  gap: 16px;
   align-items: center;
+  padding: 15px 18px;
 }
+.sale-col { min-width: 0; display: grid; gap: 3px; }
+.sale-col strong { color: var(--ink); }
+.sale-col span, .sale-col small {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--muted); font-size: 0.84rem;
+}
+.sale-col-client strong { font-size: 1.02rem; font-weight: 700; }
+.sale-col-amount strong { font-size: 1.14rem; font-weight: 800; color: var(--green-800); letter-spacing: -0.01em; }
+.sale-col-tag { font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #9ca3af; }
+.sale-col-repurchase span:not(.sale-col-tag) { color: var(--ink); font-weight: 600; font-size: 0.86rem; }
+.sale-col-status { justify-items: start; }
+.sale-col-actions { display: inline-flex; justify-content: flex-end; align-items: center; gap: 4px; }
 
-.sale-history-block {
-  min-width: 0;
+.sale-status-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 999px;
+  font-size: 0.8rem; font-weight: 700; white-space: nowrap;
+}
+.sale-status-chip i { width: 14px; height: 14px; }
+.sale-status-pending { background: #f1f5f9; color: #475569; }
+.sale-status-prepared { background: #dbeafe; color: #1d4ed8; }
+.sale-status-dispatched { background: #ffedd5; color: #c2410c; }
+.sale-status-delivered { background: #dcfce7; color: #15803d; }
+
+.sale-expand-btn i { transition: transform .3s ease; }
+.sale-card.is-open .sale-expand-btn i { transform: rotate(180deg); }
+
+/* Detalle expandible con transición suave (grid-rows) */
+.sale-card-detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .32s ease; }
+.sale-card.is-open .sale-card-detail { grid-template-rows: 1fr; }
+.sale-detail-inner { overflow: hidden; }
+.sale-detail-inner > * { margin-left: 18px; margin-right: 18px; }
+.sale-detail-inner > *:last-child { margin-bottom: 18px; }
+
+.sale-journey-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-bottom: 12px; padding: 6px 12px; border-radius: 10px;
+  background: var(--green-50); color: var(--green-800);
+  font-size: 0.8rem; font-weight: 700; border: 1px solid var(--green-100);
+}
+.sale-journey-badge i { width: 15px; height: 15px; }
+
+.sale-detail-grid {
   display: grid;
-  gap: 4px;
-}
-
-.sale-history-block strong {
-  color: var(--ink);
-  font-size: 1rem;
-}
-
-.sale-history-block span,
-.sale-history-block small {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--muted);
-  font-size: 0.84rem;
-}
-
-.sale-history-payment strong {
-  color: var(--green-800);
-  font-size: 1.08rem;
-}
-
-.sale-history-products {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.sale-product-pill,
-.sale-product-more {
-  display: inline-flex;
-  max-width: 100%;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: var(--green-50);
-  color: var(--green-900);
-  font-weight: 700;
-  font-size: 0.78rem;
-}
-
-.sale-product-more {
-  background: #f1f5f9;
-  color: #475569;
-}
-
-.sale-history-actions {
-  display: inline-flex;
-  justify-content: flex-end;
-  gap: 6px;
-  white-space: nowrap;
-}
-
-.sale-history-detail {
-  display: none;
-  margin-top: 12px;
-  padding-top: 12px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
   border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 0.86rem;
+  padding-top: 14px;
 }
+.sale-detail-block {
+  min-width: 0;
+  background: #fafbfc; border: 1px solid var(--border); border-radius: 12px; padding: 14px;
+}
+.sale-detail-block h4 {
+  display: flex; align-items: center; gap: 7px; margin: 0 0 10px;
+  font-size: 0.76rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: #64748b;
+}
+.sale-detail-block h4 i { width: 15px; height: 15px; color: var(--green-600); }
 
-.sale-history-detail.open {
-  display: grid;
-  gap: 6px;
+.sale-prod-list { display: grid; gap: 8px; }
+.sale-prod-row {
+  display: grid; grid-template-columns: 1fr auto;
+  grid-template-areas: "name total" "qty total"; gap: 0 10px; align-items: center;
 }
+.sale-prod-name { grid-area: name; font-weight: 700; color: var(--ink); font-size: 0.9rem; }
+.sale-prod-qty { grid-area: qty; color: var(--muted); font-size: 0.8rem; }
+.sale-prod-total { grid-area: total; font-weight: 700; color: var(--ink); font-size: 0.9rem; white-space: nowrap; }
+.sale-prod-foot {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); font-weight: 700;
+}
+.sale-prod-foot strong { color: var(--green-800); font-size: 1.02rem; }
 
-.sale-history-detail div {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
+.sale-kv { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font-size: 0.88rem; }
+.sale-kv span { color: var(--muted); }
+.sale-kv strong { color: var(--ink); font-weight: 700; text-align: right; }
+.sale-kv-note { flex-direction: column; gap: 4px; }
+.sale-kv-note p { margin: 0; color: var(--ink); font-weight: 500; font-size: 0.86rem; line-height: 1.4; }
+
+/* Stepper de logística */
+.sale-stepper { display: flex; align-items: flex-start; gap: 4px; margin-bottom: 14px; }
+.sale-step { display: grid; justify-items: center; gap: 5px; text-align: center; flex: 0 0 auto; }
+.sale-step-dot {
+  width: 30px; height: 30px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #eef2f7; color: #94a3b8; border: 2px solid transparent;
 }
+.sale-step-dot i { width: 15px; height: 15px; }
+.sale-step-label { font-size: 0.7rem; font-weight: 700; color: #94a3b8; white-space: nowrap; }
+.sale-step-sep { flex: 1 1 auto; height: 2px; background: #e5e7eb; border-radius: 2px; margin-top: 14px; min-width: 12px; }
+.sale-step.is-done.sale-step-pending .sale-step-dot { background: #e2e8f0; color: #475569; }
+.sale-step.is-done.sale-step-prepared .sale-step-dot { background: #dbeafe; color: #1d4ed8; }
+.sale-step.is-done.sale-step-dispatched .sale-step-dot { background: #ffedd5; color: #c2410c; }
+.sale-step.is-done.sale-step-delivered .sale-step-dot { background: #dcfce7; color: #15803d; }
+.sale-step.is-done .sale-step-label { color: var(--ink); }
+.sale-step.is-current .sale-step-dot { border-color: currentColor; box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.12); }
+
+.sale-fulfill-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sale-fulfill-done { display: inline-flex; align-items: center; gap: 6px; color: var(--green-700); font-weight: 700; font-size: 0.86rem; }
+.sale-fulfill-done i { width: 16px; height: 16px; }
+.sale-fulfill-hint { font-size: 0.8rem; }
+.btn-sm { padding: 7px 12px; font-size: 0.82rem; border-radius: 10px; display: inline-flex; align-items: center; gap: 6px; }
+.btn-sm i { width: 15px; height: 15px; }
+
+/* Historial de estados */
+.sale-hist-list { display: grid; gap: 10px; }
+.sale-hist-row { display: flex; align-items: flex-start; gap: 10px; }
+.sale-status-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex: 0 0 auto; background: #94a3b8; }
+.sale-status-dot.sale-status-prepared { background: #2563eb; }
+.sale-status-dot.sale-status-dispatched { background: #f97316; }
+.sale-status-dot.sale-status-delivered { background: #16a34a; }
+.sale-hist-body { display: grid; gap: 1px; }
+.sale-hist-body strong { font-size: 0.88rem; color: var(--ink); }
+.sale-hist-body small { color: var(--muted); font-size: 0.8rem; }
 
 .client-list-toolbar {
   display: grid;
@@ -3542,17 +3587,9 @@ body.sale-journey-modal-open::before {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  .sale-history-main {
-    grid-template-columns: minmax(160px, 1fr) minmax(220px, 1.4fr) minmax(150px, 0.9fr);
-  }
-
-  .sale-history-actions {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
-  }
-
-  .history-filter-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .sale-card-summary {
+    grid-template-columns: minmax(130px, 1.3fr) minmax(120px, 1fr) minmax(120px, 1fr) minmax(110px, auto) auto;
+    gap: 12px;
   }
 
   .prospect-detail-grid {
@@ -3582,24 +3619,36 @@ body.sale-journey-modal-open::before {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .history-filter-grid,
   .client-list-toolbar {
     grid-template-columns: minmax(0, 1fr);
   }
+  .history-filter-grid > input[type="search"],
+  .history-filter-grid > select { flex: 1 1 100%; }
+  .history-filter-grid > button { margin-left: 0; width: 100%; }
 
-  .sale-history-main {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
+  .sale-card-summary {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "client actions"
+      "amount status"
+      "repurchase repurchase";
+    gap: 10px 12px;
   }
-
-  .sale-history-actions {
-    justify-content: flex-start;
-    flex-wrap: wrap;
+  .sale-col-client { grid-area: client; }
+  .sale-col-actions { grid-area: actions; align-self: start; }
+  .sale-col-amount { grid-area: amount; }
+  .sale-col-status { grid-area: status; justify-items: end; align-content: center; }
+  .sale-col-repurchase {
+    grid-area: repurchase; display: flex; align-items: baseline; gap: 8px;
+    padding-top: 8px; border-top: 1px solid var(--border);
   }
-
-  .sale-history-detail div {
-    display: grid;
-  }
+  .sale-detail-grid { grid-template-columns: 1fr; }
+  /* Stepper compacto para que las 4 etiquetas entren en pantallas angostas */
+  .sale-stepper { gap: 2px; }
+  .sale-step-dot { width: 26px; height: 26px; }
+  .sale-step-dot i { width: 13px; height: 13px; }
+  .sale-step-label { font-size: 0.6rem; }
+  .sale-step-sep { min-width: 4px; margin-top: 12px; }
 
   .prospect-indicators {
     grid-template-columns: repeat(2, minmax(0, 1fr));

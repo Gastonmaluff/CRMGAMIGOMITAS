@@ -1152,6 +1152,13 @@
                       <option value="cash">Contado</option>
                       <option value="credit">Credito</option>
                     </select>
+                    <select id="salesHistoryStatusFilter" aria-label="Estado logistico">
+                      <option value="">Estado: todos</option>
+                      <option value="pending">Pendiente</option>
+                      <option value="prepared">Preparado</option>
+                      <option value="dispatched">Despachado</option>
+                      <option value="delivered">Entregado</option>
+                    </select>
                     <button class="btn ghost" type="button" id="salesHistoryClearFilters">Limpiar filtros</button>
                   </div>
                   <div class="period-current-label" id="salesHistoryPeriodLabel">Este mes</div>
@@ -2724,7 +2731,7 @@
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.js"></script>
   <script src="vendor/qrcode.min.js?v=20260705-01"></script>
-  <script type="module" src="app.js?v=20260708-03"></script>
+  <script type="module" src="app.js?v=20260708-04"></script>
   <script>
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       window.lucide.createIcons();
