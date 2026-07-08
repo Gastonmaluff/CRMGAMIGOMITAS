@@ -8127,3 +8127,16 @@ body.sale-journey-modal-open::before {
   .journeys-header { padding: 16px 12px 12px; }
   .journey-back-btn { margin-left: 12px; }
 }
+
+/* Spinner del botón "Guardar imagen" durante la generación */
+.jx-spinner {
+  display: inline-block;
+  width: 15px; height: 15px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -2px;
+  margin-right: 4px;
+  animation: jx-spin 0.7s linear infinite;
+}
+@keyframes jx-spin { to { transform: rotate(360deg); } }

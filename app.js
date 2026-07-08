@@ -13184,7 +13184,29 @@ const buildJourneySummary = (journey, stops) => {
       s.visitsWithDuration += 1;
     }
   });
-  s.journeySeconds = (s.startedAtMs && s.finishedAtMs) ? Math.max(0, Math.round((s.finishedAtMs - s.startedAtMs) / 1000)) : 0;
+  // Duración real de la jornada (regla "inicio → última visita, con tope").
+  // Se calcula sobre milisegundos absolutos (UTC), así no se mezcla con la hora
+  // local. Va del inicio de la jornada hasta la última actividad de visita real
+  // (visitEndedAt/visitStartedAt) y NO de completedAt, porque completedAt suele
+  // caer en medianoche o días después (jornada finalizada tarde). Si el lapso es
+  // absurdo (> MAX, típicamente por finalizar otro día) se acota cayendo a la
+  // ventana de actividad de visitas y, en último caso, a inicio→fin de jornada.
+  const MAX_JOURNEY_MS = 16 * 60 * 60 * 1000; // ninguna jornada real dura >16 h
+  const visitStartMsList = stops.map((st) => qrTimestampMs(st.visitStartedAt)).filter((n) => n > 0);
+  const visitEndMsList = stops.map((st) => qrTimestampMs(st.visitEndedAt)).filter((n) => n > 0);
+  const activityMs = [...visitStartMsList, ...visitEndMsList];
+  const startMs = s.startedAtMs || (activityMs.length ? Math.min(...activityMs) : 0);
+  const endMs = visitEndMsList.length ? Math.max(...visitEndMsList)
+    : (activityMs.length ? Math.max(...activityMs) : s.finishedAtMs);
+  let journeyMs = (startMs && endMs) ? endMs - startMs : 0;
+  if (journeyMs <= 0 || journeyMs > MAX_JOURNEY_MS) {
+    const windowMs = activityMs.length >= 2 ? Math.max(...activityMs) - Math.min(...activityMs) : 0;
+    const wallMs = (s.startedAtMs && s.finishedAtMs) ? s.finishedAtMs - s.startedAtMs : 0;
+    if (windowMs > 0 && windowMs <= MAX_JOURNEY_MS) journeyMs = windowMs;
+    else if (wallMs > 0 && wallMs <= MAX_JOURNEY_MS) journeyMs = wallMs;
+    else journeyMs = Math.max(0, s.totalVisitSeconds * 1000);
+  }
+  s.journeySeconds = Math.max(0, Math.round(journeyMs / 1000));
   s.avgVisitSeconds = s.visitsWithDuration ? Math.round(s.totalVisitSeconds / s.visitsWithDuration) : 0;
   s.conversion = s.completedStops ? Math.round((s.salesCount / s.completedStops) * 100) : 0;
   return s;
@@ -13384,173 +13406,566 @@ const openJourneySummary = async (journeyId) => {
   }
 };
 
-// ----- Exportar / compartir imagen del resumen (6.4) -----
-const loadImageSafe = (src) => new Promise((resolve) => {
+// ===================== Exportar imagen de la jornada (rehecho) =====================
+// Se compone la imagen dibujando en un canvas 2D dedicado (JourneySummaryExport),
+// nunca capturando el DOM visible. Se eligió canvas 2D en vez de html-to-image /
+// html2canvas porque el proyecto carga hojas de estilo cross-origin (maplibre-gl.css)
+// que rompen esas librerías (SecurityError al leer cssRules → imagen en blanco / cuelgue).
+// El mapa real se renderiza aparte con MapLibre/MapTiler y se incrusta como imagen.
+// La vista normal del resumen (renderJourneySummaryScreen) queda intacta.
+
+const EXPORT_WIDTH = 1080;          // ancho fijo profesional de la imagen
+const EXPORT_PAD = 48;              // padding lateral del contenido
+const EXPORT_SCALE = 2;             // factor de resolución (pixelRatio) para nitidez
+const EXPORT_MAP_W = 984;           // ancho del mapa (1080 - 2*48)
+const EXPORT_MAP_H = 380;           // alto del mapa
+const EXPORT_FF = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+const EXPORT_COLORS = {
+  green: "#16a34a", greenD: "#15803d", blue: "#2563eb", purple: "#8b5cf6",
+  orange: "#f97316", yellow: "#eab308", red: "#dc2626", gray: "#94a3b8",
+  slate: "#0f172a", muted: "#64748b", sub: "#475569", border: "#e8eef4",
+  tile: "#f8fafc", numBg: "#f1f5f9", numFg: "#334155"
+};
+
+// --- Helpers de dibujo en canvas ---
+const exportLoadImage = (src) => new Promise((resolve) => {
+  if (!src) { resolve(null); return; }
   const img = new Image();
   img.onload = () => resolve(img);
   img.onerror = () => resolve(null);
   img.src = src;
 });
 
-const drawRoundRect = (ctx, x, y, w, h, r) => {
+const roundRectPath = (ctx, x, y, w, h, r) => {
+  const rr = Math.min(r, w / 2, h / 2);
   ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
   ctx.closePath();
 };
 
-const fitCanvasText = (ctx, text, maxWidth) => {
-  let t = String(text ?? "");
-  while (t.length > 3 && ctx.measureText(t).width > maxWidth) t = t.slice(0, -1);
-  return t === String(text ?? "") ? t : `${t}…`;
+// Parte un texto en líneas que caben en maxW con la fuente ya seteada en ctx.
+const wrapCanvasText = (ctx, text, maxW) => {
+  const words = String(text ?? "").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return [""];
+  const lines = [];
+  let cur = "";
+  for (const word of words) {
+    const tentative = cur ? `${cur} ${word}` : word;
+    if (ctx.measureText(tentative).width > maxW && cur) {
+      lines.push(cur);
+      cur = word;
+    } else {
+      cur = tentative;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
 };
 
-const drawRouteOnCanvas = (ctx, stops, x, y, w, h) => {
-  const bounds = getRouteBounds(stops);
-  if (!bounds) {
-    ctx.fillStyle = "#94a3b8";
-    ctx.font = "600 28px Arial";
-    ctx.textAlign = "center";
-    ctx.fillText("Sin coordenadas para el recorrido", x + w / 2, y + h / 2);
-    ctx.textAlign = "left";
-    return;
+// Reduce el tamaño de fuente hasta que el texto entre en maxW (sin truncar).
+const fitFontSize = (ctx, text, maxW, weight, startPx, minPx) => {
+  let px = startPx;
+  for (; px > minPx; px -= 1) {
+    ctx.font = `${weight} ${px}px ${EXPORT_FF}`;
+    if (ctx.measureText(String(text)).width <= maxW) break;
   }
-  const pad = 34;
-  const spanLat = (bounds.maxLat - bounds.minLat) || 1e-6;
-  const spanLng = (bounds.maxLng - bounds.minLng) || 1e-6;
-  const pts = bounds.pts.map((p) => ({
-    px: x + pad + ((p.lng - bounds.minLng) / spanLng) * (w - 2 * pad),
-    py: y + pad + ((bounds.maxLat - p.lat) / spanLat) * (h - 2 * pad),
-    stop: p.stop
-  }));
-  ctx.strokeStyle = "#cbd5e1";
-  ctx.lineWidth = 4;
-  ctx.setLineDash([9, 9]);
-  ctx.beginPath();
-  pts.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt.px, pt.py) : ctx.lineTo(pt.px, pt.py)));
-  ctx.stroke();
-  ctx.setLineDash([]);
-  pts.forEach((pt, i) => {
-    ctx.fillStyle = ROUTE_COLORS[RESULT_LIST_COLORS[pt.stop.status] || "gray"];
-    ctx.beginPath();
-    ctx.arc(pt.px, pt.py, 17, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    ctx.fillStyle = "#fff";
-    ctx.font = "700 19px Arial";
-    ctx.textAlign = "center";
-    ctx.fillText(String(i + 1), pt.px, pt.py + 7);
-    ctx.textAlign = "left";
+  ctx.font = `${weight} ${px}px ${EXPORT_FF}`;
+  return px;
+};
+
+// Isotipo de Gami Gomitas dibujado con primitivas (gomita/osito), en el color
+// dado. Self-contained: no depende de ningún archivo de logo (viewBox 64x64).
+const drawGamiIsotipo = (ctx, x, y, size, color) => {
+  const s = size / 64;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+  ctx.fillStyle = color;
+  const circle = (cx, cy, r) => { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); };
+  circle(19, 13, 8); circle(45, 13, 8); circle(32, 24, 15);
+  roundRectPath(ctx, 15, 31, 34, 27, 15); ctx.fill();
+  circle(12, 39, 8); circle(52, 39, 8); circle(23, 59, 7); circle(41, 59, 7);
+  ctx.restore();
+};
+
+// Renderiza un mapa MapLibre real fuera de pantalla, dibuja la ruta + paradas,
+// encuadra todos los puntos y devuelve una imagen PNG (dataURL) del mapa junto
+// con las posiciones en píxeles de cada parada numerada. Espera explícitamente
+// a los eventos load e idle para asegurar que los mosaicos ya estén pintados.
+const renderJourneyExportMap = async (stops) => {
+  const coordStops = [...stops]
+    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
+    .map((s) => ({ lat: Number(s.latitude), lng: Number(s.longitude), stop: s }))
+    .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && p.lat !== 0 && p.lng !== 0);
+  if (!coordStops.length || typeof maplibregl === "undefined") {
+    return { dataUrl: null, pins: [] };
+  }
+  const holder = document.createElement("div");
+  holder.style.cssText = `position:fixed;left:-100000px;top:0;width:${EXPORT_MAP_W}px;height:${EXPORT_MAP_H}px;`;
+  document.body.appendChild(holder);
+  let map = null;
+  try {
+    map = new maplibregl.Map({
+      container: holder,
+      style: MAP_STYLES.streets,
+      interactive: false,
+      attributionControl: false,
+      preserveDrawingBuffer: true,     // imprescindible para leer el canvas
+      fadeDuration: 0,
+      center: [coordStops[0].lng, coordStops[0].lat],
+      zoom: 12
+    });
+    // 1) Esperar a que el estilo esté cargado.
+    await new Promise((resolve) => {
+      let settled = false;
+      const done = () => { if (!settled) { settled = true; resolve(); } };
+      map.once("load", done);
+      window.setTimeout(done, 9000);
+    });
+    // 1b) Confirmar que el estilo terminó de cargar (evita "Style is not done
+    // loading" al agregar fuentes/capas en cargas en frío del mapa).
+    if (!map.isStyleLoaded()) {
+      await new Promise((resolve) => {
+        const check = () => { if (map.isStyleLoaded()) { map.off("styledata", check); resolve(); } };
+        map.on("styledata", check);
+        window.setTimeout(() => { map.off("styledata", check); resolve(); }, 5000);
+      });
+    }
+    // 2) Dibujar la ruta que conecta las paradas en orden (no debe abortar el
+    // mapa si algo falla: mejor un mapa sin línea que ningún mapa).
+    const coords = coordStops.map((p) => [p.lng, p.lat]);
+    try {
+      if (coords.length >= 2 && map.isStyleLoaded()) {
+        map.addSource("jx-route", { type: "geojson", data: { type: "Feature", geometry: { type: "LineString", coordinates: coords } } });
+        map.addLayer({ id: "jx-route-casing", type: "line", source: "jx-route", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#ffffff", "line-width": 8, "line-opacity": 0.9 } });
+        map.addLayer({ id: "jx-route-line", type: "line", source: "jx-route", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#16a34a", "line-width": 4 } });
+      }
+    } catch (routeErr) {
+      console.warn("No se pudo dibujar la ruta en el mapa exportado (se continúa sin línea).", routeErr);
+    }
+    // 3) Encuadrar todos los puntos con padding para que ningún pin quede cortado.
+    const bounds = coords.reduce((bb, c) => bb.extend(c), new maplibregl.LngLatBounds(coords[0], coords[0]));
+    map.fitBounds(bounds, { padding: { top: 64, bottom: 64, left: 78, right: 78 }, duration: 0, maxZoom: 16, animate: false });
+    // 4) Esperar a que el mapa quede idle (mosaicos e imágenes del estilo listos).
+    await new Promise((resolve) => {
+      let settled = false;
+      const done = () => { if (!settled) { settled = true; resolve(); } };
+      map.once("idle", done);
+      window.setTimeout(done, 7000);
+    });
+    // 5) Un par de frames extra para asegurar el último render antes de leer el canvas.
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const pins = coordStops.map((p, i) => {
+      const pt = map.project([p.lng, p.lat]);
+      return { x: pt.x, y: pt.y, n: i + 1, color: ROUTE_COLORS[RESULT_LIST_COLORS[p.stop.status] || "gray"] };
+    });
+    const dataUrl = map.getCanvas().toDataURL("image/png");
+    return { dataUrl, pins };
+  } catch (error) {
+    console.error("No se pudo renderizar el mapa para la exportación", { error });
+    return { dataUrl: null, pins: [] };
+  } finally {
+    if (map) { try { map.remove(); } catch (_) { /* noop */ } }
+    holder.remove();
+  }
+};
+
+// Prepara los datos de cada negocio para el listado (sin textos vacíos/undefined).
+const buildJourneyExportBizData = (stops) => {
+  return [...stops].sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0)).map((stop, idx) => {
+    const colorKey = RESULT_LIST_COLORS[stop.status] || "gray";
+    const resultLabel = STOP_STATUS_LABELS[stop.status] || "Pendiente";
+    const sale = stop.status === "sale" ? state.sales.find((x) => x.id === stop.saleId) : null;
+    const sub = [resultLabel, sale ? `${formatGs(sale.total)} Gs` : ""].filter(Boolean).join(" · ");
+    const note = stop.resultNotes ? String(stop.resultNotes).trim() : "";
+    const revisitDate = stop.nextVisitDate ? formatDate(normalizeDateValue(stop.nextVisitDate)) : "";
+    const tags = [];
+    if (stop.contactObtained) tags.push({ text: "Contacto", bg: "#dbeafe", fg: "#1d4ed8" });
+    if (revisitDate) tags.push({ text: `Revisita ${revisitDate}`, bg: "#f3e8ff", fg: "#7c3aed" });
+    return { n: idx + 1, name: String(stop.businessName || "Negocio"), sub, note, tags, side: ROUTE_COLORS[colorKey] };
   });
 };
 
-const buildJourneySummaryCanvas = async (journey, stops, summary) => {
-  const W = 1080, H = 1440, pad = 60;
-  const canvas = document.createElement("canvas");
-  canvas.width = W;
-  canvas.height = H;
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, W, H);
-  const grad = ctx.createLinearGradient(0, 0, W, 250);
-  grad.addColorStop(0, "#15803d");
-  grad.addColorStop(1, "#16a34a");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, W, 250);
-  ctx.fillStyle = "rgba(255,255,255,0.85)";
-  ctx.font = "700 26px Arial";
-  ctx.fillText("RESUMEN DE JORNADA", pad, 80);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "800 54px Arial";
-  ctx.fillText(fitCanvasText(ctx, summary.name, W - 2 * pad - 160), pad, 145);
-  ctx.font = "400 28px Arial";
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.fillText(`${summary.dateLabel} · ${summary.user}`, pad, 195);
-  const logo = await loadImageSafe("IMG_8867.PNG");
-  if (logo && logo.width) {
-    const lw = 130;
-    const lh = logo.height * (lw / logo.width);
-    ctx.drawImage(logo, W - pad - lw, 60, lw, lh);
-  }
-  let y = 300;
-  ctx.fillStyle = "#f1f5f9";
-  drawRoundRect(ctx, pad, y, W - 2 * pad, 400, 22);
-  ctx.fill();
-  drawRouteOnCanvas(ctx, stops, pad, y, W - 2 * pad, 400);
-  y += 440;
-  const tiles = [
-    ["Ventas", String(summary.salesCount)],
-    ["Total vendido (Gs)", formatGs(summary.totalSalesAmount)],
-    ["Cajas", String(summary.totalBoxes)],
-    ["Contactos", String(summary.contactsObtained)],
-    ["Seguimientos", String(summary.followUpsScheduled)],
-    ["Duración", summary.journeySeconds ? formatDuration(summary.journeySeconds) : "—"],
-    ["Distancia", summary.totalDistanceMeters ? formatDistance(summary.totalDistanceMeters) : "—"],
-    ["Conversión", `${summary.conversion}%`]
+// Mide y ubica las tarjetas de negocios en dos columnas equilibradas.
+const layoutJourneyExportBiz = (mc, bizList, colW) => {
+  const NAME_LH = 29, SUB_LH = 25, NOTE_LH = 22, PADX = 18, NUM = 38, GAP = 14;
+  const textW = colW - PADX * 2 - NUM - GAP;
+  const cards = bizList.map((b) => {
+    mc.font = `700 23px ${EXPORT_FF}`;
+    const nameLines = wrapCanvasText(mc, b.name, textW);
+    mc.font = `600 20px ${EXPORT_FF}`;
+    const subLines = wrapCanvasText(mc, b.sub, textW).slice(0, 2);
+    let noteLines = [];
+    if (b.note) { mc.font = `400 18px ${EXPORT_FF}`; noteLines = wrapCanvasText(mc, b.note, textW).slice(0, 2); }
+    let h = 16 + nameLines.length * NAME_LH + 4 + subLines.length * SUB_LH;
+    if (noteLines.length) h += 6 + noteLines.length * NOTE_LH;
+    if (b.tags.length) h += 10 + 26;
+    h += 16;
+    h = Math.max(86, h);
+    return { ...b, nameLines, subLines, noteLines, h, textW, PADX, NUM, GAP, NAME_LH, SUB_LH, NOTE_LH };
+  });
+  // Colocación balanceada: cada tarjeta va a la columna más corta.
+  const colH = [0, 0];
+  const placed = cards.map((c) => {
+    const col = colH[0] <= colH[1] ? 0 : 1;
+    const relY = colH[col];
+    colH[col] += c.h + 16;
+    return { ...c, col, relY };
+  });
+  return { placed, listH: Math.max(colH[0], colH[1]) - 16 };
+};
+
+// Dibuja la imagen completa de la jornada en un canvas y devuelve un Blob PNG.
+const buildJourneyExportBlob = async (journey, stops, summary) => {
+  const mapResult = await renderJourneyExportMap(stops);
+  const mapImg = await exportLoadImage(mapResult.dataUrl);
+  const bizList = buildJourneyExportBizData(stops);
+
+  const W = EXPORT_WIDTH, PAD = EXPORT_PAD, CW = W - 2 * PAD, C = EXPORT_COLORS;
+  const money = (v) => `${formatGs(v)} Gs`;
+
+  // Canvas de medición (misma métrica de fuentes, escala 1).
+  const mc = document.createElement("canvas").getContext("2d");
+
+  // --- Medición de secciones de altura variable ---
+  mc.font = `800 52px ${EXPORT_FF}`;
+  const titleLines = wrapCanvasText(mc, summary.name, CW - 190).slice(0, 3);
+  const headerH = 92 + titleLines.length * 58 + 66;
+
+  const legendItems = [
+    [C.green, "Venta realizada"], [C.blue, "Contacto conseguido"],
+    [C.purple, "Revisita / seguimiento"], [C.orange, "Local cerrado"],
+    [C.gray, "Visitado sin venta"], [C.red, "Resultado negativo"]
   ];
-  const cols = 4, gap = 22, tileW = (W - 2 * pad - gap * (cols - 1)) / cols, tileH = 160;
-  tiles.forEach((t, i) => {
-    const cx = pad + (i % cols) * (tileW + gap);
-    const cy = y + Math.floor(i / cols) * (tileH + gap);
-    ctx.fillStyle = "#f8fafc";
-    drawRoundRect(ctx, cx, cy, tileW, tileH, 16);
-    ctx.fill();
-    ctx.strokeStyle = "#e2e8f0";
-    ctx.lineWidth = 1;
-    drawRoundRect(ctx, cx, cy, tileW, tileH, 16);
-    ctx.stroke();
-    ctx.fillStyle = "#0f172a";
-    ctx.font = "800 40px Arial";
+  mc.font = `600 20px ${EXPORT_FF}`;
+  const legendRows = [];
+  let row = [], rowW = 0;
+  legendItems.forEach(([color, label]) => {
+    const iw = 16 + 9 + mc.measureText(label).width + 28;
+    if (rowW + iw > CW && row.length) { legendRows.push({ items: row, w: rowW }); row = []; rowW = 0; }
+    row.push({ color, label, w: iw }); rowW += iw;
+  });
+  if (row.length) legendRows.push({ items: row, w: rowW });
+  const legendH = legendRows.length * 30;
+
+  const colW = (CW - 16) / 2;
+  const { placed, listH } = layoutJourneyExportBiz(mc, bizList, colW);
+
+  // --- Alturas fijas y posiciones verticales ---
+  const gapHeaderMap = 30, mapH = EXPORT_MAP_H, gapMapLegend = 20;
+  const gapLegendMetrics = 28, metricsH = 2 * 150 + 18;
+  const gapMetricsGroups = 24, groupsH = 190;
+  const gapGroupsList = 34, listTitleH = 40, gapListTitleList = 6;
+  const gapListFooter = 34, footerH = 100, bottomPad = 6;
+
+  let y = headerH + gapHeaderMap;
+  const mapY = y; y += mapH + gapMapLegend;
+  const legendY = y; y += legendH + gapLegendMetrics;
+  const metricsY = y; y += metricsH + gapMetricsGroups;
+  const groupsY = y; y += groupsH + gapGroupsList;
+  const listTitleY = y; y += listTitleH + gapListTitleList;
+  const listY = y; y += listH + gapListFooter;
+  const footerY = y; y += footerH + bottomPad;
+  const totalH = Math.ceil(y);
+
+  // --- Canvas final (a EXPORT_SCALE para nitidez) ---
+  const canvas = document.createElement("canvas");
+  canvas.width = W * EXPORT_SCALE;
+  canvas.height = totalH * EXPORT_SCALE;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(EXPORT_SCALE, EXPORT_SCALE);
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, W, totalH);
+
+  // Header con gradiente verde.
+  const grad = ctx.createLinearGradient(0, 0, W, headerH);
+  grad.addColorStop(0, C.greenD);
+  grad.addColorStop(1, C.green);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, headerH);
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  ctx.font = `700 20px ${EXPORT_FF}`;
+  ctx.fillText("RESUMEN DE JORNADA", PAD, 60);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `800 52px ${EXPORT_FF}`;
+  titleLines.forEach((ln, i) => ctx.fillText(ln, PAD, 106 + i * 58));
+  // Meta: fecha · usuario · Finalizada como chips.
+  let chipX = PAD;
+  const chipY = 92 + titleLines.length * 58 - 6;
+  ctx.font = `600 22px ${EXPORT_FF}`;
+  const drawChip = (text, solid) => {
+    const w = ctx.measureText(text).width + 36;
+    ctx.fillStyle = solid ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.16)";
+    roundRectPath(ctx, chipX, chipY, w, 40, 20); ctx.fill();
+    ctx.fillStyle = solid ? C.greenD : "#ffffff";
+    ctx.fillText(text, chipX + 18, chipY + 27);
+    chipX += w + 12;
+  };
+  drawChip(summary.dateLabel, false);
+  drawChip(summary.user, false);
+  drawChip("Finalizada", true);
+  // Marca Gami en el extremo derecho del header.
+  drawGamiIsotipo(ctx, W - PAD - 62, 44, 62, "#ffffff");
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `800 22px ${EXPORT_FF}`;
+  ctx.textAlign = "center";
+  ctx.fillText("Gami Gomitas", W - PAD - 31, 132);
+  ctx.textAlign = "left";
+
+  // Mapa real (imagen) con esquinas redondeadas + pins numerados.
+  ctx.save();
+  roundRectPath(ctx, PAD, mapY, EXPORT_MAP_W, mapH, 22);
+  ctx.fillStyle = "#eef2f7";
+  ctx.fill();
+  ctx.clip();
+  if (mapImg) {
+    ctx.drawImage(mapImg, PAD, mapY, EXPORT_MAP_W, mapH);
+  } else {
+    ctx.fillStyle = C.gray;
+    ctx.font = `600 24px ${EXPORT_FF}`;
     ctx.textAlign = "center";
-    ctx.fillText(fitCanvasText(ctx, t[1], tileW - 18), cx + tileW / 2, cy + 82);
-    ctx.fillStyle = "#64748b";
-    ctx.font = "600 22px Arial";
-    ctx.fillText(fitCanvasText(ctx, t[0], tileW - 12), cx + tileW / 2, cy + 124);
+    ctx.fillText("Sin coordenadas para dibujar el recorrido", PAD + EXPORT_MAP_W / 2, mapY + mapH / 2);
+    ctx.textAlign = "left";
+  }
+  ctx.restore();
+  if (mapImg) {
+    mapResult.pins.forEach((p) => {
+      const cx = PAD + p.x, cy = mapY + p.y;
+      ctx.beginPath(); ctx.arc(cx, cy, 18, 0, Math.PI * 2);
+      ctx.fillStyle = p.color; ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = "#ffffff"; ctx.stroke();
+      ctx.fillStyle = "#ffffff"; ctx.font = `800 17px ${EXPORT_FF}`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(String(p.n), cx, cy + 1);
+      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    });
+  }
+  // Borde del mapa.
+  roundRectPath(ctx, PAD, mapY, EXPORT_MAP_W, mapH, 22);
+  ctx.lineWidth = 1; ctx.strokeStyle = "#e2e8f0"; ctx.stroke();
+
+  // Leyenda de resultados.
+  ctx.font = `600 20px ${EXPORT_FF}`;
+  legendRows.forEach((lr, ri) => {
+    let lx = PAD + (CW - lr.w) / 2;
+    const ly = legendY + ri * 30 + 15;
+    lr.items.forEach((it) => {
+      ctx.beginPath(); ctx.arc(lx + 8, ly, 8, 0, Math.PI * 2);
+      ctx.fillStyle = it.color; ctx.fill();
+      ctx.fillStyle = C.sub;
+      ctx.textBaseline = "middle";
+      ctx.fillText(it.label, lx + 25, ly + 1);
+      ctx.textBaseline = "alphabetic";
+      lx += it.w;
+    });
+  });
+
+  // Métricas (2 filas x 4 tarjetas).
+  const tiles = [
+    ["Ventas", String(summary.salesCount), C.green],
+    ["Total vendido", money(summary.totalSalesAmount), C.green],
+    ["Cajas", String(summary.totalBoxes), C.slate],
+    ["Contactos", String(summary.contactsObtained), C.blue],
+    ["Seguimientos", String(summary.followUpsScheduled), C.purple],
+    ["Duración", summary.journeySeconds ? formatDuration(summary.journeySeconds) : "—", C.slate],
+    ["Distancia", summary.totalDistanceMeters ? formatDistance(summary.totalDistanceMeters) : "—", C.slate],
+    ["Conversión", `${summary.conversion}%`, C.slate]
+  ];
+  const tGap = 18, tW = (CW - tGap * 3) / 4, tH = 150;
+  tiles.forEach((t, i) => {
+    const tx = PAD + (i % 4) * (tW + tGap);
+    const ty = metricsY + Math.floor(i / 4) * (tH + tGap);
+    roundRectPath(ctx, tx, ty, tW, tH, 18);
+    ctx.fillStyle = C.tile; ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = C.border; ctx.stroke();
+    ctx.fillStyle = t[2];
+    fitFontSize(ctx, t[1], tW - 24, 800, 40, 24);
+    ctx.textAlign = "center";
+    ctx.fillText(t[1], tx + tW / 2, ty + 78);
+    ctx.fillStyle = C.muted;
+    ctx.font = `600 19px ${EXPORT_FF}`;
+    ctx.fillText(t[0], tx + tW / 2, ty + 116);
     ctx.textAlign = "left";
   });
-  y += 2 * tileH + gap + 46;
-  ctx.fillStyle = "#94a3b8";
-  ctx.font = "600 24px Arial";
-  ctx.textAlign = "center";
-  ctx.fillText("Gami Gomitas · CRM comercial", W / 2, H - 54);
-  ctx.textAlign = "left";
-  return canvas;
+
+  // Grupos de resultados (positivo / pendiente / negativo).
+  const groups = [
+    { title: "Resultado positivo", bg: "#f0fdf4", bd: "#bbf7d0", tc: C.greenD, rows: [
+      ["Ventas", summary.salesCount], ["Contactos conseguidos", summary.contactsObtained], ["Seguimientos abiertos", summary.byClass.avance]
+    ] },
+    { title: "Pendiente", bg: "#faf5ff", bd: "#e9d5ff", tc: "#7c3aed", rows: [
+      ["Revisitas programadas", summary.followUpsScheduled], ["Locales cerrados", summary.closedStores], ["No disponibles", summary.unavailableStores]
+    ] },
+    { title: "Resultado negativo", bg: "#fef2f2", bd: "#fecaca", tc: C.red, rows: [
+      ["Visitados sin venta", summary.visitedNoSale], ["No interesado definitivo", summary.notInterested], ["Visitas fallidas reales", summary.failedVisits]
+    ] }
+  ];
+  const gGap = 18, gW = (CW - gGap * 2) / 3;
+  groups.forEach((g, i) => {
+    const gx = PAD + i * (gW + gGap);
+    roundRectPath(ctx, gx, groupsY, gW, groupsH, 18);
+    ctx.fillStyle = g.bg; ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = g.bd; ctx.stroke();
+    ctx.fillStyle = g.tc;
+    ctx.font = `800 19px ${EXPORT_FF}`;
+    ctx.fillText(g.title.toUpperCase(), gx + 22, groupsY + 40);
+    g.rows.forEach((r, ri) => {
+      const ry = groupsY + 78 + ri * 34;
+      ctx.fillStyle = C.sub;
+      ctx.font = `600 21px ${EXPORT_FF}`;
+      ctx.fillText(r[0], gx + 22, ry);
+      ctx.fillStyle = C.slate;
+      ctx.font = `800 21px ${EXPORT_FF}`;
+      ctx.textAlign = "right";
+      ctx.fillText(String(r[1]), gx + gW - 22, ry);
+      ctx.textAlign = "left";
+    });
+  });
+
+  // Título de la sección de negocios.
+  ctx.fillStyle = C.slate;
+  ctx.font = `800 30px ${EXPORT_FF}`;
+  ctx.fillText("Negocios visitados", PAD, listTitleY + 30);
+
+  // Tarjetas de negocios (dos columnas).
+  if (!placed.length) {
+    ctx.fillStyle = C.gray;
+    ctx.font = `600 22px ${EXPORT_FF}`;
+    ctx.textAlign = "center";
+    ctx.fillText("Sin paradas registradas.", W / 2, listY + 40);
+    ctx.textAlign = "left";
+  }
+  placed.forEach((c) => {
+    const cardX = PAD + c.col * (colW + 16);
+    const cardY = listY + c.relY;
+    // Fondo + borde.
+    roundRectPath(ctx, cardX, cardY, colW, c.h, 14);
+    ctx.fillStyle = "#ffffff"; ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = C.border; ctx.stroke();
+    // Barra lateral de color.
+    ctx.save();
+    roundRectPath(ctx, cardX, cardY, colW, c.h, 14); ctx.clip();
+    ctx.fillStyle = c.side; ctx.fillRect(cardX, cardY, 6, c.h);
+    ctx.restore();
+    // Número.
+    const numCx = cardX + c.PADX + c.NUM / 2, numCy = cardY + 16 + c.NUM / 2;
+    ctx.beginPath(); ctx.arc(numCx, numCy, c.NUM / 2, 0, Math.PI * 2);
+    ctx.fillStyle = C.numBg; ctx.fill();
+    ctx.fillStyle = C.numFg; ctx.font = `800 19px ${EXPORT_FF}`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(String(c.n), numCx, numCy + 1);
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    // Textos.
+    const tx = cardX + c.PADX + c.NUM + c.GAP;
+    let ty = cardY + 16 + 22;
+    ctx.fillStyle = C.slate; ctx.font = `700 23px ${EXPORT_FF}`;
+    c.nameLines.forEach((ln) => { ctx.fillText(ln, tx, ty); ty += c.NAME_LH; });
+    ty += 4;
+    ctx.fillStyle = C.sub; ctx.font = `600 20px ${EXPORT_FF}`;
+    c.subLines.forEach((ln) => { ctx.fillText(ln, tx, ty); ty += c.SUB_LH; });
+    if (c.noteLines.length) {
+      ty += 6;
+      ctx.fillStyle = C.muted; ctx.font = `400 18px ${EXPORT_FF}`;
+      c.noteLines.forEach((ln) => { ctx.fillText(ln, tx, ty); ty += c.NOTE_LH; });
+    }
+    if (c.tags.length) {
+      ty += 6;
+      let tagX = tx;
+      ctx.font = `700 16px ${EXPORT_FF}`;
+      c.tags.forEach((tag) => {
+        const w = ctx.measureText(tag.text).width + 22;
+        roundRectPath(ctx, tagX, ty, w, 26, 13);
+        ctx.fillStyle = tag.bg; ctx.fill();
+        ctx.fillStyle = tag.fg;
+        ctx.textBaseline = "middle";
+        ctx.fillText(tag.text, tagX + 11, ty + 14);
+        ctx.textBaseline = "alphabetic";
+        tagX += w + 8;
+      });
+    }
+  });
+
+  // Pie institucional Gami Gomitas (sin Mimar, sin frases motivacionales).
+  ctx.strokeStyle = "#eef2f7"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(PAD, footerY); ctx.lineTo(W - PAD, footerY); ctx.stroke();
+  drawGamiIsotipo(ctx, PAD, footerY + 22, 52, C.green);
+  ctx.fillStyle = C.slate;
+  ctx.font = `800 27px ${EXPORT_FF}`;
+  ctx.fillText("Gami Gomitas", PAD + 68, footerY + 46);
+  ctx.fillStyle = C.green;
+  ctx.font = `700 16px ${EXPORT_FF}`;
+  ctx.fillText("CRM COMERCIAL", PAD + 68, footerY + 70);
+
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (!blob) throw new Error("No se pudo generar el PNG de la jornada.");
+  return blob;
+};
+
+// Nombre de archivo normalizado: resumen-jornada-ciudad-2026-07-05.png
+const buildJourneyExportFilename = (journey, summary) => {
+  const slug = String(summary.name || "jornada")
+    .toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "jornada";
+  const ms = summary.finishedAtMs || summary.startedAtMs || toMillisSafe(journey.completedAt) || Date.now();
+  const dateStr = toDateInputValue(new Date(ms)) || "";
+  return `resumen-${slug}${dateStr ? "-" + dateStr : ""}.png`;
+};
+
+// Estado visual del botón mientras se genera la imagen.
+const setJourneyExportBusy = (busy, label) => {
+  const modal = document.getElementById("journeySummaryModal");
+  if (!modal) return;
+  modal.querySelectorAll("[data-jsum-save],[data-jsum-share]").forEach((btn) => {
+    btn.disabled = busy;
+    if (busy) {
+      if (!btn.dataset.originalHtml) btn.dataset.originalHtml = btn.innerHTML;
+      if (btn.hasAttribute("data-jsum-save")) {
+        btn.innerHTML = `<span class="jx-spinner"></span> ${label || "Generando imagen…"}`;
+      }
+    } else if (btn.dataset.originalHtml) {
+      btn.innerHTML = btn.dataset.originalHtml;
+      delete btn.dataset.originalHtml;
+    }
+  });
+  refreshIcons();
 };
 
 const exportJourneySummaryImage = async ({ share }) => {
   if (!lastJourneySummary) return;
   const statusEl = document.getElementById("jsumExportStatus");
   const setStatus = (t) => { if (statusEl) statusEl.textContent = t; };
-  const modal = document.getElementById("journeySummaryModal");
-  const btns = Array.from(modal?.querySelectorAll("[data-jsum-save],[data-jsum-share]") || []);
-  btns.forEach((b) => { b.disabled = true; });
+  setJourneyExportBusy(true, "Generando imagen…");
   setStatus("Generando imagen…");
   try {
     const { journey, stops, summary } = lastJourneySummary;
-    const canvas = await buildJourneySummaryCanvas(journey, stops, summary);
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png", 0.95));
-    if (!blob) throw new Error("No se pudo generar el PNG");
-    const slug = String(summary.name || "resumen").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "resumen";
-    const filename = `jornada-${slug}.png`;
+    const blob = await buildJourneyExportBlob(journey, stops, summary);
+    const filename = buildJourneyExportFilename(journey, summary);
     const file = new File([blob], filename, { type: "image/png" });
     if (share && navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({ files: [file], title: "Resumen de jornada", text: `Resumen de "${summary.name}"` });
       setStatus("Imagen compartida.");
+      showToast("Imagen compartida correctamente.");
     } else {
       downloadBlob(blob, filename);
-      setStatus(share ? "Compartir no disponible: se descargó la imagen." : "Imagen lista.");
+      setStatus(share ? "Compartir no disponible: se descargó la imagen." : "Imagen guardada correctamente.");
+      showToast("Imagen guardada correctamente.");
     }
   } catch (error) {
     if (error?.name === "AbortError") { setStatus(""); return; }
-    console.error("No se pudo generar la imagen de la jornada", { uid: auth.currentUser?.uid, error });
-    setStatus("Error al generar la imagen. Reintentá.");
+    console.error("No se pudo generar la imagen de la jornada", {
+      journeyId: lastJourneySummary?.journey?.id, uid: auth.currentUser?.uid, error
+    });
+    setStatus("No se pudo generar la imagen. Reintentá.");
+    showToast("No se pudo generar la imagen. Reintentá.");
   } finally {
-    btns.forEach((b) => { b.disabled = false; });
+    setJourneyExportBusy(false);
   }
 };
 
