@@ -13396,7 +13396,7 @@ const renderJourneySummaryScreen = (journey, stops, summary) => {
   return `
     <div class="jsum-box" role="document">
       <header class="jsum-head">
-        <div>
+        <div class="jsum-head-main">
           <div class="jsum-eyebrow">Resumen de jornada</div>
           <h2 class="jsum-title">${escapeHtml(summary.name)}</h2>
           <div class="jsum-headmeta">
@@ -13405,7 +13405,12 @@ const renderJourneySummaryScreen = (journey, stops, summary) => {
             <span><i data-lucide="flag"></i> Finalizada</span>
           </div>
         </div>
-        <button class="journey-modal-close" type="button" data-jsum-close aria-label="Cerrar"><i data-lucide="x"></i></button>
+        <div class="jsum-head-actions">
+          <div class="jsum-head-brand" aria-label="Mimar Alimentos">
+            <img src="${escapeHtml(COMPANY_LOGO_SRC)}" alt="Mimar Alimentos" />
+          </div>
+          <button class="journey-modal-close" type="button" data-jsum-close aria-label="Cerrar"><i data-lucide="x"></i></button>
+        </div>
       </header>
       <div class="jsum-body">
         <div class="jsum-times">
@@ -13451,7 +13456,12 @@ const renderJourneySummaryScreen = (journey, stops, summary) => {
         <div class="jsum-list">${bizRows || '<div class="jsum-empty">Sin paradas.</div>'}</div>
       </div>
       <footer class="jsum-footer">
-        <span class="jsum-export-status" id="jsumExportStatus" aria-live="polite"></span>
+        <div class="jsum-footer-left">
+          <div class="jsum-footer-brand" aria-label="Mimar Alimentos">
+            <img src="${escapeHtml(COMPANY_LOGO_SRC)}" alt="Mimar Alimentos" />
+          </div>
+          <span class="jsum-export-status" id="jsumExportStatus" aria-live="polite"></span>
+        </div>
         <button class="btn ghost" type="button" data-jsum-close>Volver a jornadas</button>
         <button class="btn ghost" type="button" data-jsum-save><i data-lucide="image-down"></i> Guardar imagen</button>
         <button class="btn primary" type="button" data-jsum-share><i data-lucide="share-2"></i> Compartir resultados</button>
@@ -13609,6 +13619,17 @@ const exportLoadImage = (src) => new Promise((resolve) => {
   img.src = src;
 });
 
+const drawContainedImage = (ctx, img, x, y, w, h) => {
+  if (!img) return;
+  const iw = img.naturalWidth || img.width;
+  const ih = img.naturalHeight || img.height;
+  if (!iw || !ih) return;
+  const scale = Math.min(w / iw, h / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+};
+
 const roundRectPath = (ctx, x, y, w, h, r) => {
   const rr = Math.min(r, w / 2, h / 2);
   ctx.beginPath();
@@ -13648,21 +13669,6 @@ const fitFontSize = (ctx, text, maxW, weight, startPx, minPx) => {
   }
   ctx.font = `${weight} ${px}px ${EXPORT_FF}`;
   return px;
-};
-
-// Isotipo de Gami Gomitas dibujado con primitivas (gomita/osito), en el color
-// dado. Self-contained: no depende de ningún archivo de logo (viewBox 64x64).
-const drawGamiIsotipo = (ctx, x, y, size, color) => {
-  const s = size / 64;
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(s, s);
-  ctx.fillStyle = color;
-  const circle = (cx, cy, r) => { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); };
-  circle(19, 13, 8); circle(45, 13, 8); circle(32, 24, 15);
-  roundRectPath(ctx, 15, 31, 34, 27, 15); ctx.fill();
-  circle(12, 39, 8); circle(52, 39, 8); circle(23, 59, 7); circle(41, 59, 7);
-  ctx.restore();
 };
 
 // Proyección Web Mercator normalizada (Y en [0,1]). Tiles de 512 px como usa
@@ -13795,6 +13801,8 @@ const layoutJourneyExportBiz = (mc, bizList, colW) => {
 
 // Dibuja la imagen completa de la jornada en un canvas y devuelve un Blob PNG.
 const buildJourneyExportBlob = async (journey, stops, summary) => {
+  const logoDataUrl = await getCompanyLogoDataUrl();
+  const mimarLogo = logoDataUrl ? await exportLoadImage(logoDataUrl) : null;
   const mapResult = await renderJourneyExportMap(stops);
   const mapImg = mapResult.img;
   const bizList = buildJourneyExportBizData(stops);
@@ -13807,7 +13815,7 @@ const buildJourneyExportBlob = async (journey, stops, summary) => {
 
   // --- Medición de secciones de altura variable ---
   mc.font = `800 52px ${EXPORT_FF}`;
-  const titleLines = wrapCanvasText(mc, summary.name, CW - 190).slice(0, 3);
+  const titleLines = wrapCanvasText(mc, summary.name, CW - 245).slice(0, 3);
   const headerH = 92 + titleLines.length * 58 + 66;
 
   const legendItems = [
@@ -13883,12 +13891,20 @@ const buildJourneyExportBlob = async (journey, stops, summary) => {
   drawChip(summary.dateLabel, false);
   drawChip(summary.user, false);
   drawChip("Finalizada", true);
-  // Marca Gami en el extremo derecho del header.
-  drawGamiIsotipo(ctx, W - PAD - 62, 44, 62, "#ffffff");
-  ctx.fillStyle = "#ffffff";
-  ctx.font = `800 22px ${EXPORT_FF}`;
-  ctx.textAlign = "center";
-  ctx.fillText("Gami Gomitas", W - PAD - 31, 132);
+  // Marca Mimar en el extremo derecho del header.
+  const headerLogoW = 210, headerLogoH = 86;
+  const headerLogoX = W - PAD - headerLogoW, headerLogoY = 38;
+  roundRectPath(ctx, headerLogoX, headerLogoY, headerLogoW, headerLogoH, 24);
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.fill();
+  if (mimarLogo) {
+    drawContainedImage(ctx, mimarLogo, headerLogoX + 16, headerLogoY + 14, headerLogoW - 32, headerLogoH - 28);
+  } else {
+    ctx.fillStyle = C.slate;
+    ctx.font = `800 25px ${EXPORT_FF}`;
+    ctx.textAlign = "center";
+    ctx.fillText("Mimar Alimentos", headerLogoX + headerLogoW / 2, headerLogoY + 53);
+  }
   ctx.textAlign = "left";
 
   // Mapa (imagen estática de MapTiler) con esquinas redondeadas. La ruta y los
@@ -14076,16 +14092,16 @@ const buildJourneyExportBlob = async (journey, stops, summary) => {
     }
   });
 
-  // Pie institucional Gami Gomitas (sin Mimar, sin frases motivacionales).
+  // Pie institucional Mimar Alimentos.
   ctx.strokeStyle = "#eef2f7"; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(PAD, footerY); ctx.lineTo(W - PAD, footerY); ctx.stroke();
-  drawGamiIsotipo(ctx, PAD, footerY + 22, 52, C.green);
-  ctx.fillStyle = C.slate;
-  ctx.font = `800 27px ${EXPORT_FF}`;
-  ctx.fillText("Gami Gomitas", PAD + 68, footerY + 46);
-  ctx.fillStyle = C.green;
-  ctx.font = `700 16px ${EXPORT_FF}`;
-  ctx.fillText("CRM COMERCIAL", PAD + 68, footerY + 70);
+  if (mimarLogo) {
+    drawContainedImage(ctx, mimarLogo, PAD, footerY + 18, 220, 62);
+  } else {
+    ctx.fillStyle = C.slate;
+    ctx.font = `800 27px ${EXPORT_FF}`;
+    ctx.fillText("Mimar Alimentos", PAD, footerY + 52);
+  }
 
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
   if (!blob) throw new Error("No se pudo generar el PNG de la jornada.");

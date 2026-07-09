@@ -7970,6 +7970,17 @@ body.sale-journey-modal-open::before {
   background: linear-gradient(135deg, var(--green-700, #15803d), var(--primary, #16a34a));
   color: #fff;
 }
+.jsum-head-main { min-width: 0; flex: 1; }
+.jsum-head-actions { display: flex; align-items: flex-start; gap: 8px; flex-shrink: 0; }
+.jsum-head-brand {
+  width: 118px;
+  height: 48px;
+  padding: 7px 10px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.92);
+  box-shadow: 0 8px 22px rgba(15,23,42,0.12);
+}
+.jsum-head-brand img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .jsum-eyebrow { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.85; font-weight: 700; }
 .jsum-title { margin: 2px 0 8px; font-size: 1.35rem; line-height: 1.15; }
 .jsum-headmeta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.82rem; opacity: 0.95; }
@@ -8053,11 +8064,18 @@ body.sale-journey-modal-open::before {
 .jsum-map-empty i { width: 18px; height: 18px; }
 .jsum-pin { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(15,23,42,0.35); color: #fff; font-size: 0.72rem; font-weight: 800; display: flex; align-items: center; justify-content: center; line-height: 1; }
 .jsum-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; padding: 14px 22px calc(env(safe-area-inset-bottom) + 16px); border-top: 1px solid var(--border); position: sticky; bottom: 0; background: var(--surface, #fff); }
-.jsum-export-status { margin-right: auto; font-size: 0.8rem; color: var(--muted); }
+.jsum-footer-left { display: flex; align-items: center; gap: 10px; margin-right: auto; min-width: 0; }
+.jsum-footer-brand { width: 126px; height: 34px; flex-shrink: 0; }
+.jsum-footer-brand img { width: 100%; height: 100%; object-fit: contain; object-position: left center; display: block; }
+.jsum-export-status { font-size: 0.8rem; color: var(--muted); }
 @media (max-width: 640px) {
+  .jsum-head { align-items: flex-start; }
+  .jsum-head-actions { flex-direction: column-reverse; align-items: flex-end; }
+  .jsum-head-brand { width: 104px; height: 42px; padding: 6px 9px; }
   .jsum-times { grid-template-columns: repeat(2, 1fr); }
   .jsum-metrics { grid-template-columns: repeat(2, 1fr); }
   .jsum-groups { grid-template-columns: 1fr; }
+  .jsum-footer-left { width: 100%; }
   .jsum-title { font-size: 1.2rem; }
 }
 
