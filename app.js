@@ -13457,9 +13457,6 @@ const renderJourneySummaryScreen = (journey, stops, summary) => {
       </div>
       <footer class="jsum-footer">
         <div class="jsum-footer-left">
-          <div class="jsum-footer-brand" aria-label="Mimar Alimentos">
-            <img src="${escapeHtml(COMPANY_LOGO_SRC)}" alt="Mimar Alimentos" />
-          </div>
           <span class="jsum-export-status" id="jsumExportStatus" aria-live="polite"></span>
         </div>
         <button class="btn ghost" type="button" data-jsum-close>Volver a jornadas</button>
@@ -13619,7 +13616,7 @@ const exportLoadImage = (src) => new Promise((resolve) => {
   img.src = src;
 });
 
-const drawContainedImage = (ctx, img, x, y, w, h) => {
+const drawContainedImageTint = (ctx, img, x, y, w, h, color) => {
   if (!img) return;
   const iw = img.naturalWidth || img.width;
   const ih = img.naturalHeight || img.height;
@@ -13627,7 +13624,19 @@ const drawContainedImage = (ctx, img, x, y, w, h) => {
   const scale = Math.min(w / iw, h / ih);
   const dw = iw * scale;
   const dh = ih * scale;
-  ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+  const dx = x + (w - dw) / 2;
+  const dy = y + (h - dh) / 2;
+  const off = document.createElement("canvas");
+  off.width = Math.ceil(dw * EXPORT_SCALE);
+  off.height = Math.ceil(dh * EXPORT_SCALE);
+  const octx = off.getContext("2d");
+  if (!octx) return;
+  octx.scale(EXPORT_SCALE, EXPORT_SCALE);
+  octx.drawImage(img, 0, 0, dw, dh);
+  octx.globalCompositeOperation = "source-in";
+  octx.fillStyle = color;
+  octx.fillRect(0, 0, dw, dh);
+  ctx.drawImage(off, dx, dy, dw, dh);
 };
 
 const roundRectPath = (ctx, x, y, w, h, r) => {
@@ -13842,7 +13851,7 @@ const buildJourneyExportBlob = async (journey, stops, summary) => {
   const gapLegendMetrics = 28, metricsH = 2 * 150 + 18;
   const gapMetricsGroups = 24, groupsH = 190;
   const gapGroupsList = 34, listTitleH = 40, gapListTitleList = 6;
-  const gapListFooter = 34, footerH = 100, bottomPad = 6;
+  const gapListFooter = 34, footerH = 34, bottomPad = 6;
 
   let y = headerH + gapHeaderMap;
   const mapY = y; y += mapH + gapMapLegend;
@@ -13892,18 +13901,15 @@ const buildJourneyExportBlob = async (journey, stops, summary) => {
   drawChip(summary.user, false);
   drawChip("Finalizada", true);
   // Marca Mimar en el extremo derecho del header.
-  const headerLogoW = 210, headerLogoH = 86;
-  const headerLogoX = W - PAD - headerLogoW, headerLogoY = 38;
-  roundRectPath(ctx, headerLogoX, headerLogoY, headerLogoW, headerLogoH, 24);
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.fill();
+  const headerLogoW = 220, headerLogoH = 78;
+  const headerLogoX = W - PAD - headerLogoW, headerLogoY = 42;
   if (mimarLogo) {
-    drawContainedImage(ctx, mimarLogo, headerLogoX + 16, headerLogoY + 14, headerLogoW - 32, headerLogoH - 28);
+    drawContainedImageTint(ctx, mimarLogo, headerLogoX, headerLogoY, headerLogoW, headerLogoH, "#ffffff");
   } else {
-    ctx.fillStyle = C.slate;
+    ctx.fillStyle = "#ffffff";
     ctx.font = `800 25px ${EXPORT_FF}`;
     ctx.textAlign = "center";
-    ctx.fillText("Mimar Alimentos", headerLogoX + headerLogoW / 2, headerLogoY + 53);
+    ctx.fillText("Mimar Alimentos", headerLogoX + headerLogoW / 2, headerLogoY + 50);
   }
   ctx.textAlign = "left";
 
@@ -14092,16 +14098,8 @@ const buildJourneyExportBlob = async (journey, stops, summary) => {
     }
   });
 
-  // Pie institucional Mimar Alimentos.
   ctx.strokeStyle = "#eef2f7"; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(PAD, footerY); ctx.lineTo(W - PAD, footerY); ctx.stroke();
-  if (mimarLogo) {
-    drawContainedImage(ctx, mimarLogo, PAD, footerY + 18, 220, 62);
-  } else {
-    ctx.fillStyle = C.slate;
-    ctx.font = `800 27px ${EXPORT_FF}`;
-    ctx.fillText("Mimar Alimentos", PAD, footerY + 52);
-  }
 
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
   if (!blob) throw new Error("No se pudo generar el PNG de la jornada.");
