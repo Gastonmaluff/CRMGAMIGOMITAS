@@ -13808,6 +13808,77 @@ const layoutJourneyExportBiz = (mc, bizList, colW) => {
   return { placed, listH: Math.max(colH[0], colH[1]) - 16 };
 };
 
+// Comercios decorativos del fondo del header: una hilera sutil de locales
+// (minimercado / despensa / supercito) dibujada como silueta monocromática y
+// semitransparente en blanco, integrada al degradado verde. Se dibuja justo
+// después del fondo y antes de los textos/logo, que quedan por encima y legibles.
+const drawJourneyExportShops = (ctx, headerW, headerH) => {
+  const PAD = EXPORT_PAD;
+  const shops = [
+    { name: "MINIMERCADO", w: 168 },
+    { name: "DESPENSA", w: 140 },
+    { name: "SUPERCITO", w: 132 },
+  ];
+  const gap = 20;
+  const totalW = shops.reduce((a, s) => a + s.w, 0) + gap * (shops.length - 1);
+  const groundY = headerH;
+  let sx = headerW - PAD - totalW;
+
+  ctx.save();
+  // Recorte al header para que el festón del toldo no se salga del degradado.
+  ctx.beginPath();
+  ctx.rect(0, 0, headerW, headerH);
+  ctx.clip();
+
+  // Línea de vereda tenue bajo la hilera de comercios.
+  ctx.strokeStyle = "rgba(255,255,255,0.10)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(sx - 24, groundY - 0.5);
+  ctx.lineTo(headerW - PAD + 4, groundY - 0.5);
+  ctx.stroke();
+
+  shops.forEach((shop) => {
+    const bodyH = 96, fasciaH = 24, awnH = 16;
+    const bodyTop = groundY - bodyH;
+    // Cuerpo del local.
+    ctx.fillStyle = "rgba(255,255,255,0.05)";
+    roundRectPath(ctx, sx, bodyTop, shop.w, bodyH, 5); ctx.fill();
+    // Marquesina/cartel superior con el nombre del comercio.
+    ctx.fillStyle = "rgba(255,255,255,0.13)";
+    roundRectPath(ctx, sx, bodyTop, shop.w, fasciaH, 5); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.60)";
+    ctx.font = `700 13px ${EXPORT_FF}`;
+    ctx.textAlign = "center";
+    ctx.fillText(shop.name, sx + shop.w / 2, bodyTop + 17);
+    ctx.textAlign = "left";
+    // Toldo a rayas.
+    const awnY = bodyTop + fasciaH;
+    const stripes = 6, stripeW = shop.w / stripes;
+    for (let i = 0; i < stripes; i++) {
+      ctx.fillStyle = i % 2 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.09)";
+      ctx.fillRect(sx + i * stripeW, awnY, stripeW + 0.5, awnH);
+    }
+    // Borde festoneado del toldo (semicírculos).
+    ctx.fillStyle = "rgba(255,255,255,0.12)";
+    const scallops = 5, scW = shop.w / scallops;
+    for (let i = 0; i < scallops; i++) {
+      ctx.beginPath();
+      ctx.arc(sx + scW * (i + 0.5), awnY + awnH, scW / 2, 0, Math.PI);
+      ctx.fill();
+    }
+    // Vidriera y puerta insinuadas con trazos finos.
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.lineWidth = 1;
+    const inW = 14, winTop = awnY + awnH + 14, winBot = groundY - 12;
+    const doorW = Math.min(30, shop.w * 0.24);
+    roundRectPath(ctx, sx + inW, winTop, shop.w - inW * 2 - doorW - 10, winBot - winTop, 3); ctx.stroke();
+    roundRectPath(ctx, sx + shop.w - inW - doorW, winTop, doorW, groundY - winTop, 3); ctx.stroke();
+    sx += shop.w + gap;
+  });
+  ctx.restore();
+};
+
 // Dibuja la imagen completa de la jornada en un canvas y devuelve un Blob PNG.
 const buildJourneyExportBlob = async (journey, stops, summary) => {
   const logoDataUrl = await getCompanyLogoDataUrl();
@@ -13879,6 +13950,8 @@ const buildJourneyExportBlob = async (journey, stops, summary) => {
   grad.addColorStop(1, C.green);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, headerH);
+  // Comercios decorativos del fondo (sobre el verde, debajo de textos y logo).
+  drawJourneyExportShops(ctx, W, headerH);
   ctx.fillStyle = "rgba(255,255,255,0.85)";
   ctx.font = `700 20px ${EXPORT_FF}`;
   ctx.fillText("RESUMEN DE JORNADA", PAD, 60);
