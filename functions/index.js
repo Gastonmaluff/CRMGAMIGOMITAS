@@ -1,10 +1,23 @@
 const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+const { buildHealthReport } = require("./health");
 
 admin.initializeApp();
 
 const db = admin.firestore();
+
+// Version desplegada. Prioridad: variable de entorno -> commit del build ->
+// version de package.json -> "unknown". Nunca una fecha inventada.
+let buildInfo = {};
+try {
+  // Generado por gen-build-info.js en el predeploy (esta en .gitignore).
+  buildInfo = require("./build-info.json");
+} catch (error) {
+  buildInfo = {};
+}
+const pkg = require("./package.json");
+const APP_VERSION = process.env.APP_VERSION || buildInfo.commit || pkg.version || "unknown";
 const AUTH_EMAIL_DOMAIN = "auth.gamigomitas.local";
 const ROLES = new Set(["admin", "sales"]);
 
@@ -315,6 +328,46 @@ exports.redirectQr = onRequest(
     } catch (error) {
       logger.error("Error en redirectQr", { slug, message: error?.message || String(error) });
       sendHtml(res, 500, "No se pudo abrir este codigo QR.", "Intenta nuevamente en unos minutos.");
+    }
+  }
+);
+
+/**
+ * Endpoint publico de salud tecnica: GET /api/health (via rewrite en
+ * firebase.json). Devuelve JSON generico y sanitizado con el estado real de
+ * base de datos, autenticacion y backend/Functions, mas version y checkedAt.
+ * No expone datos sensibles. Storage se omite: este proyecto no lo utiliza.
+ */
+exports.healthCheck = onRequest(
+  {
+    region: "us-central1",
+    cors: false,
+    invoker: "public"
+  },
+  async (req, res) => {
+    res.set("Cache-Control", "no-store, max-age=0");
+    res.set("Content-Type", "application/json; charset=utf-8");
+
+    if (!["GET", "HEAD"].includes(req.method)) {
+      res.set("Allow", "GET, HEAD").status(405).json({ status: "error", errorCode: "METHOD_NOT_ALLOWED" });
+      return;
+    }
+
+    try {
+      const report = await buildHealthReport({
+        db,
+        auth: admin.auth(),
+        version: APP_VERSION,
+        logger
+      });
+      res.status(200).json(report);
+    } catch (error) {
+      logger.error("Error en healthCheck", { message: error?.message || String(error) });
+      res.status(500).json({
+        status: "error",
+        errorCode: "HEALTH_UNAVAILABLE",
+        checkedAt: new Date().toISOString()
+      });
     }
   }
 );

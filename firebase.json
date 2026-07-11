@@ -2,7 +2,8 @@
   "functions": [
     {
       "source": "functions",
-      "codebase": "default"
+      "codebase": "default",
+      "predeploy": ["node functions/gen-build-info.js"]
     }
   ],
   "hosting": {
@@ -22,6 +23,13 @@
       "tests/**"
     ],
     "rewrites": [
+      {
+        "source": "/api/health",
+        "function": {
+          "functionId": "healthCheck",
+          "region": "us-central1"
+        }
+      },
       {
         "source": "/q/**",
         "function": {
