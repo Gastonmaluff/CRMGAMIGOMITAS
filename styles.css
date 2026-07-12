@@ -8206,3 +8206,277 @@ body.sale-journey-modal-open::before {
   animation: jx-spin 0.7s linear infinite;
 }
 @keyframes jx-spin { to { transform: rotate(360deg); } }
+
+/* ---- Pulido integral comercial ---- */
+.user-area {
+  position: relative;
+}
+
+.logout-icon-btn {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 12px;
+}
+
+.user-menu-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 1300;
+  width: min(88vw, 280px);
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.18);
+}
+
+.user-menu-name {
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.user-menu-email,
+.user-menu-role {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  overflow-wrap: anywhere;
+}
+
+.user-menu-logout {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.commercial-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.commercial-grid .panel {
+  grid-column: 1 / -1;
+}
+
+.period-current-label {
+  display: none !important;
+}
+
+.form-modal-card {
+  display: none;
+}
+
+.form-modal-card.is-form-modal-open {
+  position: fixed;
+  top: max(18px, env(safe-area-inset-top));
+  left: 50%;
+  z-index: 1250;
+  display: block;
+  width: min(920px, calc(100vw - 28px));
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  transform: translateX(-50%);
+  border-radius: 16px;
+  box-shadow: 0 26px 70px rgba(15, 23, 42, 0.32);
+}
+
+.form-modal-card.is-form-modal-open::before {
+  content: "";
+  position: fixed;
+  inset: -120vh -120vw;
+  z-index: -1;
+  background: rgba(15, 23, 42, 0.48);
+}
+
+.form-modal-card .collapse-toggle {
+  display: none;
+}
+
+.form-modal-close {
+  display: none;
+  margin-left: auto;
+}
+
+.form-modal-card.is-form-modal-open .form-modal-close {
+  display: inline-flex;
+}
+
+.form-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.sales-history-card .collapse-toggle,
+.clients-list-card .collapse-toggle {
+  display: none;
+}
+
+.sales-history-card .collapse-body,
+.clients-list-card .collapse-body {
+  max-height: none;
+  overflow: visible;
+}
+
+.sales-goal-open-btn {
+  margin-top: 10px;
+  align-self: flex-start;
+}
+
+.prospect-indicators {
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
+}
+
+.prospect-indicator {
+  min-height: auto;
+  padding: 10px 12px;
+}
+
+.prospect-indicator-value {
+  font-size: 1.15rem;
+}
+
+.prospect-toolbar {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.prospect-toolbar-search {
+  min-width: 0;
+}
+
+.prospect-filter-toggle {
+  min-height: 42px;
+}
+
+.prospect-filter-toggle.has-active-filters {
+  border-color: var(--green-600);
+  color: var(--green-700);
+  background: var(--green-50);
+}
+
+.filter-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--green-600);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.prospect-toolbar-filters {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin-top: 2px;
+}
+
+.repurchase-feedback {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.repurchase-feedback-info {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.repurchase-feedback-success {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.repurchase-feedback-error {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.journey-collapsible summary {
+  justify-content: flex-start;
+}
+
+.journey-collapsible summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.journey-collapsible summary strong {
+  margin-left: 8px;
+}
+
+.journey-collapsible summary::after {
+  margin-left: auto;
+}
+
+@media (max-width: 760px) {
+  .section-title-with-meta {
+    align-items: flex-start;
+  }
+
+  .section-title-with-meta .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .prospect-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .prospect-filter-toggle {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .prospect-toolbar-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .commercial-dashboard .panel-table-wrap {
+    overflow-x: visible;
+  }
+
+  .commercial-dashboard .data-table thead,
+  .prospects-table thead {
+    display: none;
+  }
+
+  .commercial-dashboard .data-table,
+  .commercial-dashboard .data-table tbody,
+  .commercial-dashboard .data-table tr,
+  .commercial-dashboard .data-table td,
+  .prospects-table,
+  .prospects-table tbody,
+  .prospects-table tr,
+  .prospects-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .commercial-dashboard .data-table tr,
+  .prospects-table tr {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px;
+    margin-bottom: 10px;
+    background: #fff;
+  }
+
+  .commercial-dashboard .data-table td,
+  .prospects-table td {
+    border: none;
+    padding: 5px 0;
+    text-align: left !important;
+  }
+}

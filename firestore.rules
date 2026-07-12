@@ -55,7 +55,10 @@ service cloud.firestore {
       allow read: if isAdminOrSales();
       allow create: if isAdminOrSales()
         && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin()
+        || (isSales()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["followUp", "followUpHistory", "updatedAt", "notes"]));
+      allow delete: if isAdmin();
     }
 
     match /products/{productId} {

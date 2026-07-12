@@ -67,6 +67,10 @@ const authSection = document.getElementById("authSection");
 const dashboardSection = document.getElementById("dashboardSection");
 const userArea = document.getElementById("userArea");
 const userEmail = document.getElementById("userEmail");
+const userMenuName = document.getElementById("userMenuName");
+const userMenuRole = document.getElementById("userMenuRole");
+const userMenuPopover = document.getElementById("userMenuPopover");
+const userMenuLogout = document.getElementById("userMenuLogout");
 const authError = document.getElementById("authError");
 const appLoader = document.getElementById("appLoader");
 
@@ -88,8 +92,8 @@ const SIDEBAR_COLLAPSED_KEY = "gg_sidebar_collapsed";
 const sidebarLinks = document.querySelectorAll(".sidebar-link[data-app-section]");
 const APP_SECTION_CONFIG = {
   dashboard: { tab: "production", collapses: [], label: "Panel de control" },
-  sales: { tab: "sales", collapses: ["salesFormSection", "salesHistorySection", "salesGoalSection", "coverageSection"], label: "Ventas" },
-  clients: { tab: "sales", collapses: ["clientFormSection", "clientListSection"], label: "Clientes" },
+  sales: { tab: "sales", collapses: ["salesHistorySection"], label: "Ventas" },
+  clients: { tab: "sales", collapses: ["clientListSection"], label: "Clientes" },
   prospects: { tab: "sales", collapses: ["prospectsSection"], label: "Prospectos" },
   repurchase: { tab: "sales", collapses: ["repurchaseSection"], label: "Recompra de clientes" },
   map: { tab: "sales", collapses: [], label: "Mapa comercial" },
@@ -99,7 +103,7 @@ const APP_SECTION_CONFIG = {
   "raw-materials": { tab: "production", collapses: ["rawMaterialSection", "recipeSection"], label: "Materias primas" },
   stock: { tab: "production", collapses: ["finishedStockSection", "stockSummarySection", "stockSection"], label: "Stock" },
   reports: { tab: "commercial-history", collapses: [], label: "Reportes" },
-  settings: { tab: "finance", collapses: ["userManagementSection", "salesGoalSection", "coverageSection", "financeMovementSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection", "qrManagerSection"], label: "Configuracion" }
+  settings: { tab: "finance", collapses: ["userManagementSection", "salesGoalSection", "financeMovementSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection", "qrManagerSection"], label: "Configuracion" }
 };
 const ROLE_LABELS = {
   admin: "Administrador",
@@ -111,7 +115,7 @@ const ROLE_SECTIONS = {
 };
 const ROLE_COLLAPSES = {
   admin: null,
-  sales: new Set(["salesFormSection", "salesHistorySection"])
+  sales: new Set(["salesFormSection", "salesHistorySection", "clientFormSection", "clientListSection", "salesGoalSection"])
 };
 const ROLE_COLLECTIONS = {
   admin: [
@@ -146,6 +150,18 @@ const ROLE_COLLECTIONS = {
 let activeAppSection = "dashboard";
 let appLoaderHidden = false;
 let currentUserProfile = null;
+
+function closeUserMenu() {
+  if (!userMenuPopover || !logoutBtn) return;
+  userMenuPopover.hidden = true;
+  logoutBtn.setAttribute("aria-expanded", "false");
+}
+
+function openUserMenu() {
+  if (!userMenuPopover || !logoutBtn) return;
+  userMenuPopover.hidden = false;
+  logoutBtn.setAttribute("aria-expanded", "true");
+}
 
 const hideAppLoader = () => {
   if (!appLoader || appLoaderHidden) return;
@@ -203,6 +219,7 @@ const salesGoalRemaining = document.getElementById("salesGoalRemaining");
 const salesGoalPaceCurrent = document.getElementById("salesGoalPaceCurrent");
 const salesGoalPaceNeeded = document.getElementById("salesGoalPaceNeeded");
 const salesGoalMessage = document.getElementById("salesGoalMessage");
+const openSalesGoalBtn = document.getElementById("openSalesGoalBtn");
 const historyMetricSalesCount = document.getElementById("historyMetricSalesCount");
 const historyMetricCustomersCount = document.getElementById("historyMetricCustomersCount");
 const historyMetricAmount = document.getElementById("historyMetricAmount");
@@ -230,6 +247,8 @@ const saleGrandTotal = document.getElementById("saleGrandTotal");
 const addSaleItemBtn = document.getElementById("addSaleItemBtn");
 const salesGoalForm = document.getElementById("salesGoalForm");
 const salesGoalNotice = document.getElementById("salesGoalNotice");
+const openSaleFormBtn = document.getElementById("openSaleFormBtn");
+const openClientFormBtn = document.getElementById("openClientFormBtn");
 const financeExpenseForm = document.getElementById("financeExpenseForm");
 const financeExpenseNotice = document.getElementById("financeExpenseNotice");
 const financeInitialToggle = document.getElementById("financeInitialToggle");
@@ -286,6 +305,9 @@ const prospectIndicators = document.getElementById("prospectIndicators");
 const prospectSelectAll = document.getElementById("prospectSelectAll");
 const clearProspectFiltersBtn = document.getElementById("clearProspectFilters");
 const newProspectBtn = document.getElementById("newProspectBtn");
+const prospectFilterToggle = document.getElementById("prospectFilterToggle");
+const prospectFilterPanel = document.getElementById("prospectFilterPanel");
+const prospectFilterCount = document.getElementById("prospectFilterCount");
 const importProspectsBtn = document.getElementById("importProspectsBtn");
 const exportProspectsBtn = document.getElementById("exportProspectsBtn");
 const prospectImportHistory = document.getElementById("prospectImportHistory");
@@ -605,6 +627,7 @@ let pendingJourneySaleContext = null;
 const saleJourneyPortalState = { parent: null, nextSibling: null };
 const repurchaseNotesOpenState = new Set();
 const repurchaseHistoryOpenState = new Set();
+const repurchaseFollowupFeedback = new Map();
 const clientHistoryOpenState = new Set();
 const stockAdjustmentState = {
   openKey: "",
@@ -800,6 +823,7 @@ const showAuth = () => {
   authSection.style.display = "grid";
   dashboardSection.style.display = "none";
   userArea.style.display = "none";
+  closeUserMenu();
   appShell?.classList.add("auth-mode");
   if (sidebarToggle) sidebarToggle.style.display = "none";
   closeSidebar();
@@ -809,9 +833,12 @@ const showDashboard = (user) => {
   authSection.style.display = "none";
   dashboardSection.style.display = "block";
   userArea.style.display = "flex";
-  userEmail.textContent = currentUserProfile
-    ? `${currentUserProfile.displayName || currentUserProfile.username || user.email || "Usuario"} - ${ROLE_LABELS[currentUserProfile.role] || currentUserProfile.role}`
-    : (user.email || "");
+  const displayName = currentUserProfile?.displayName || currentUserProfile?.username || user.email || "Usuario";
+  const email = currentUserProfile?.email || user.email || currentUserProfile?.username || "";
+  const role = ROLE_LABELS[currentUserProfile?.role] || currentUserProfile?.role || "";
+  if (userMenuName) userMenuName.textContent = displayName;
+  if (userEmail) userEmail.textContent = email;
+  if (userMenuRole) userMenuRole.textContent = role ? `Rol: ${role}` : "Rol no definido";
   appShell?.classList.remove("auth-mode");
   if (sidebarToggle) sidebarToggle.style.display = "";
   requestAnimationFrame(() => {
@@ -4296,6 +4323,7 @@ const renderRepurchaseList = () => {
     const notesValue = escapeHtml(entry.notes || "");
     const followupObservation = escapeHtml(entry.followupObservation || "");
     const resultOptions = buildRepurchaseContactResultOptions(entry.contactResult || "");
+    const feedback = hasClientRecord ? repurchaseFollowupFeedback.get(entry.clientId) : null;
     return `
       <div class="list-item repurchase-item ${entry.statusClass === "overdue" ? "overdue" : ""}" data-repurchase-client-id="${entry.clientId}">
         <div class="repurchase-item-header">
@@ -4342,6 +4370,7 @@ const renderRepurchaseList = () => {
     ? `<button class="btn ghost" type="button" data-toggle-repurchase-history="${entry.clientId}">Historial</button>`
     : '<button class="btn ghost" type="button" disabled>Historial</button>'}
         </div>
+        ${feedback ? `<div class="repurchase-feedback repurchase-feedback-${feedback.type || "info"}">${escapeHtml(feedback.message || "")}</div>` : ""}
         ${hasClientRecord
     ? `
           <div class="repurchase-notes-panel ${notesOpen ? "open" : "hidden"}">
@@ -5421,12 +5450,12 @@ const refreshSalesDashboard = ({ rows, availabilityMap }) => {
       dashboardMetricSnapshot.sales.goalProgress,
       dashboardMetricSnapshot.sales.goalProgressColor
     );
-    if (salesGoalSummary) salesGoalSummary.textContent = "Sin objetivo configurado";
+    if (salesGoalSummary) salesGoalSummary.textContent = "Objetivo no definido";
     if (salesGoalTarget) salesGoalTarget.textContent = "-";
     if (salesGoalRemaining) salesGoalRemaining.textContent = "-";
     if (salesGoalPaceCurrent) salesGoalPaceCurrent.textContent = "-";
     if (salesGoalPaceNeeded) salesGoalPaceNeeded.textContent = "";
-    if (salesGoalMessage) salesGoalMessage.textContent = "Configura un objetivo mensual para ver avance.";
+    if (salesGoalMessage) salesGoalMessage.textContent = "Defini un objetivo mensual para ver avance.";
     if (salesGoalCard) salesGoalCard.dataset.tone = "none";
     if (salesGoalCard) salesGoalCard.dataset.pace = "none";
     return;
@@ -6672,6 +6701,7 @@ const renderRawMaterialControlCenter = () => {
 const renderProspectsWorkspace = () => {
   pruneVisitPlannerState();
   renderProspectIndicators();
+  updateProspectFilterUi();
   renderProspectImportHistory();
   renderProspectList();
   renderVisitClientList();
@@ -7580,7 +7610,6 @@ const classifyAppSectionCards = () => {
     productsSection: "products",
     salesGoalSection: "sales",
     repurchaseSection: "repurchase",
-    coverageSection: "sales",
     financeMovementSection: "settings",
     financeExpenseSection: "settings",
     financeReceivablesSection: "settings",
@@ -7944,16 +7973,39 @@ forgotPasswordBtn?.addEventListener("click", async () => {
   }
 });
 
-logoutBtn?.addEventListener("click", async () => {
-  logoutBtn.disabled = true;
+const performLogout = async () => {
+  const logoutTriggers = [logoutBtn, userMenuLogout].filter(Boolean);
+  logoutTriggers.forEach((btn) => { btn.disabled = true; });
   try {
     closeAllOverlays();
+    closeUserMenu();
     await signOut(auth);
   } catch (error) {
     console.error("[auth] signOut error", error);
   } finally {
-    logoutBtn.disabled = false;
+    logoutTriggers.forEach((btn) => { btn.disabled = false; });
   }
+};
+
+logoutBtn?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  const willOpen = Boolean(userMenuPopover?.hidden);
+  if (willOpen) openUserMenu();
+  else closeUserMenu();
+});
+
+userMenuLogout?.addEventListener("click", async () => {
+  await performLogout();
+});
+
+document.addEventListener("click", (event) => {
+  if (userMenuPopover?.hidden) return;
+  if (event.target.closest("#userArea")) return;
+  closeUserMenu();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeUserMenu();
 });
 
 unitGroups.forEach((group) => {
@@ -8373,6 +8425,8 @@ clientForm.addEventListener("submit", async (event) => {
   };
   await saveDoc("clients", clientForm, payload);
   resetForm(clientForm);
+  closeFormModal();
+  showToast("Cliente guardado correctamente.");
 });
 
 const resetProspectForm = () => {
@@ -8615,6 +8669,8 @@ saleForm.addEventListener("submit", async (event) => {
   updateDueDateVisibility();
   updateSaleObservationVisibility(false);
   updateSaleRepurchaseVisibility(false);
+  closeFormModal();
+  showToast("Venta guardada correctamente.");
 });
 
 const toggleQuickClient = (show) => {
@@ -8766,6 +8822,8 @@ salesGoalForm?.addEventListener("submit", async (event) => {
   };
   await saveDoc("sales_goals", salesGoalForm, payload);
   if (salesGoalNotice) salesGoalNotice.textContent = "Objetivo guardado.";
+  closeFormModal();
+  showToast("Objetivo guardado correctamente.");
 });
 
 financeExpenseForm?.addEventListener("submit", async (event) => {
@@ -9014,9 +9072,7 @@ const startEditClient = (item) => {
   if (clientForm.notes) clientForm.notes.value = item.notes || "";
   clientForm.dataset.editId = item.id;
   setSubmitLabel(clientForm, "Actualizar cliente");
-  const body = document.getElementById("clientFormSection");
-  const toggle = document.querySelector('.collapse-toggle[data-collapse="clientFormSection"]');
-  if (body && toggle) openSection(toggle, body);
+  openFormModal("client");
   requestAnimationFrame(() => {
     refreshCollapseHeights();
     clientForm.name?.focus();
@@ -9098,9 +9154,7 @@ const startEditSale = (item) => {
   updateDueDateVisibility();
   updateSaleObservationVisibility(Boolean(item.observation));
   updateSaleRepurchaseVisibility(hasRepurchase);
-  const body = document.getElementById("salesFormSection");
-  const toggle = document.querySelector('.collapse-toggle[data-collapse="salesFormSection"]');
-  if (body && toggle) openSection(toggle, body);
+  openFormModal("sales");
   requestAnimationFrame(() => {
     refreshCollapseHeights();
     saleForm.client?.focus();
@@ -9605,6 +9659,16 @@ const updateClientFollowupFromRepurchase = async (clientId, fields = {}) => {
     followUpHistory: arrayUnion(historyEntry),
     updatedAt: serverTimestamp()
   });
+  const idx = state.clients.findIndex((item) => item.id === safeClientId);
+  if (idx >= 0) {
+    const currentHistory = Array.isArray(state.clients[idx].followUpHistory) ? state.clients[idx].followUpHistory : [];
+    state.clients[idx] = {
+      ...state.clients[idx],
+      followUp: nextFollowup,
+      followUpHistory: [...currentHistory, historyEntry],
+      updatedAt: new Date()
+    };
+  }
   return true;
 };
 
@@ -9678,19 +9742,40 @@ repurchaseList?.addEventListener("click", async (event) => {
   const resultInput = card?.querySelector("[data-repurchase-contact-result]");
   const nextActionInput = card?.querySelector("[data-repurchase-next-action]");
   const observationInput = card?.querySelector("[data-repurchase-followup-observation]");
+  const originalLabel = saveFollowupBtn.textContent;
+  saveFollowupBtn.disabled = true;
+  saveFollowupBtn.textContent = "Guardando...";
+  repurchaseFollowupFeedback.set(clientId, { type: "info", message: "Guardando seguimiento..." });
+  const fields = {
+    lastContactDate: String(lastContactInput?.value || "").trim(),
+    result: String(resultInput?.value || "").trim(),
+    nextActionDate: String(nextActionInput?.value || "").trim(),
+    observation: String(observationInput?.value || "").trim()
+  };
   try {
-    await updateClientFollowupFromRepurchase(clientId, {
-      lastContactDate: String(lastContactInput?.value || "").trim(),
-      result: String(resultInput?.value || "").trim(),
-      nextActionDate: String(nextActionInput?.value || "").trim(),
-      observation: String(observationInput?.value || "").trim()
-    });
+    await updateClientFollowupFromRepurchase(clientId, fields);
+    repurchaseFollowupFeedback.set(clientId, { type: "success", message: "Seguimiento guardado correctamente" });
+    showToast("Seguimiento guardado correctamente");
     renderRepurchaseList();
     requestAnimationFrame(() => {
       refreshCollapseHeights();
     });
+    window.setTimeout(() => {
+      if (repurchaseFollowupFeedback.get(clientId)?.type === "success") {
+        repurchaseFollowupFeedback.delete(clientId);
+        renderRepurchaseList();
+        requestAnimationFrame(refreshCollapseHeights);
+      }
+    }, 3200);
   } catch (error) {
     console.error("No se pudo guardar seguimiento de recompra:", error);
+    repurchaseFollowupFeedback.set(clientId, { type: "error", message: "No se pudo guardar el seguimiento. Revisá los datos e intentá nuevamente." });
+    saveFollowupBtn.disabled = false;
+    saveFollowupBtn.textContent = originalLabel || "Guardar seguimiento";
+    renderRepurchaseList();
+    requestAnimationFrame(() => {
+      refreshCollapseHeights();
+    });
   }
 });
 
@@ -9784,24 +9869,56 @@ const updateProspectFilterState = () => {
   prospectFiltersState.location = prospectLocationFilter?.value || "";
 };
 
+function getProspectActiveFilterCount() {
+  return [
+  prospectFiltersState.city,
+  prospectFiltersState.zone,
+  prospectFiltersState.businessType,
+  prospectFiltersState.status,
+  prospectFiltersState.potential,
+  prospectFiltersState.revisit,
+  prospectFiltersState.location
+  ].filter((value) => String(value || "").trim()).length;
+}
+
+function updateProspectFilterUi() {
+  const count = getProspectActiveFilterCount();
+  if (prospectFilterCount) {
+    prospectFilterCount.hidden = count === 0;
+    prospectFilterCount.textContent = String(count);
+  }
+  prospectFilterToggle?.classList.toggle("has-active-filters", count > 0);
+}
+
 [prospectSearch, prospectCityFilter, prospectZoneFilter, prospectBusinessFilter, prospectStatusFilter, prospectPotentialFilter, prospectRevisitFilter, prospectLocationFilter]
   .forEach((input) => {
     input?.addEventListener("input", () => {
       updateProspectFilterState();
+      updateProspectFilterUi();
       renderProspectList();
       requestAnimationFrame(refreshCollapseHeights);
     });
     input?.addEventListener("change", () => {
       updateProspectFilterState();
+      updateProspectFilterUi();
       renderProspectList();
       requestAnimationFrame(refreshCollapseHeights);
     });
   });
 
+prospectFilterToggle?.addEventListener("click", () => {
+  if (!prospectFilterPanel) return;
+  const isHidden = prospectFilterPanel.hidden;
+  prospectFilterPanel.hidden = !isHidden;
+  prospectFilterToggle.setAttribute("aria-expanded", isHidden ? "true" : "false");
+  requestAnimationFrame(refreshCollapseHeights);
+});
+
 clearProspectFiltersBtn?.addEventListener("click", () => {
   [prospectSearch, prospectCityFilter, prospectZoneFilter, prospectBusinessFilter, prospectStatusFilter, prospectPotentialFilter, prospectRevisitFilter, prospectLocationFilter]
     .forEach((input) => { if (input) input.value = ""; });
   updateProspectFilterState();
+  updateProspectFilterUi();
   renderProspectList();
   requestAnimationFrame(refreshCollapseHeights);
 });
@@ -9910,6 +10027,26 @@ salesHistoryClearFilters?.addEventListener("click", () => {
   if (salesHistoryStatusFilter) salesHistoryStatusFilter.value = "";
   renderSalesHistory();
   requestAnimationFrame(refreshCollapseHeights);
+});
+
+openSaleFormBtn?.addEventListener("click", () => {
+  resetForm(saleForm);
+  resetSaleItems();
+  if (saleCreditCheckbox) saleCreditCheckbox.checked = false;
+  updateDueDateVisibility();
+  updateSaleObservationVisibility(false);
+  updateSaleRepurchaseVisibility(false);
+  openFormModal("sales");
+});
+
+openClientFormBtn?.addEventListener("click", () => {
+  resetForm(clientForm);
+  openFormModal("client");
+});
+
+openSalesGoalBtn?.addEventListener("click", () => {
+  updateSalesGoalForm(state.salesGoals[0]);
+  openFormModal("goal");
 });
 
 newProspectBtn?.addEventListener("click", () => {
@@ -10433,6 +10570,39 @@ const openSection = (toggle, body) => {
   }, COLLAPSE_ANIM_MS);
 };
 
+const FORM_MODAL_CONFIG = {
+  sales: { card: '[data-form-modal-card="sales"]', collapseId: "salesFormSection", focus: () => getSalesShortcutTarget() },
+  client: { card: '[data-form-modal-card="client"]', collapseId: "clientFormSection", focus: () => clientForm?.name },
+  goal: { card: '[data-form-modal-card="goal"]', collapseId: "salesGoalSection", focus: () => salesGoalForm?.targetDisplays }
+};
+
+const closeFormModal = () => {
+  document.querySelectorAll(".form-modal-card.is-form-modal-open").forEach((card) => {
+    card.classList.remove("is-form-modal-open");
+    const body = card.querySelector(".collapse-body");
+    const toggle = card.querySelector(".collapse-toggle[data-collapse]");
+    if (body && toggle) closeSection(toggle, body);
+  });
+  document.body.classList.remove("modal-open");
+};
+
+const openFormModal = (kind) => {
+  const config = FORM_MODAL_CONFIG[kind];
+  if (!config) return;
+  closeFormModal();
+  const card = document.querySelector(config.card);
+  const body = document.getElementById(config.collapseId);
+  const toggle = document.querySelector(`.collapse-toggle[data-collapse="${config.collapseId}"]`);
+  if (!card || !body || !toggle) return;
+  card.classList.add("is-form-modal-open");
+  document.body.classList.add("modal-open");
+  openSection(toggle, body);
+  requestAnimationFrame(() => {
+    refreshCollapseHeights();
+    config.focus()?.focus?.({ preventScroll: true });
+  });
+};
+
 const closeSection = (toggle, body) => {
   // Re-fijamos la altura actual antes de cerrar para que la animacion funcione.
   if (body.classList.contains("is-open-static")) {
@@ -10507,7 +10677,8 @@ const navigateToSalesShortcut = async () => {
     setDashboardTransitionsEnabled(false);
     await waitForNextFrame();
     setActiveAppSection("sales");
-    const salesBody = openExclusiveCollapseSection("salesFormSection");
+    openFormModal("sales");
+    const salesBody = document.getElementById("salesFormSection");
     refreshCollapseHeights();
 
     const salesPanelReady = await waitForCondition(() => {
@@ -10570,7 +10741,7 @@ const INDEPENDENT_COLLAPSE_IDS = new Set([
 document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) => {
   const body = document.getElementById(toggle.dataset.collapse);
   if (!body) return;
-  if (["salesGoalSection", "productsSection", "clientFormSection", "clientListSection", "prospectsSection", "salesFormSection", "salesHistorySection", "repurchaseSection", "coverageSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection", "userManagementSection", "qrManagerSection"].includes(toggle.dataset.collapse)) {
+  if (["salesGoalSection", "productsSection", "clientFormSection", "clientListSection", "prospectsSection", "salesFormSection", "salesHistorySection", "repurchaseSection", "financeExpenseSection", "financeReceivablesSection", "financeCategorySection", "userManagementSection", "qrManagerSection"].includes(toggle.dataset.collapse)) {
     closeSection(toggle, body);
   } else {
     openSection(toggle, body);
@@ -10580,6 +10751,15 @@ document.querySelectorAll(".collapse-toggle[data-collapse]").forEach((toggle) =>
 setupSidebarNavigation();
 
 document.addEventListener("click", (event) => {
+  if (event.target.closest("[data-close-form-modal]")) {
+    closeFormModal();
+    return;
+  }
+  const openModalCard = event.target.closest(".form-modal-card.is-form-modal-open");
+  if (event.target.classList?.contains("form-modal-card") && openModalCard) {
+    closeFormModal();
+    return;
+  }
   if (event.target.closest("[data-close-journey-sale-modal]")) {
     closeJourneySaleModal();
     return;
@@ -15515,7 +15695,9 @@ const closeAllOverlays = () => {
     () => closeJourneySaleModal({ force: true }),
     () => closeLocationPicker(),
     () => closeRubroModal(),
-    () => closeProspectImportModal({ force: true })
+    () => closeProspectImportModal({ force: true }),
+    () => closeFormModal(),
+    () => closeUserMenu()
   ];
   closers.forEach((fn) => { try { fn(); } catch (e) { /* noop */ } });
   document.querySelectorAll('[role="dialog"]').forEach((modal) => {

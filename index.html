@@ -45,11 +45,15 @@
         <img class="brand-logo" src="IMG_8867.PNG" alt="MiMar Alimentos" />
       </div>
       <div class="user-area" id="userArea">
-        <span class="user-email" id="userEmail"></span>
-        <button class="icon-btn logout-icon-btn" id="logoutBtn" type="button" aria-label="Cerrar sesion" title="Cerrar sesion">
+        <button class="icon-btn logout-icon-btn" id="logoutBtn" type="button" aria-label="Abrir menu de usuario" aria-haspopup="menu" aria-expanded="false" aria-controls="userMenuPopover" title="Menu de usuario">
           <i data-lucide="log-out"></i>
-          <span class="logout-label">Cerrar sesion</span>
         </button>
+        <div class="user-menu-popover" id="userMenuPopover" role="menu" hidden>
+          <div class="user-menu-name" id="userMenuName">Usuario</div>
+          <div class="user-menu-email" id="userEmail"></div>
+          <div class="user-menu-role" id="userMenuRole"></div>
+          <button class="btn danger user-menu-logout" type="button" id="userMenuLogout">Cerrar sesion</button>
+        </div>
       </div>
     </header>
 
@@ -139,7 +143,6 @@
                 </div>
                 <div class="date-range-error" id="commercialRangeError"></div>
               </div>
-              <div class="period-current-label" id="commercialPeriodLabel">Este mes</div>
             </div>
           </div>
 
@@ -599,7 +602,7 @@
           </div>
           <div class="overview-card sales-card sales-card-goal">
             <div class="overview-label">Cumplimiento</div>
-            <div class="sales-goal-summary" id="salesGoalSummary">Sin objetivo configurado</div>
+            <div class="sales-goal-summary" id="salesGoalSummary">Objetivo no definido</div>
             <div class="overview-value sales-goal-percent" id="salesMetricGoal">Sin objetivo</div>
             <div class="sales-goal-progress" aria-hidden="true">
               <span id="salesGoalProgressBar"></span>
@@ -621,7 +624,8 @@
                 </div>
               </div>
             </div>
-            <div class="sales-goal-message" id="salesGoalMessage">Configura un objetivo mensual para ver avance.</div>
+            <div class="sales-goal-message" id="salesGoalMessage">Defini un objetivo mensual para ver avance.</div>
+            <button class="btn ghost btn-sm sales-goal-open-btn" type="button" id="openSalesGoalBtn">Definir objetivo del mes</button>
           </div>
         </div>
             </div>
@@ -1004,8 +1008,8 @@
 
         <section class="tab-panel" id="sales">
           <div class="grid">
-            <div class="card desktop-expandable-card desktop-sales-card full-width-card">
-              <h2 class="section-title"><span class="section-title-text"><i data-lucide="shopping-cart"></i><span class="section-title-label">Registrar venta</span></span> <button class="collapse-toggle" type="button" data-collapse="salesFormSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
+            <div class="card desktop-expandable-card desktop-sales-card full-width-card form-modal-card sales-form-card" data-form-modal-card="sales">
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="shopping-cart"></i><span class="section-title-label">Registrar venta</span></span> <button class="icon-btn form-modal-close" type="button" data-close-form-modal aria-label="Cerrar registro de venta"><i data-lucide="x"></i></button><button class="collapse-toggle" type="button" data-collapse="salesFormSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="salesFormSection">
                 <form id="saleForm" class="form-grid">
                 <label>
@@ -1106,15 +1110,19 @@
                     </select>
                   </label>
                 </div>
-                <button class="btn primary" type="submit">Registrar venta</button>
+                <div class="form-modal-actions">
+                  <button class="btn primary" type="submit">Registrar venta</button>
+                  <button class="btn ghost" type="button" data-close-form-modal>Cancelar</button>
+                </div>
                 </form>
               </div>
             </div>
 
             <div class="card desktop-expandable-card sales-history-card full-width-card">
               <h2 class="section-title section-title-with-meta">
-                <span class="section-title-text"><i data-lucide="history"></i><span class="section-title-label">Historico de ventas</span></span>
+                <span class="section-title-text"><i data-lucide="history"></i><span class="section-title-label">Ventas</span></span>
                 <span class="section-title-meta"><span id="salesHistoryCount">0 ventas</span><span id="salesHistoryTotal">Gs 0</span></span>
+                <button class="btn primary btn-sm" type="button" id="openSaleFormBtn"><i data-lucide="plus"></i> Registrar venta</button>
                 <button class="collapse-toggle" type="button" data-collapse="salesHistorySection" aria-expanded="false"><span class="chevron">&gt;</span></button>
               </h2>
               <p class="panel-desc">Consulta y administra las ventas registradas.</p>
@@ -1161,14 +1169,13 @@
                     </select>
                     <button class="btn ghost" type="button" id="salesHistoryClearFilters">Limpiar filtros</button>
                   </div>
-                  <div class="period-current-label" id="salesHistoryPeriodLabel">Este mes</div>
                 </div>
                 <div class="list sales-history-list" id="saleList"></div>
               </div>
             </div>
 
-            <div class="card desktop-expandable-card commercial-workspace-card clients-workspace-card full-width-card">
-              <h2 class="section-title"><span class="section-title-text"><i data-lucide="user-plus"></i><span class="section-title-label">Nuevo cliente</span></span> <button class="collapse-toggle" type="button" data-collapse="clientFormSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
+            <div class="card desktop-expandable-card commercial-workspace-card clients-workspace-card full-width-card form-modal-card client-form-card" data-form-modal-card="client">
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="user-plus"></i><span class="section-title-label">Nuevo cliente</span></span> <button class="icon-btn form-modal-close" type="button" data-close-form-modal aria-label="Cerrar formulario de cliente"><i data-lucide="x"></i></button><button class="collapse-toggle" type="button" data-collapse="clientFormSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="clientFormSection">
                 <form id="clientForm" class="form-grid">
                 <label>
@@ -1223,7 +1230,10 @@
                   Notas del cliente
                   <textarea name="notes" placeholder="Ej: Prefiere contacto por la tarde"></textarea>
                 </label>
-                <button class="btn primary" type="submit">Guardar cliente</button>
+                <div class="form-modal-actions">
+                  <button class="btn primary" type="submit">Guardar cliente</button>
+                  <button class="btn ghost" type="button" data-close-form-modal>Cancelar</button>
+                </div>
                 </form>
               </div>
             </div>
@@ -1232,6 +1242,7 @@
               <h2 class="section-title section-title-with-meta">
                 <span class="section-title-text"><i data-lucide="users"></i><span class="section-title-label">Listado de clientes</span></span>
                 <span class="section-title-meta" id="clientListCount">0 clientes</span>
+                <button class="btn primary btn-sm" type="button" id="openClientFormBtn"><i data-lucide="plus"></i> Agregar nuevo cliente</button>
                 <button class="collapse-toggle" type="button" data-collapse="clientListSection" aria-expanded="false"><span class="chevron">&gt;</span></button>
               </h2>
               <div class="client-list-toolbar">
@@ -1270,7 +1281,8 @@
                       <i data-lucide="search"></i>
                       <input id="prospectSearch" type="search" placeholder="Buscar negocio, contacto, telefono o direccion" />
                     </div>
-                    <div class="prospect-toolbar-filters">
+                    <button class="btn ghost prospect-filter-toggle" type="button" id="prospectFilterToggle" aria-expanded="false" aria-controls="prospectFilterPanel"><i data-lucide="sliders-horizontal"></i> Filtrar <span class="filter-count-badge" id="prospectFilterCount" hidden>0</span></button>
+                    <div class="prospect-toolbar-filters" id="prospectFilterPanel" hidden>
                       <input id="prospectCityFilter" placeholder="Ciudad" />
                       <input id="prospectZoneFilter" placeholder="Barrio/zona" />
                       <select id="prospectBusinessFilter" aria-label="Rubro">
@@ -1476,8 +1488,8 @@
               </div>
             </div>
 
-            <div class="card">
-              <h2 class="section-title"><span class="section-title-text"><i data-lucide="target"></i><span class="section-title-label">Objetivo del mes</span></span> <button class="collapse-toggle" type="button" data-collapse="salesGoalSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
+            <div class="card sales-goal-config-card form-modal-card goal-form-card" data-form-modal-card="goal">
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="target"></i><span class="section-title-label">Definir objetivo del mes</span></span> <button class="icon-btn form-modal-close" type="button" data-close-form-modal aria-label="Cerrar objetivo mensual"><i data-lucide="x"></i></button><button class="collapse-toggle" type="button" data-collapse="salesGoalSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="salesGoalSection">
                 <form id="salesGoalForm" class="form-grid">
                 <label>
@@ -1492,7 +1504,10 @@
                   Objetivo de displays
                   <input name="targetDisplays" type="number" step="1" min="1" required />
                 </label>
-                <button class="btn primary" type="submit">Guardar objetivo</button>
+                <div class="form-modal-actions">
+                  <button class="btn primary" type="submit">Guardar objetivo</button>
+                  <button class="btn ghost" type="button" data-close-form-modal>Cancelar</button>
+                </div>
                 </form>
                 <div class="error" id="salesGoalNotice"></div>
               </div>
@@ -1512,8 +1527,8 @@
                 </div>
               </div>
             </div>
-            <div class="card desktop-expandable-card">
-              <h2 class="section-title"><span class="section-title-text"><i data-lucide="map-pinned"></i><span class="section-title-label">Cobertura nacional</span></span> <button class="collapse-toggle" type="button" data-collapse="coverageSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
+            <div class="card desktop-expandable-card" hidden>
+              <h2 class="section-title"><span class="section-title-text"><i data-lucide="map-pinned"></i><span class="section-title-label">Cobertura comercial</span></span> <button class="collapse-toggle" type="button" data-collapse="coverageSection" aria-expanded="false"><span class="chevron">&gt;</span></button></h2>
               <div class="collapse-body" id="coverageSection">
                 <div class="sales-coverage-layout">
                   <div class="sales-coverage-map-wrap">
@@ -2739,5 +2754,3 @@
   </script>
 </body>
 </html>
-
-
