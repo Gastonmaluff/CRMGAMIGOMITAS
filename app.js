@@ -4326,7 +4326,7 @@ const renderRepurchaseList = () => {
     const resultOptions = buildRepurchaseContactResultOptions(entry.contactResult || "");
     const feedback = hasClientRecord ? repurchaseFollowupFeedback.get(entry.clientId) : null;
     return `
-      <div class="list-item repurchase-item ${entry.statusClass === "overdue" ? "overdue" : ""}" data-repurchase-client-id="${entry.clientId}">
+      <div class="list-item repurchase-item ${entry.statusClass === "overdue" ? "overdue" : ""}" data-repurchase-client-id="${entry.clientId}" data-repurchase-frequency="${entry.frequency}" data-repurchase-current-date="${escapeHtml(entry.nextActionDate || "")}" data-repurchase-suggested-date="${escapeHtml(entry.nextContactDate || "")}">
         <div class="repurchase-item-header">
           <strong>${entry.clientName}</strong>
           <span class="repurchase-status ${entry.statusClass}">${entry.status}</span>
@@ -4349,7 +4349,7 @@ const renderRepurchaseList = () => {
             </select>
           </label>
           <label>
-            Proxima accion
+            Proxima recompra/contacto
             <input type="date" value="${entry.nextActionDate || entry.nextContactDate || ""}" data-repurchase-next-action ${hasClientRecord ? "" : "disabled"} />
           </label>
           <label class="repurchase-followup-observation">
@@ -9743,14 +9743,26 @@ repurchaseList?.addEventListener("click", async (event) => {
   const resultInput = card?.querySelector("[data-repurchase-contact-result]");
   const nextActionInput = card?.querySelector("[data-repurchase-next-action]");
   const observationInput = card?.querySelector("[data-repurchase-followup-observation]");
+  const frequencyDays = Number(card?.dataset.repurchaseFrequency || 0);
+  const currentStoredDate = normalizeDateValue(card?.dataset.repurchaseCurrentDate || "");
+  const suggestedDate = normalizeDateValue(card?.dataset.repurchaseSuggestedDate || "");
   const originalLabel = saveFollowupBtn.textContent;
   saveFollowupBtn.disabled = true;
   saveFollowupBtn.textContent = "Guardando...";
   repurchaseFollowupFeedback.set(clientId, { type: "info", message: "Guardando seguimiento..." });
+  const lastContactDate = normalizeDateValue(lastContactInput?.value || "");
+  let nextActionDate = normalizeDateValue(nextActionInput?.value || "");
+  const shouldRecalculateFromLastContact = lastContactDate
+    && [15, 30, 45, 60].includes(frequencyDays)
+    && (!nextActionDate || nextActionDate === suggestedDate || nextActionDate === currentStoredDate);
+  if (shouldRecalculateFromLastContact) {
+    nextActionDate = addDaysToDateValue(lastContactDate, frequencyDays);
+    if (nextActionInput && nextActionDate) nextActionInput.value = nextActionDate;
+  }
   const fields = {
-    lastContactDate: String(lastContactInput?.value || "").trim(),
+    lastContactDate,
     result: String(resultInput?.value || "").trim(),
-    nextActionDate: String(nextActionInput?.value || "").trim(),
+    nextActionDate,
     observation: String(observationInput?.value || "").trim()
   };
   try {
