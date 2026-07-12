@@ -628,6 +628,8 @@ const saleJourneyPortalState = { parent: null, nextSibling: null };
 const repurchaseNotesOpenState = new Set();
 const repurchaseHistoryOpenState = new Set();
 const repurchaseFollowupFeedback = new Map();
+const REPURCHASE_PAGE_SIZE = 20;
+let repurchaseCurrentPage = 1;
 const clientHistoryOpenState = new Set();
 const stockAdjustmentState = {
   openKey: "",
@@ -4214,6 +4216,7 @@ const buildRepurchaseFollowups = () => {
     const clientFollowup = getClientFollowupData(linkedClient);
     const clientHistory = getClientFollowupHistory(linkedClient);
     const candidate = {
+      dedupeKey,
       clientId: sale.clientId || "",
       clientName,
       phone: linkedClient?.phone || sale.clientPhone || "",
@@ -4273,12 +4276,50 @@ const buildRepurchaseFollowups = () => {
     })
     .filter(Boolean)
     .sort((a, b) => {
+      const aDay = toIsoDayNumber(a.operativeDate) ?? Number.MAX_SAFE_INTEGER;
+      const bDay = toIsoDayNumber(b.operativeDate) ?? Number.MAX_SAFE_INTEGER;
+      if (aDay !== bDay) return aDay - bDay;
       if (a.statusOrder !== b.statusOrder) return a.statusOrder - b.statusOrder;
-      if (a.statusOrder === 0) return b.overdueDays - a.overdueDays;
-      if (a.statusOrder === 1) return a.clientName.localeCompare(b.clientName);
-      if (a.daysUntil !== b.daysUntil) return a.daysUntil - b.daysUntil;
       return a.clientName.localeCompare(b.clientName);
     });
+};
+
+const getRepurchaseSalesForClient = (clientId, clientName) => {
+  const safeClientId = String(clientId || "").trim();
+  const safeName = normalizeText(clientName || "");
+  return state.sales.filter((sale) => {
+    if (sale.repurchaseActive !== true) return false;
+    if (safeClientId && sale.clientId === safeClientId) return true;
+    const sameName = safeName && normalizeText(sale.clientName || "") === safeName;
+    if (!sameName) return false;
+    return !sale.clientId || !safeClientId || sale.clientId === safeClientId;
+  });
+};
+
+const clearRepurchaseForClient = async (clientId, clientName) => {
+  const matches = getRepurchaseSalesForClient(clientId, clientName);
+  if (!matches.length) return 0;
+  const matchIds = new Set(matches.map((sale) => sale.id));
+  const batch = writeBatch(db);
+  matches.forEach((sale) => {
+    batch.update(doc(db, "sales", sale.id), {
+      repurchaseActive: false,
+      repurchaseFrequencyDays: null,
+      repurchaseNextContactDate: "",
+      updatedAt: serverTimestamp()
+    });
+  });
+  await batch.commit();
+  state.sales = state.sales.map((sale) => matchIds.has(sale.id)
+    ? {
+      ...sale,
+      repurchaseActive: false,
+      repurchaseFrequencyDays: null,
+      repurchaseNextContactDate: "",
+      updatedAt: new Date()
+    }
+    : sale);
+  return matches.length;
 };
 
 const renderRepurchaseSummary = (followups) => {
@@ -4300,6 +4341,22 @@ const renderRepurchaseSummary = (followups) => {
   `).join("");
 };
 
+const renderRepurchasePagination = (totalPages) => {
+  if (totalPages <= 1) return "";
+  const buttons = Array.from({ length: totalPages }, (_, index) => {
+    const page = index + 1;
+    const isActive = page === repurchaseCurrentPage;
+    return `<button class="btn ghost btn-xs repurchase-page-btn ${isActive ? "active" : ""}" type="button" data-repurchase-page="${page}" aria-current="${isActive ? "page" : "false"}">${page}</button>`;
+  }).join("");
+  return `
+    <div class="repurchase-pagination" aria-label="Paginacion de recompra">
+      <button class="btn ghost btn-xs" type="button" data-repurchase-page="${repurchaseCurrentPage - 1}" ${repurchaseCurrentPage <= 1 ? "disabled" : ""}>Anterior</button>
+      <div class="repurchase-page-numbers">${buttons}</div>
+      <button class="btn ghost btn-xs" type="button" data-repurchase-page="${repurchaseCurrentPage + 1}" ${repurchaseCurrentPage >= totalPages ? "disabled" : ""}>Siguiente</button>
+    </div>
+  `;
+};
+
 const renderRepurchaseList = () => {
   if (!repurchaseList) return;
   const validClientIds = new Set(state.clients.map((client) => client.id));
@@ -4311,12 +4368,19 @@ const renderRepurchaseList = () => {
   });
   const allFollowups = buildRepurchaseFollowups();
   renderRepurchaseSummary(allFollowups);
-  const followups = allFollowups.filter((entry) => entry.statusClass === "overdue" || entry.statusClass === "today");
+  const followups = allFollowups;
   if (!followups.length) {
-    repurchaseList.innerHTML = '<div class="list-item muted">Sin recompras vencidas o para hoy.</div>';
+    repurchaseCurrentPage = 1;
+    repurchaseList.innerHTML = '<div class="list-item muted">Sin clientes con recompra asignada.</div>';
     return;
   }
-  repurchaseList.innerHTML = followups.map((entry) => {
+  const totalPages = Math.max(1, Math.ceil(followups.length / REPURCHASE_PAGE_SIZE));
+  repurchaseCurrentPage = Math.min(Math.max(1, repurchaseCurrentPage), totalPages);
+  const pageStart = (repurchaseCurrentPage - 1) * REPURCHASE_PAGE_SIZE;
+  const pageEnd = Math.min(pageStart + REPURCHASE_PAGE_SIZE, followups.length);
+  const pagedFollowups = followups.slice(pageStart, pageEnd);
+  const listMeta = `<div class="repurchase-list-meta">Mostrando ${formatInteger(pageStart + 1)}-${formatInteger(pageEnd)} de ${formatInteger(followups.length)} clientes con recompra asignada</div>`;
+  repurchaseList.innerHTML = listMeta + pagedFollowups.map((entry) => {
     const whatsappLink = buildWhatsAppLink(entry.phone, entry.clientName);
     const hasClientRecord = Boolean(entry.clientId);
     const notesOpen = hasClientRecord && repurchaseNotesOpenState.has(entry.clientId);
@@ -4326,7 +4390,7 @@ const renderRepurchaseList = () => {
     const resultOptions = buildRepurchaseContactResultOptions(entry.contactResult || "");
     const feedback = hasClientRecord ? repurchaseFollowupFeedback.get(entry.clientId) : null;
     return `
-      <div class="list-item repurchase-item ${entry.statusClass === "overdue" ? "overdue" : ""}" data-repurchase-client-id="${entry.clientId}" data-repurchase-frequency="${entry.frequency}" data-repurchase-current-date="${escapeHtml(entry.nextActionDate || "")}" data-repurchase-suggested-date="${escapeHtml(entry.nextContactDate || "")}">
+      <div class="list-item repurchase-item ${entry.statusClass === "overdue" ? "overdue" : ""}" data-repurchase-client-id="${entry.clientId}" data-repurchase-client-name="${escapeHtml(entry.clientName)}" data-repurchase-frequency="${entry.frequency}" data-repurchase-current-date="${escapeHtml(entry.nextActionDate || "")}" data-repurchase-suggested-date="${escapeHtml(entry.nextContactDate || "")}">
         <div class="repurchase-item-header">
           <strong>${entry.clientName}</strong>
           <span class="repurchase-status ${entry.statusClass}">${entry.status}</span>
@@ -4370,6 +4434,7 @@ const renderRepurchaseList = () => {
           ${hasClientRecord
     ? `<button class="btn ghost" type="button" data-toggle-repurchase-history="${entry.clientId}">Historial</button>`
     : '<button class="btn ghost" type="button" disabled>Historial</button>'}
+          <button class="btn ghost danger" type="button" data-clear-repurchase="${escapeHtml(entry.clientId)}" data-clear-repurchase-name="${escapeHtml(entry.clientName)}">Quitar recompra</button>
         </div>
         ${feedback ? `<div class="repurchase-feedback repurchase-feedback-${feedback.type || "info"}">${escapeHtml(feedback.message || "")}</div>` : ""}
         ${hasClientRecord
@@ -4397,7 +4462,7 @@ const renderRepurchaseList = () => {
     : ""}
       </div>
     `;
-  }).join("");
+  }).join("") + renderRepurchasePagination(totalPages);
 };
 
 const debugSalesDateComparison = ({ todayValue, yesterdayValue, monthStart, monthEnd }) => {
@@ -9674,6 +9739,18 @@ const updateClientFollowupFromRepurchase = async (clientId, fields = {}) => {
 };
 
 repurchaseList?.addEventListener("click", async (event) => {
+  const pageBtn = event.target.closest("[data-repurchase-page]");
+  if (pageBtn) {
+    const page = Number(pageBtn.dataset.repurchasePage || 1);
+    if (!Number.isFinite(page) || page < 1 || pageBtn.disabled) return;
+    repurchaseCurrentPage = page;
+    renderRepurchaseList();
+    requestAnimationFrame(() => {
+      refreshCollapseHeights();
+    });
+    return;
+  }
+
   const whatsappBtn = event.target.closest("[data-whatsapp-link]");
   if (whatsappBtn) {
     const link = String(whatsappBtn.dataset.whatsappLink || "").trim();
@@ -9714,6 +9791,37 @@ repurchaseList?.addEventListener("click", async (event) => {
       });
     } catch (error) {
       console.error("No se pudo guardar notas de recompra:", error);
+    }
+    return;
+  }
+
+  const clearRepurchaseBtn = event.target.closest("[data-clear-repurchase]");
+  if (clearRepurchaseBtn) {
+    const clientId = String(clearRepurchaseBtn.dataset.clearRepurchase || "").trim();
+    const clientName = String(clearRepurchaseBtn.dataset.clearRepurchaseName || "").trim();
+    if (!clientId && !clientName) return;
+    const confirmed = window.confirm(`Quitar la recompra asignada de ${clientName || "este cliente"}?`);
+    if (!confirmed) return;
+    const originalLabel = clearRepurchaseBtn.textContent;
+    clearRepurchaseBtn.disabled = true;
+    clearRepurchaseBtn.textContent = "Quitando...";
+    try {
+      const clearedCount = await clearRepurchaseForClient(clientId, clientName);
+      if (clientId) {
+        repurchaseNotesOpenState.delete(clientId);
+        repurchaseHistoryOpenState.delete(clientId);
+        repurchaseFollowupFeedback.delete(clientId);
+      }
+      showToast(clearedCount > 1 ? "Recompras quitadas correctamente" : "Recompra quitada correctamente");
+      renderRepurchaseList();
+      requestAnimationFrame(() => {
+        refreshCollapseHeights();
+      });
+    } catch (error) {
+      console.error("No se pudo quitar recompra:", error);
+      showToast("No se pudo quitar la recompra. Revisá permisos e intentá nuevamente.");
+      clearRepurchaseBtn.disabled = false;
+      clearRepurchaseBtn.textContent = originalLabel || "Quitar recompra";
     }
     return;
   }

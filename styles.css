@@ -4661,6 +4661,47 @@ body.sale-journey-modal-open::before {
   min-width: 0;
 }
 
+.repurchase-item .btn.danger {
+  border-color: #fecaca;
+  color: #b91c1c;
+  background: #fff7f7;
+}
+
+.repurchase-item .btn.danger:hover {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.repurchase-list-meta {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+  padding: 2px 2px 0;
+}
+
+.repurchase-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 0 2px;
+}
+
+.repurchase-page-numbers {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.repurchase-page-btn.active {
+  background: var(--primary);
+  border-color: var(--primary-dark);
+  color: #fff;
+}
+
 .repurchase-followup-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
