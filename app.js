@@ -4309,10 +4309,11 @@ const renderRepurchaseList = () => {
   Array.from(repurchaseHistoryOpenState).forEach((clientId) => {
     if (!validClientIds.has(clientId)) repurchaseHistoryOpenState.delete(clientId);
   });
-  const followups = buildRepurchaseFollowups();
-  renderRepurchaseSummary(followups);
+  const allFollowups = buildRepurchaseFollowups();
+  renderRepurchaseSummary(allFollowups);
+  const followups = allFollowups.filter((entry) => entry.statusClass === "overdue" || entry.statusClass === "today");
   if (!followups.length) {
-    repurchaseList.innerHTML = '<div class="list-item muted">Sin clientes con seguimiento activo.</div>';
+    repurchaseList.innerHTML = '<div class="list-item muted">Sin recompras vencidas o para hoy.</div>';
     return;
   }
   repurchaseList.innerHTML = followups.map((entry) => {
