@@ -13936,7 +13936,7 @@ const waitForImagesInElement = async (element) => {
   }));
 };
 
-const drawJourneyHeaderIllustration = (ctx, img, width, height, opacity = 0.11) => {
+const drawJourneyHeaderIllustration = (ctx, img, width, height, opacity = 0.22) => {
   if (!img) return;
   const iw = img.naturalWidth || img.width;
   const ih = img.naturalHeight || img.height;
@@ -14309,7 +14309,7 @@ const buildJourneyExportBlob = async (journey, stops, summary) => {
   grad.addColorStop(1, C.green);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, headerH);
-  drawJourneyHeaderIllustration(ctx, headerIllustration, W, headerH, 0.11);
+  drawJourneyHeaderIllustration(ctx, headerIllustration, W, headerH, 0.22);
   ctx.fillStyle = "rgba(255,255,255,0.85)";
   ctx.font = `700 20px ${EXPORT_FF}`;
   ctx.fillText("RESUMEN DE JORNADA", PAD, 60);
