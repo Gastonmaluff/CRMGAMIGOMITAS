@@ -656,6 +656,7 @@ const COMPANY_INFO = {
   email: "contacto@mimar.com.py"
 };
 const COMPANY_LOGO_SRC = "IMG_8867.PNG";
+const JOURNEY_SUMMARY_HEADER_ILLUSTRATION_SRC = "assets/jornada-comercios-header.png";
 let companyLogoDataUrlPromise = null;
 const REPURCHASE_CONTACT_RESULT_OPTIONS = [
   { value: "", label: "Seleccionar" },
@@ -13697,7 +13698,8 @@ const renderJourneySummaryScreen = (journey, stops, summary) => {
   return `
     <div class="jsum-box" role="document">
       <header class="jsum-head">
-        <div class="jsum-head-main">
+        <img src="${escapeHtml(JOURNEY_SUMMARY_HEADER_ILLUSTRATION_SRC)}" alt="" aria-hidden="true" class="journey-summary-header-illustration" />
+        <div class="jsum-head-main journey-summary-header-content">
           <div class="jsum-eyebrow">Resumen de jornada</div>
           <h2 class="jsum-title">${escapeHtml(summary.name)}</h2>
           <div class="jsum-headmeta">
@@ -13706,7 +13708,7 @@ const renderJourneySummaryScreen = (journey, stops, summary) => {
             <span><i data-lucide="flag"></i> Finalizada</span>
           </div>
         </div>
-        <div class="jsum-head-actions">
+        <div class="jsum-head-actions journey-summary-header-content">
           <div class="jsum-head-brand" aria-label="Mimar Alimentos">
             <img src="${escapeHtml(COMPANY_LOGO_SRC)}" alt="Mimar Alimentos" />
           </div>
@@ -13916,6 +13918,38 @@ const exportLoadImage = (src) => new Promise((resolve) => {
   img.onerror = () => resolve(null);
   img.src = src;
 });
+
+const waitForImagesInElement = async (element) => {
+  if (!element) return;
+  try {
+    if (document.fonts?.ready) await document.fonts.ready;
+  } catch (_) {
+    // La exportacion puede continuar aunque el navegador no exponga FontFaceSet.
+  }
+  const images = Array.from(element.querySelectorAll("img"));
+  await Promise.all(images.map((image) => {
+    if (image.complete) return Promise.resolve();
+    return new Promise((resolve) => {
+      image.onload = resolve;
+      image.onerror = resolve;
+    });
+  }));
+};
+
+const drawJourneyHeaderIllustration = (ctx, img, width, height, opacity = 0.28) => {
+  if (!img) return;
+  const iw = img.naturalWidth || img.width;
+  const ih = img.naturalHeight || img.height;
+  if (!iw || !ih) return;
+  const drawW = Math.min(460, Math.max(280, width * 0.34));
+  const drawH = drawW * (ih / iw);
+  const drawX = width - 20 - drawW;
+  const drawY = height - drawH;
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  ctx.drawImage(img, drawX, drawY, drawW, drawH);
+  ctx.restore();
+};
 
 const drawContainedImageTint = (ctx, img, x, y, w, h, color) => {
   if (!img) return;
@@ -14184,6 +14218,7 @@ const drawJourneyExportShops = (ctx, headerW, headerH) => {
 const buildJourneyExportBlob = async (journey, stops, summary) => {
   const logoDataUrl = await getCompanyLogoDataUrl();
   const mimarLogo = logoDataUrl ? await exportLoadImage(logoDataUrl) : null;
+  const headerIllustration = await exportLoadImage(JOURNEY_SUMMARY_HEADER_ILLUSTRATION_SRC);
   const mapResult = await renderJourneyExportMap(stops);
   const mapImg = mapResult.img;
   const bizList = buildJourneyExportBizData(stops);
@@ -14251,8 +14286,7 @@ const buildJourneyExportBlob = async (journey, stops, summary) => {
   grad.addColorStop(1, C.green);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, headerH);
-  // Comercios decorativos del fondo (sobre el verde, debajo de textos y logo).
-  drawJourneyExportShops(ctx, W, headerH);
+  drawJourneyHeaderIllustration(ctx, headerIllustration, W, headerH, 0.28);
   ctx.fillStyle = "rgba(255,255,255,0.85)";
   ctx.font = `700 20px ${EXPORT_FF}`;
   ctx.fillText("RESUMEN DE JORNADA", PAD, 60);
@@ -14518,6 +14552,7 @@ const exportJourneySummaryImage = async ({ share }) => {
   setJourneyExportBusy(true, "Generando imagen…");
   setStatus("Generando imagen…");
   try {
+    await waitForImagesInElement(document.querySelector("#journeySummaryModal .jsum-box"));
     const { journey, stops, summary } = lastJourneySummary;
     const blob = await buildJourneyExportBlob(journey, stops, summary);
     const filename = buildJourneyExportFilename(journey, summary);

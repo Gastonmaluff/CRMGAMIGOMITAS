@@ -8003,6 +8003,8 @@ body.sale-journey-modal-open::before {
 @keyframes jsumIn { from { opacity: 0; transform: translateY(18px) scale(0.985); } to { opacity: 1; transform: none; } }
 .jsum-loading { padding: 48px 24px; text-align: center; color: var(--muted); }
 .jsum-head {
+  position: relative;
+  overflow: hidden;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -8011,7 +8013,28 @@ body.sale-journey-modal-open::before {
   background: linear-gradient(135deg, var(--green-700, #15803d), var(--primary, #16a34a));
   color: #fff;
 }
-.jsum-head-main { min-width: 0; flex: 1; }
+.journey-summary-header-illustration {
+  position: absolute;
+  right: 20px;
+  bottom: 0;
+  width: clamp(280px, 34%, 460px);
+  height: auto;
+  object-fit: contain;
+  object-position: right bottom;
+  opacity: 0.28;
+  pointer-events: none;
+  user-select: none;
+  z-index: 1;
+}
+.journey-summary-header-content {
+  position: relative;
+  z-index: 2;
+}
+.jsum-head-main {
+  min-width: 0;
+  flex: 1;
+  padding-right: clamp(72px, 16vw, 180px);
+}
 .jsum-head-actions { display: flex; align-items: flex-start; gap: 8px; flex-shrink: 0; }
 .jsum-head-brand {
   width: 132px;
@@ -8105,6 +8128,14 @@ body.sale-journey-modal-open::before {
 .jsum-export-status { font-size: 0.8rem; color: var(--muted); }
 @media (max-width: 640px) {
   .jsum-head { align-items: flex-start; }
+  .journey-summary-header-illustration {
+    right: 8px;
+    bottom: 0;
+    width: 48%;
+    max-width: 230px;
+    opacity: 0.20;
+  }
+  .jsum-head-main { padding-right: 36px; }
   .jsum-head-actions { flex-direction: column-reverse; align-items: flex-end; }
   .jsum-head-brand { width: 110px; height: 44px; }
   .jsum-times { grid-template-columns: repeat(2, 1fr); }
