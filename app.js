@@ -13936,18 +13936,41 @@ const waitForImagesInElement = async (element) => {
   }));
 };
 
-const drawJourneyHeaderIllustration = (ctx, img, width, height, opacity = 0.28) => {
+const drawJourneyHeaderIllustration = (ctx, img, width, height, opacity = 0.11) => {
   if (!img) return;
   const iw = img.naturalWidth || img.width;
   const ih = img.naturalHeight || img.height;
   if (!iw || !ih) return;
-  const drawW = Math.min(460, Math.max(280, width * 0.34));
+  const drawW = Math.min(480, Math.max(320, width * 0.42));
   const drawH = drawW * (ih / iw);
   const drawX = width - 20 - drawW;
   const drawY = height - drawH;
+  const off = document.createElement("canvas");
+  off.width = Math.ceil(drawW * EXPORT_SCALE);
+  off.height = Math.ceil(drawH * EXPORT_SCALE);
+  const octx = off.getContext("2d");
+  if (!octx) return;
+  octx.scale(EXPORT_SCALE, EXPORT_SCALE);
+  octx.drawImage(img, 0, 0, drawW, drawH);
+  octx.globalCompositeOperation = "destination-in";
+  const fadeLeft = octx.createLinearGradient(0, 0, drawW, 0);
+  fadeLeft.addColorStop(0, "rgba(0,0,0,0)");
+  fadeLeft.addColorStop(0.26, "rgba(0,0,0,0.58)");
+  fadeLeft.addColorStop(0.48, "rgba(0,0,0,1)");
+  fadeLeft.addColorStop(1, "rgba(0,0,0,1)");
+  octx.fillStyle = fadeLeft;
+  octx.fillRect(0, 0, drawW, drawH);
+  const fadeTop = octx.createLinearGradient(0, 0, 0, drawH);
+  fadeTop.addColorStop(0, "rgba(0,0,0,0)");
+  fadeTop.addColorStop(0.18, "rgba(0,0,0,0.42)");
+  fadeTop.addColorStop(0.42, "rgba(0,0,0,1)");
+  fadeTop.addColorStop(1, "rgba(0,0,0,1)");
+  octx.fillStyle = fadeTop;
+  octx.fillRect(0, 0, drawW, drawH);
   ctx.save();
   ctx.globalAlpha = opacity;
-  ctx.drawImage(img, drawX, drawY, drawW, drawH);
+  ctx.globalCompositeOperation = "screen";
+  ctx.drawImage(off, drawX, drawY, drawW, drawH);
   ctx.restore();
 };
 
@@ -14286,7 +14309,7 @@ const buildJourneyExportBlob = async (journey, stops, summary) => {
   grad.addColorStop(1, C.green);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, headerH);
-  drawJourneyHeaderIllustration(ctx, headerIllustration, W, headerH, 0.28);
+  drawJourneyHeaderIllustration(ctx, headerIllustration, W, headerH, 0.11);
   ctx.fillStyle = "rgba(255,255,255,0.85)";
   ctx.font = `700 20px ${EXPORT_FF}`;
   ctx.fillText("RESUMEN DE JORNADA", PAD, 60);

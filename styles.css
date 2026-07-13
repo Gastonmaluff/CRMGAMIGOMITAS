@@ -8021,7 +8021,16 @@ body.sale-journey-modal-open::before {
   height: auto;
   object-fit: contain;
   object-position: right bottom;
-  opacity: 0.28;
+  opacity: 0.11;
+  mix-blend-mode: screen;
+  -webkit-mask-image:
+    linear-gradient(to left, rgba(0,0,0,1) 52%, rgba(0,0,0,0.58) 74%, rgba(0,0,0,0) 100%),
+    linear-gradient(to top, rgba(0,0,0,1) 58%, rgba(0,0,0,0.42) 82%, rgba(0,0,0,0) 100%);
+  mask-image:
+    linear-gradient(to left, rgba(0,0,0,1) 52%, rgba(0,0,0,0.58) 74%, rgba(0,0,0,0) 100%),
+    linear-gradient(to top, rgba(0,0,0,1) 58%, rgba(0,0,0,0.42) 82%, rgba(0,0,0,0) 100%);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
   pointer-events: none;
   user-select: none;
   z-index: 1;
@@ -8133,7 +8142,7 @@ body.sale-journey-modal-open::before {
     bottom: 0;
     width: 48%;
     max-width: 230px;
-    opacity: 0.20;
+    opacity: 0.09;
   }
   .jsum-head-main { padding-right: 36px; }
   .jsum-head-actions { flex-direction: column-reverse; align-items: flex-end; }
